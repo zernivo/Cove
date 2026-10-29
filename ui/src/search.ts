@@ -70,8 +70,9 @@ function compute(): void {
     // Empty: what you use most, then recent files.
     const used = index.filter((it) => usage[key(it)] && inTab(it)).sort((a, b) => usage[key(b)] - usage[key(a)]);
     const recent = index.filter((it) => it.kind === "file" && !usage[key(it)] && inTab(it));
-    items = [...used, ...recent].slice(0, 30);
-    if (!items.length) items = index.filter(inTab).slice(0, 30);
+    const seen = new Set([...used, ...recent].map(key));
+    const rest = index.filter((it) => inTab(it) && !seen.has(key(it)));
+    items = [...used, ...recent, ...rest].slice(0, 40);
   } else {
     items = index
       .filter(inTab)

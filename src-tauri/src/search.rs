@@ -113,29 +113,49 @@ fn load_apps() -> Vec<Item> {
     Vec::new()
 }
 
-/// Recently opened files (the shortcuts Windows keeps in Recent).
+/// Recently opened items (the shortcuts Windows keeps in Recent).
 fn recent_files() -> Vec<Item> {
     let Some(appdata) = std::env::var_os("APPDATA") else { return Vec::new() };
     let dir = std::path::Path::new(&appdata).join("Microsoft\\Windows\\Recent");
-    let Ok(rd) = std::fs::read_dir(&dir) else { return Vec::new() };
-    let mut files: Vec<(std::time::SystemTime, std::path::PathBuf)> = rd
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map(|x| x.eq_ignore_ascii_case("lnk")).unwrap_or(false))
-        .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
-        .collect();
-    files.sort_by(|a, b| b.0.cmp(&a.0));
-    files
+    newest(&dir, |p| p.extension().map(|x| x.eq_ignore_ascii_case("lnk")).unwrap_or(false), 60)
         .into_iter()
-        .take(60)
-        .filter_map(|(_, p)| {
+        .filter_map(|p| {
             let name = p.file_stem()?.to_string_lossy().to_string();
-            // Folders have no extension in their name; keep files only.
-            if !name.contains('.') {
-                return None;
-            }
-            Some(Item { kind: "file", subtitle: "Recent file".into(), name, target: p.to_string_lossy().to_string() })
+            Some(Item { kind: "file", subtitle: "Recent".into(), name, target: p.to_string_lossy().to_string() })
         })
         .collect()
+}
+
+/// Files sitting in Desktop, Downloads and Documents (top level only).
+fn home_files() -> Vec<Item> {
+    let Some(home) = std::env::var_os("USERPROFILE") else { return Vec::new() };
+    let home = std::path::PathBuf::from(home);
+    let mut v = Vec::new();
+    for folder in ["Desktop", "Downloads", "Documents"] {
+        let dir = home.join(folder);
+        for p in newest(&dir, |p| p.is_file() && !is_hidden_name(p), 150) {
+            let Some(name) = p.file_name().map(|n| n.to_string_lossy().to_string()) else { continue };
+            v.push(Item { kind: "file", subtitle: folder.into(), name, target: p.to_string_lossy().to_string() });
+        }
+    }
+    v
+}
+
+fn is_hidden_name(p: &std::path::Path) -> bool {
+    let n = p.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
+    n.starts_with('.') || n == "desktop.ini" || n.starts_with("~$")
+}
+
+fn newest(dir: &std::path::Path, keep: impl Fn(&std::path::Path) -> bool, limit: usize) -> Vec<std::path::PathBuf> {
+    let Ok(rd) = std::fs::read_dir(dir) else { return Vec::new() };
+    let mut files: Vec<(std::time::SystemTime, std::path::PathBuf)> = rd
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| keep(p))
+        .filter_map(|p| Some((std::fs::metadata(&p).ok()?.modified().ok()?, p)))
+        .collect();
+    files.sort_by(|a, b| b.0.cmp(&a.0));
+    files.into_iter().take(limit).map(|(_, p)| p).collect()
 }
 
 /// Refresh the app list in the background if it's stale.
@@ -158,6 +178,7 @@ pub fn index() -> Vec<Item> {
     warm();
     let mut v = APPS.lock().unwrap().as_ref().map(|(_, a)| a.clone()).unwrap_or_default();
     v.extend(recent_files());
+    v.extend(home_files());
     v.extend(static_items());
     v
 }
