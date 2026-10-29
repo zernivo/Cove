@@ -39,6 +39,7 @@ pub fn default_pins() -> Vec<Pin> {
             target: "windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel".into(),
         },
     ]
+}
 
 impl Default for Settings {
     fn default() -> Self {
