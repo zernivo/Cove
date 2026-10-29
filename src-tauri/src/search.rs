@@ -274,7 +274,7 @@ pub fn reveal(target: &str) -> Result<(), String> {
     explorer(&format!("/select,{target}")).map_err(|e| e.to_string())
 }
 
-fn action(id: &str) -> Result<(), String> {
+pub fn action(id: &str) -> Result<(), String> {
     let r = match id {
         "lock" => {
             #[cfg(windows)]

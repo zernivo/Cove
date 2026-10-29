@@ -27,6 +27,9 @@ const mock: Record<string, (a?: any) => unknown> = {
   update_install: () => null,
   just_updated: () => false,
   clipboard_set: (a) => a.enabled,
+  dock_status: () => ({ enabled: false, hide_taskbar: false }),
+  dock_set: (a) => ({ enabled: a.enabled, hide_taskbar: false }),
+  dock_hide_taskbar_set: (a) => ({ enabled: true, hide_taskbar: a.enabled }),
   clipboard_status: () => true,
 };
 
@@ -128,6 +131,21 @@ $("search-toggle").addEventListener("change", async (e) => {
   const enabled = (e.target as HTMLInputElement).checked;
   renderHabits(await invoke<HotkeyStatus>("search_set", { enabled }));
 });
+
+interface DockStatus { enabled: boolean; hide_taskbar: boolean }
+function renderDock(d: DockStatus): void {
+  ($("dock-toggle") as HTMLInputElement).checked = d.enabled;
+  ($("dock-taskbar") as HTMLInputElement).checked = d.hide_taskbar;
+  ($("dock-taskbar") as HTMLInputElement).disabled = !d.enabled;
+  $("dock-note").textContent = d.enabled ? (d.hide_taskbar ? "On · taskbar auto-hidden" : "On") : "Off";
+}
+$("dock-toggle").addEventListener("change", async (e) => {
+  renderDock(await invoke<DockStatus>("dock_set", { enabled: (e.target as HTMLInputElement).checked }));
+});
+$("dock-taskbar").addEventListener("change", async (e) => {
+  renderDock(await invoke<DockStatus>("dock_hide_taskbar_set", { enabled: (e.target as HTMLInputElement).checked }));
+});
+invoke<DockStatus>("dock_status").then(renderDock);
 
 function renderClip(on: boolean): void {
   ($("clip-toggle") as HTMLInputElement).checked = on;

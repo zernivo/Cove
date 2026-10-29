@@ -13,11 +13,44 @@ pub struct Settings {
     pub search: bool,
     /// Cove Search keeps a text clipboard history (memory only).
     pub clipboard: bool,
+    /// Cove Dock on.
+    pub dock: bool,
+    /// Auto-hide the Windows taskbar while the dock is on.
+    pub dock_hide_taskbar: bool,
+    /// Apps pinned to the dock, in order.
+    pub dock_pins: Vec<Pin>,
+    /// The taskbar's auto-hide state before Cove changed it.
+    pub taskbar_prev_autohide: Option<bool>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Pin {
+    pub name: String,
+    /// Start-menu AppID (opened through shell:AppsFolder).
+    pub target: String,
+}
+
+pub fn default_pins() -> Vec<Pin> {
+    vec![
+        Pin { name: "File Explorer".into(), target: "Microsoft.Windows.Explorer".into() },
+        Pin { name: "Microsoft Edge".into(), target: "MSEdge".into() },
+        Pin {
+            name: "Settings".into(),
+            target: "windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel".into(),
+        },
+    ]
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { hotkeys: false, search: true, clipboard: true }
+        Settings {
+            hotkeys: false,
+            search: true,
+            clipboard: true,
+            dock: false,
+            dock_hide_taskbar: false,
+            dock_pins: default_pins(),
+            taskbar_prev_autohide: None,
+        }
     }
 }
 

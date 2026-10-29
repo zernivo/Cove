@@ -3,6 +3,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod clipboard;
+mod dock;
 mod files;
 mod hotkeys;
 mod icons;
@@ -92,7 +93,7 @@ fn calm_apply(ids: Vec<String>, state: tauri::State<'_, AppState>) -> ApplyRepor
 
 /// Put back every change Cove made, newest first.
 #[tauri::command]
-fn restore_all(state: tauri::State<'_, AppState>) -> Result<RestoreReport, String> {
+fn restore_all(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<RestoreReport, String> {
     let mut journal = state.journal.lock().map_err(|e| e.to_string())?;
     let changes = journal.take_for_restore().map_err(|e| e.to_string())?;
     let mut report = RestoreReport { restored: 0, failed: Vec::new() };
@@ -103,7 +104,160 @@ fn restore_all(state: tauri::State<'_, AppState>) -> Result<RestoreReport, Strin
         }
     }
     shell::notify_settings_changed();
+    // The dock and its taskbar auto-hide count as Cove changes too.
+    drop(journal);
+    if let Ok(mut s) = state.settings.lock() {
+        if s.data.dock || s.data.taskbar_prev_autohide.is_some() {
+            s.data.dock = false;
+            sync_taskbar(&mut s);
+            report.restored += 1;
+        }
+    }
+    if let Some(w) = app.get_webview_window("dock") {
+        let _ = w.hide();
+    }
     Ok(report)
+}
+
+// ---- Cove Dock ----
+
+#[derive(Serialize)]
+struct DockStatus {
+    enabled: bool,
+    hide_taskbar: bool,
+}
+
+/// Make the taskbar's auto-hide match the settings, remembering (and later
+/// restoring) what it was before Cove touched it.
+fn sync_taskbar(s: &mut settings::Store) {
+    let want = s.data.dock && s.data.dock_hide_taskbar;
+    match (want, s.data.taskbar_prev_autohide) {
+        (true, None) => {
+            s.data.taskbar_prev_autohide = Some(dock::taskbar_autohide(Some(true)));
+        }
+        (false, Some(prev)) => {
+            dock::taskbar_autohide(Some(prev));
+            s.data.taskbar_prev_autohide = None;
+        }
+        _ => {}
+    }
+    let _ = s.save();
+}
+
+fn dock_apply(app: &AppHandle, state: &AppState) -> DockStatus {
+    let (enabled, hide) = match state.settings.lock() {
+        Ok(mut s) => {
+            sync_taskbar(&mut s);
+            (s.data.dock, s.data.dock_hide_taskbar)
+        }
+        Err(_) => (false, false),
+    };
+    if let Some(w) = app.get_webview_window("dock") {
+        if enabled {
+            let _ = w.show();
+            let _ = w.emit("dock-changed", ());
+        } else {
+            let _ = w.hide();
+        }
+    }
+    DockStatus { enabled, hide_taskbar: hide }
+}
+
+#[tauri::command]
+fn dock_status(state: tauri::State<'_, AppState>) -> DockStatus {
+    let s = state.settings.lock().unwrap();
+    DockStatus { enabled: s.data.dock, hide_taskbar: s.data.dock_hide_taskbar }
+}
+
+#[tauri::command]
+fn dock_set(enabled: bool, app: AppHandle, state: tauri::State<'_, AppState>) -> DockStatus {
+    if let Ok(mut s) = state.settings.lock() {
+        s.data.dock = enabled;
+        let _ = s.save();
+    }
+    dock_apply(&app, &state)
+}
+
+#[tauri::command]
+fn dock_hide_taskbar_set(enabled: bool, app: AppHandle, state: tauri::State<'_, AppState>) -> DockStatus {
+    if let Ok(mut s) = state.settings.lock() {
+        s.data.dock_hide_taskbar = enabled;
+        let _ = s.save();
+    }
+    dock_apply(&app, &state)
+}
+
+#[tauri::command]
+fn dock_state(state: tauri::State<'_, AppState>) -> dock::DockState {
+    let pins = state.settings.lock().map(|s| s.data.dock_pins.clone()).unwrap_or_default();
+    dock::state(&pins)
+}
+
+/// Click: open a pinned app, bring its window forward, or minimise it if
+/// it's already in front (like clicking the Windows taskbar).
+#[tauri::command]
+fn dock_open(kind: String, target: String, windows: Vec<isize>, active: bool) -> Result<(), String> {
+    if let Some(&first) = windows.first() {
+        if active && windows.len() == 1 {
+            dock::minimize(first);
+        } else {
+            dock::activate(first);
+        }
+        return Ok(());
+    }
+    match kind.as_str() {
+        "pin" => dock::launch(&target),
+        "trash" => search::action("recycle"),
+        _ => Err("Nothing to open.".into()),
+    }
+}
+
+/// Shift-click / menu "New window": launch even when it's running.
+#[tauri::command]
+fn dock_launch(target: String) -> Result<(), String> {
+    dock::launch(&target)
+}
+
+#[tauri::command]
+fn dock_close(windows: Vec<isize>) {
+    dock::close_windows(&windows);
+}
+
+#[tauri::command]
+fn dock_pin(name: String, target: String, app: AppHandle, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    if target.is_empty() || target.contains(['"', '\n']) {
+        return Err("Can't pin that.".into());
+    }
+    if let Ok(mut s) = state.settings.lock() {
+        if !s.data.dock_pins.iter().any(|p| p.target == target) {
+            s.data.dock_pins.push(settings::Pin { name, target });
+            let _ = s.save();
+        }
+    }
+    if let Some(w) = app.get_webview_window("dock") {
+        let _ = w.emit("dock-changed", ());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn dock_unpin(target: String, state: tauri::State<'_, AppState>) {
+    if let Ok(mut s) = state.settings.lock() {
+        s.data.dock_pins.retain(|p| p.target != target);
+        let _ = s.save();
+    }
+}
+
+/// Size the dock window and park it at the bottom centre of the main
+/// screen's work area.
+#[tauri::command]
+fn dock_place(width: f64, height: f64, app: AppHandle) {
+    let Some(w) = app.get_webview_window("dock") else { return };
+    let sf = w.scale_factor().unwrap_or(1.0);
+    let (pw, ph) = ((width * sf).round() as i32, (height * sf).round() as i32);
+    let (l, _t, r, b) = dock::work_area().unwrap_or((0, 0, 1920, 1080));
+    let _ = w.set_size(tauri::PhysicalSize::new(pw as u32, ph as u32));
+    let _ = w.set_position(PhysicalPosition::new(l + (r - l - pw) / 2, b - ph));
 }
 
 #[tauri::command]
@@ -287,12 +441,18 @@ fn main() {
             hotkeys::configure(store.data.hotkeys, store.data.search);
             clipboard::set_enabled(store.data.clipboard);
             search::warm();
+            let dock_on = store.data.dock;
             let updated = std::env::args().any(|a| a == updater::UPDATED_FLAG);
             app.manage(AppState {
                 journal: Mutex::new(journal),
                 settings: Mutex::new(store),
                 just_updated: std::sync::atomic::AtomicBool::new(updated),
             });
+            if dock_on {
+                let h = app.handle().clone();
+                let st = app.state::<AppState>();
+                dock_apply(&h, &st);
+            }
             if updated {
                 use tauri_plugin_notification::NotificationExt;
                 let _ = app
@@ -373,6 +533,16 @@ fn main() {
             search_reveal,
             search_hide,
             search_files,
+            dock_status,
+            dock_set,
+            dock_hide_taskbar_set,
+            dock_state,
+            dock_open,
+            dock_launch,
+            dock_close,
+            dock_pin,
+            dock_unpin,
+            dock_place,
             clip_history,
             clip_use,
             clip_clear,
@@ -383,10 +553,19 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building Cove");
 
-    app.run(|_handle, event| {
-        // Hotkeys live only while Cove runs.
+    app.run(|handle, event| {
+        // Hotkeys live only while Cove runs; the taskbar goes back to how
+        // it was (Cove hides it again next launch if the dock is on).
         if let RunEvent::Exit = event {
             hotkeys::stop();
+            if let Some(state) = handle.try_state::<AppState>() {
+                if let Ok(mut s) = state.settings.lock() {
+                    if let Some(prev) = s.data.taskbar_prev_autohide.take() {
+                        dock::taskbar_autohide(Some(prev));
+                        let _ = s.save();
+                    }
+                }
+            }
         }
     });
 }

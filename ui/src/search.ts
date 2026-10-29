@@ -202,6 +202,16 @@ q.addEventListener("input", () => { compute(); fetchDeep(); });
 document.addEventListener("keydown", (e) => {
   if (e.key === "ArrowDown") { e.preventDefault(); sel = Math.min(sel + 1, shown.length - 1); render(); }
   else if (e.key === "ArrowUp") { e.preventDefault(); sel = Math.max(sel - 1, 0); render(); }
+  else if ((e.key === "d" || e.key === "D") && e.ctrlKey) {
+    e.preventDefault();
+    const it = shown[sel];
+    if (it && (it.kind === "app" || (it.kind === "file" && it.target.toLowerCase().endsWith(".exe")))) {
+      invoke("dock_pin", { name: it.name, target: it.target }).then(() => {
+        const small = list.children[sel]?.querySelector("small");
+        if (small) small.textContent = "Added to Dock";
+      }).catch(() => {});
+    }
+  }
   else if (e.key === "Enter") { e.preventDefault(); activate(shown[sel], e.ctrlKey); }
   else if (e.key === "Tab") {
     e.preventDefault();

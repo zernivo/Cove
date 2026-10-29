@@ -33,10 +33,10 @@ Legend: ✅ done · 🔨 in progress · ⬜ planned
 - ✅ Clipboard history tab, text only, memory only (v0.2.3)
 - ⬜ Measure open time on real hardware (target under 100 ms)
 
-## Phase 3: Dock + top bar ⬜ (v0.3)
+## Phase 3: Dock + top bar 🟡 (v0.3)
 - ⬜ Top bar (AppBar API): active app name, common actions, Wi-Fi/volume/battery, clock, Control Centre-style panel
-- ⬜ Dock: pinned + running apps, running dots, gentle magnification, folder stacks, Trash/Recycle Bin
-- ⬜ Taskbar auto-hide only through its own documented setting, restored when Cove quits
+- ✅ Dock: pinned + running apps, running dots, gentle magnification, Recycle Bin (v0.3.0); folder stacks to come
+- ✅ Taskbar auto-hide only through its own documented setting, restored when Cove quits (v0.3.0)
 - ⬜ Multi-monitor and per-DPI support
 - Note: a true global menu bar can't work for Chrome, Electron or Store apps, so the top bar shows the active app and common actions instead
 
