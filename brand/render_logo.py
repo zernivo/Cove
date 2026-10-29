@@ -36,7 +36,7 @@ up = np.cross(view, right)
 
 # blue cube sits in the opening of the C (direction of the dropped beam's centre, pulled in)
 c_drop = (np.array(corners[DROP], float) + np.array(corners[(DROP + 1) % 6], float)) / 2 - 0.5
-cube_c = c_drop * 0.40
+cube_c = c_drop * float(os.environ.get("CUBE_OFFSET", "0"))  # 0 = centred in the C
 cube_c -= view * np.dot(cube_c, view)  # keep it on the view-centre plane
 
 
