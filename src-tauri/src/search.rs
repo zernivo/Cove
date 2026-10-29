@@ -171,7 +171,27 @@ fn newest(dir: &std::path::Path, keep: impl Fn(&std::path::Path) -> bool, limit:
 }
 
 /// Refresh the app list in the background if it's stale.
+/// Deep file matches for a query, with icons where ready.
+pub fn files(query: &str) -> Vec<Item> {
+    let mut v: Vec<Item> = crate::files::find(query, 30)
+        .into_iter()
+        .map(|(name, path, folder)| Item { kind: "file", subtitle: folder, name, target: path, icon: None })
+        .collect();
+    let mut missing = Vec::new();
+    for it in v.iter_mut() {
+        match crate::icons::get(&it.target) {
+            Some(i) => it.icon = Some(i),
+            None => missing.push(it.target.clone()),
+        }
+    }
+    if !missing.is_empty() {
+        render_icons(missing);
+    }
+    v
+}
+
 pub fn warm() {
+    crate::files::warm();
     let stale = match APPS.lock().unwrap().as_ref() {
         Some((t, _)) => t.elapsed() > APPS_TTL,
         None => true,

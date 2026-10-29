@@ -28,8 +28,9 @@ Legend: ✅ done · 🔨 in progress · ⬜ planned
 - ✅ Tabs: All / Apps / Files / Settings; Tab to switch, Enter to open, Ctrl+Enter to reveal
 - ✅ Learns what you open most; fully local, no web results, no telemetry
 - ⬜ Real app icons in results
-- ⬜ Full file search through the Windows Search index
-- ⬜ Clipboard history tab
+- ✅ Deeper file search across your personal folders (v0.2.3); Windows Search index still to come
+- ✅ Real app and file icons (v0.2.2)
+- ✅ Clipboard history tab, text only, memory only (v0.2.3)
 - ⬜ Measure open time on real hardware (target under 100 ms)
 
 ## Phase 3: Dock + top bar ⬜ (v0.3)
@@ -57,7 +58,7 @@ Legend: ✅ done · 🔨 in progress · ⬜ planned
 - ⬜ One pass over every screen: spacing, type scale, colour, contrast, empty states
 - ⬜ Premium window backgrounds (subtle gradient that sets off the logo), light and dark
 - ⬜ Motion: page transitions, toggles, search pop-in, all at 60 fps and respecting reduced motion
-- ⬜ Real app icons in Search, refined tray menu, onboarding visuals
+- ⬜ Refined tray menu, onboarding visuals
 - ⬜ Final app icon and installer artwork; consistency check across DPI and multiple monitors
 
 ## Phase 8: Beta → 1.0 ⬜

@@ -11,11 +11,13 @@ pub struct Settings {
     pub hotkeys: bool,
     /// Alt+Space opens Cove Search.
     pub search: bool,
+    /// Cove Search keeps a text clipboard history (memory only).
+    pub clipboard: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { hotkeys: false, search: true }
+        Settings { hotkeys: false, search: true, clipboard: true }
     }
 }
 

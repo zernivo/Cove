@@ -18,12 +18,14 @@
         <button data-tab="app">Apps</button>
         <button data-tab="file">Files</button>
         <button data-tab="setting">Settings</button>
+        <button data-tab="clip">Clipboard</button>
       </nav>
       <ul class="results" id="results"></ul>
       <footer class="foot">
         <span><kbd>↑↓</kbd> move</span>
-        <span><kbd>↵</kbd> open</span>
-        <span><kbd>ctrl ↵</kbd> show in folder</span>
+        <span class="not-clip"><kbd>↵</kbd> open</span>
+        <span class="not-clip"><kbd>ctrl ↵</kbd> show in folder</span>
+        <span class="only-clip"><kbd>↵</kbd> paste · <kbd>ctrl ↵</kbd> copy</span>
         <span><kbd>tab</kbd> switch tab</span>
       </footer>
     </div>

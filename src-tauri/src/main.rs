@@ -2,6 +2,8 @@
 // Hide the console window in release builds on Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod clipboard;
+mod files;
 mod hotkeys;
 mod icons;
 mod journal;
@@ -181,6 +183,45 @@ fn search_reveal(target: String, app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn search_files(query: String) -> Vec<search::Item> {
+    search::files(&query)
+}
+
+#[tauri::command]
+fn clip_history() -> Vec<String> {
+    clipboard::history()
+}
+
+/// Enter pastes into the app you were in; Ctrl+Enter only copies.
+#[tauri::command]
+async fn clip_use(text: String, paste: bool, app: AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("search") {
+        let _ = w.hide();
+    }
+    clipboard::put(&text, paste)
+}
+
+#[tauri::command]
+fn clip_clear() {
+    clipboard::clear();
+}
+
+#[tauri::command]
+fn clipboard_set(enabled: bool, state: tauri::State<'_, AppState>) -> bool {
+    if let Ok(mut s) = state.settings.lock() {
+        s.data.clipboard = enabled;
+        let _ = s.save();
+    }
+    clipboard::set_enabled(enabled);
+    enabled
+}
+
+#[tauri::command]
+fn clipboard_status(state: tauri::State<'_, AppState>) -> bool {
+    state.settings.lock().map(|s| s.data.clipboard).unwrap_or(false)
+}
+
+#[tauri::command]
 fn search_hide(app: AppHandle) {
     if let Some(w) = app.get_webview_window("search") {
         let _ = w.hide();
@@ -244,6 +285,7 @@ fn main() {
                 let _ = handle.run_on_main_thread(move || toggle_search(&h));
             });
             hotkeys::configure(store.data.hotkeys, store.data.search);
+            clipboard::set_enabled(store.data.clipboard);
             search::warm();
             let updated = std::env::args().any(|a| a == updater::UPDATED_FLAG);
             app.manage(AppState {
@@ -330,6 +372,12 @@ fn main() {
             search_open,
             search_reveal,
             search_hide,
+            search_files,
+            clip_history,
+            clip_use,
+            clip_clear,
+            clipboard_set,
+            clipboard_status,
             just_updated
         ])
         .build(tauri::generate_context!())

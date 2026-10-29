@@ -26,6 +26,8 @@ const mock: Record<string, (a?: any) => unknown> = {
   update_check: () => ({ current: "0.1.2", latest: "0.1.2", available: false, notes: "", page: "" }),
   update_install: () => null,
   just_updated: () => false,
+  clipboard_set: (a) => a.enabled,
+  clipboard_status: () => true,
 };
 
 function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -126,6 +128,17 @@ $("search-toggle").addEventListener("change", async (e) => {
   const enabled = (e.target as HTMLInputElement).checked;
   renderHabits(await invoke<HotkeyStatus>("search_set", { enabled }));
 });
+
+function renderClip(on: boolean): void {
+  ($("clip-toggle") as HTMLInputElement).checked = on;
+  $("clip-note").textContent = on
+    ? "On · text only, kept in memory until Cove quits, skips password managers"
+    : "Off";
+}
+$("clip-toggle").addEventListener("change", async (e) => {
+  renderClip(await invoke<boolean>("clipboard_set", { enabled: (e.target as HTMLInputElement).checked }));
+});
+invoke<boolean>("clipboard_status").then(renderClip);
 
 $("hk-toggle").addEventListener("change", async (e) => {
   const enabled = (e.target as HTMLInputElement).checked;

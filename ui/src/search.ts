@@ -2,7 +2,7 @@ import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { calculate } from "./calc";
 
-interface Item { kind: "app" | "file" | "setting" | "action" | "calc"; name: string; subtitle: string; target: string; icon?: string }
+interface Item { kind: "app" | "file" | "setting" | "action" | "calc" | "clip"; name: string; subtitle: string; target: string; icon?: string }
 
 const inTauri = "__TAURI_INTERNALS__" in window;
 const MOCK: Item[] = [
@@ -17,7 +17,12 @@ const MOCK: Item[] = [
 ];
 function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (inTauri) return tauriInvoke<T>(cmd, args);
-  return Promise.resolve((cmd === "search_index" ? MOCK : null) as T);
+  const mock: Record<string, unknown> = {
+    search_index: MOCK,
+    search_files: [],
+    clip_history: ["git commit -m \"fix\"", "https://github.com/zernivo/Cove", "Meeting moved to 3 pm"],
+  };
+  return Promise.resolve((mock[cmd] ?? null) as T);
 }
 
 const q = document.getElementById("q") as HTMLInputElement;
@@ -28,6 +33,9 @@ let index: Item[] = [];
 let shown: Item[] = [];
 let sel = 0;
 let tab = "all";
+let deep: Item[] = []; // deeper file matches for the current query
+let clips: Item[] = [];
+let deepTimer = 0;
 
 // ---- learning: what you open most ranks higher ----
 const USAGE_KEY = "cove.search.usage";
@@ -63,10 +71,17 @@ function subsequence(text: string, query: string): boolean {
 const inTab = (it: Item) =>
   tab === "all" || it.kind === tab || (tab === "setting" && it.kind === "action");
 
+function clipItems(query: string): Item[] {
+  const items = query ? clips.filter((c) => c.target.toLowerCase().includes(query)) : clips;
+  return items.slice(0, 50);
+}
+
 function compute(): void {
   const query = q.value.trim().toLowerCase();
   let items: Item[];
-  if (!query) {
+  if (tab === "clip") {
+    items = clipItems(query);
+  } else if (!query) {
     // Empty: what you use most, then recent files.
     const used = index.filter((it) => usage[key(it)] && inTab(it)).sort((a, b) => usage[key(b)] - usage[key(a)]);
     const recent = index.filter((it) => it.kind === "file" && !usage[key(it)] && inTab(it));
@@ -74,7 +89,8 @@ function compute(): void {
     const rest = index.filter((it) => inTab(it) && !seen.has(key(it)));
     items = [...used, ...recent, ...rest].slice(0, 40);
   } else {
-    items = index
+    const known = new Set(index.map(key));
+    items = [...index, ...deep.filter((d) => !known.has(key(d)))]
       .filter(inTab)
       .map((it) => [it, score(it, query)] as const)
       .filter(([, s]) => s >= 0)
@@ -92,13 +108,17 @@ function compute(): void {
   render();
 }
 
-const GLYPH: Record<Item["kind"], string> = { app: "", file: "📄", setting: "⚙", action: "⏻", calc: "=" };
-const LABEL: Record<Item["kind"], string> = { app: "App", file: "File", setting: "Settings", action: "Action", calc: "Calculator" };
+const GLYPH: Record<Item["kind"], string> = { app: "", file: "📄", setting: "⚙", action: "⏻", calc: "=", clip: "📋" };
+const LABEL: Record<Item["kind"], string> = { app: "App", file: "File", setting: "Settings", action: "Action", calc: "Calculator", clip: "Clipboard" };
 
 function render(): void {
   list.innerHTML = "";
   if (!shown.length) {
-    list.innerHTML = `<li class="empty">${index.length ? "No matches" : "Loading your apps…"}</li>`;
+    const msg = tab === "clip"
+      ? clips.length ? "No matches" : "Nothing copied yet. Text you copy shows up here (kept only while Cove runs)."
+      : index.length ? "No matches" : "Loading your apps…";
+    list.innerHTML = `<li class="empty"></li>`;
+    list.firstElementChild!.textContent = msg;
     return;
   }
   shown.forEach((it, i) => {
@@ -126,6 +146,10 @@ function render(): void {
 
 async function activate(it: Item | undefined, reveal: boolean): Promise<void> {
   if (!it) return;
+  if (it.kind === "clip") {
+    try { await invoke("clip_use", { text: it.target, paste: !reveal }); } catch (e) { console.error(e); }
+    return;
+  }
   if (it.kind === "calc") {
     await navigator.clipboard.writeText(it.target).catch(() => {});
     q.value = it.target;
@@ -145,11 +169,36 @@ async function activate(it: Item | undefined, reveal: boolean): Promise<void> {
 function setTab(t: string): void {
   tab = t;
   tabs.forEach((b) => b.classList.toggle("on", b.dataset.tab === t));
+  document.body.classList.toggle("clip-tab", t === "clip");
+  if (t === "clip") loadClips();
   compute();
 }
 tabs.forEach((b) => b.addEventListener("click", () => { setTab(b.dataset.tab!); q.focus(); }));
 
-q.addEventListener("input", compute);
+async function loadClips(): Promise<void> {
+  const h = (await invoke<string[]>("clip_history")) || [];
+  clips = h.map((t) => ({ kind: "clip", name: t.replace(/\s+/g, " ").trim().slice(0, 140), subtitle: t.length > 140 ? `${t.length} characters` : "Text", target: t }));
+  if (tab === "clip") compute();
+}
+
+function fetchDeep(attempt = 0): void {
+  const query = q.value.trim();
+  clearTimeout(deepTimer);
+  if (query.length < 2 || tab === "clip") { deep = []; return; }
+  deepTimer = window.setTimeout(async () => {
+    const got = (await invoke<Item[]>("search_files", { query })) || [];
+    if (q.value.trim() !== query) return;
+    const prev = shown[sel] ? key(shown[sel]) : "";
+    deep = got;
+    compute();
+    const i = shown.findIndex((s) => key(s) === prev);
+    if (i > 0) { sel = i; render(); }
+    // Index or icons still warming up: look again shortly.
+    if (attempt < 3 && (!got.length || got.some((g) => !g.icon))) setTimeout(() => fetchDeep(attempt + 1), 700);
+  }, attempt ? 0 : 90);
+}
+
+q.addEventListener("input", () => { compute(); fetchDeep(); });
 document.addEventListener("keydown", (e) => {
   if (e.key === "ArrowDown") { e.preventDefault(); sel = Math.min(sel + 1, shown.length - 1); render(); }
   else if (e.key === "ArrowUp") { e.preventDefault(); sel = Math.max(sel - 1, 0); render(); }
@@ -180,7 +229,9 @@ async function reload(): Promise<void> {
 function opened(): void {
   tries = 0;
   q.value = "";
+  deep = [];
   setTab("all");
+  loadClips();
   q.focus();
   reload();
 }

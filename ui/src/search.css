@@ -66,3 +66,8 @@ kbd {
 .foot span { display: flex; align-items: center; gap: 6px; }
 
 @media (prefers-reduced-motion: reduce) { .panel { animation: none; } }
+
+.only-clip { display: none; }
+body.clip-tab .only-clip { display: inline; }
+body.clip-tab .not-clip { display: none; }
+.k-clip { font-size: 15px; }
