@@ -14,6 +14,17 @@ pub struct Item {
     pub subtitle: String,
     /// AppID (app), path (file), ms-settings uri (setting), action id
     pub target: String,
+    /// PNG data URL of the real icon, once rendered.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+}
+
+fn icon_path(it: &Item) -> Option<String> {
+    match it.kind {
+        "app" => Some(format!("shell:AppsFolder\\{}", it.target)),
+        "file" => Some(it.target.clone()),
+        _ => None,
+    }
 }
 
 static APPS: Mutex<Option<(Instant, Vec<Item>)>> = Mutex::new(None);
@@ -59,13 +70,14 @@ pub static ACTIONS: &[(&str, &str, &str)] = &[
 fn static_items() -> Vec<Item> {
     let mut v: Vec<Item> = SETTINGS
         .iter()
-        .map(|(n, uri, kw)| Item { kind: "setting", name: n.to_string(), subtitle: kw.to_string(), target: uri.to_string() })
+        .map(|(n, uri, kw)| Item { kind: "setting", name: n.to_string(), subtitle: kw.to_string(), target: uri.to_string(), icon: None })
         .collect();
     v.extend(ACTIONS.iter().map(|(n, id, kw)| Item {
         kind: "action",
         name: n.to_string(),
         subtitle: kw.to_string(),
         target: id.to_string(),
+        icon: None,
     }));
     v
 }
@@ -104,7 +116,7 @@ fn load_apps() -> Vec<Item> {
             let n = a.name.to_lowercase();
             !n.starts_with("uninstall") && !n.contains("readme") && seen.insert(n)
         })
-        .map(|a| Item { kind: "app", subtitle: "App".into(), name: a.name, target: a.app_id })
+        .map(|a| Item { kind: "app", subtitle: "App".into(), name: a.name, target: a.app_id, icon: None })
         .collect()
 }
 
@@ -121,7 +133,7 @@ fn recent_files() -> Vec<Item> {
         .into_iter()
         .filter_map(|p| {
             let name = p.file_stem()?.to_string_lossy().to_string();
-            Some(Item { kind: "file", subtitle: "Recent".into(), name, target: p.to_string_lossy().to_string() })
+            Some(Item { kind: "file", subtitle: "Recent".into(), name, target: p.to_string_lossy().to_string(), icon: None })
         })
         .collect()
 }
@@ -135,7 +147,7 @@ fn home_files() -> Vec<Item> {
         let dir = home.join(folder);
         for p in newest(&dir, |p| p.is_file() && !is_hidden_name(p), 150) {
             let Some(name) = p.file_name().map(|n| n.to_string_lossy().to_string()) else { continue };
-            v.push(Item { kind: "file", subtitle: folder.into(), name, target: p.to_string_lossy().to_string() });
+            v.push(Item { kind: "file", subtitle: folder.into(), name, target: p.to_string_lossy().to_string(), icon: None });
         }
     }
     v
@@ -179,8 +191,34 @@ pub fn index() -> Vec<Item> {
     let mut v = APPS.lock().unwrap().as_ref().map(|(_, a)| a.clone()).unwrap_or_default();
     v.extend(recent_files());
     v.extend(home_files());
+    // Attach icons we have; render the rest in the background.
+    let mut missing = Vec::new();
+    for it in v.iter_mut() {
+        if let Some(p) = icon_path(it) {
+            match crate::icons::get(&p) {
+                Some(i) => it.icon = Some(i),
+                None => missing.push(p),
+            }
+        }
+    }
+    if !missing.is_empty() {
+        render_icons(missing);
+    }
     v.extend(static_items());
     v
+}
+
+static RENDERING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn render_icons(paths: Vec<String>) {
+    use std::sync::atomic::Ordering;
+    if RENDERING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    std::thread::spawn(move || {
+        crate::icons::fill(paths);
+        RENDERING.store(false, Ordering::SeqCst);
+    });
 }
 
 fn explorer(arg: &str) -> std::io::Result<()> {

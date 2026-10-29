@@ -2,7 +2,7 @@ import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { calculate } from "./calc";
 
-interface Item { kind: "app" | "file" | "setting" | "action" | "calc"; name: string; subtitle: string; target: string }
+interface Item { kind: "app" | "file" | "setting" | "action" | "calc"; name: string; subtitle: string; target: string; icon?: string }
 
 const inTauri = "__TAURI_INTERNALS__" in window;
 const MOCK: Item[] = [
@@ -106,7 +106,14 @@ function render(): void {
     li.className = `row${i === sel ? " sel" : ""}`;
     const glyph = it.kind === "app" ? (it.name.trim()[0] || "?").toUpperCase() : GLYPH[it.kind];
     li.innerHTML = `<span class="tile k-${it.kind}"></span><span class="txt"><b></b><small></small></span><span class="tag"></span>`;
-    li.querySelector(".tile")!.textContent = glyph;
+    const tile = li.querySelector(".tile") as HTMLElement;
+    if (it.icon) {
+      tile.classList.add("has-icon");
+      const img = document.createElement("img");
+      img.src = it.icon;
+      img.alt = "";
+      tile.appendChild(img);
+    } else tile.textContent = glyph;
     li.querySelector("b")!.textContent = it.name;
     li.querySelector("small")!.textContent = it.kind === "setting" || it.kind === "action" ? LABEL[it.kind] : it.subtitle;
     li.querySelector(".tag")!.textContent = i === sel ? "↵" : "";
@@ -158,14 +165,20 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+let tries = 0;
 async function reload(): Promise<void> {
+  const prevSel = shown[sel] ? key(shown[sel]) : "";
   index = await invoke<Item[]>("search_index");
+  const keepSel = sel;
   compute();
-  // Apps load in the background the first time; pick them up shortly.
-  if (!index.some((i) => i.kind === "app")) setTimeout(reload, 1500);
+  if (prevSel && shown[keepSel] && key(shown[keepSel]) === prevSel) { sel = keepSel; render(); }
+  // Apps and their icons load in the background; pick them up shortly.
+  const pending = !index.some((i) => i.kind === "app") || index.some((i) => (i.kind === "app" || i.kind === "file") && !i.icon);
+  if (pending && tries++ < 12 && document.hasFocus()) setTimeout(reload, 1200);
 }
 
 function opened(): void {
+  tries = 0;
   q.value = "";
   setTab("all");
   q.focus();

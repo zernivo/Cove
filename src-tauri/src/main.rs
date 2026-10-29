@@ -3,6 +3,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod hotkeys;
+mod icons;
 mod journal;
 mod registry;
 mod search;

@@ -46,6 +46,8 @@ kbd {
   width: 30px; height: 30px; border-radius: 7px; flex: none;
   display: grid; place-items: center; font: 700 14px var(--font-brand); color: #fff;
 }
+.tile.has-icon { background: none; }
+.tile img { width: 30px; height: 30px; object-fit: contain; }
 .k-app { background: linear-gradient(160deg, #5bb8ff, #2a86e0); }
 .k-file { background: linear-gradient(160deg, #f2f4f7, #d7dde5); font-size: 15px; }
 .k-setting { background: linear-gradient(160deg, #8e96a3, #5d6572); font-size: 16px; }
