@@ -21,6 +21,10 @@ pub struct Settings {
     pub dock_pins: Vec<Pin>,
     /// The taskbar's auto-hide state before Cove changed it.
     pub taskbar_prev_autohide: Option<bool>,
+    /// Cove top bar on.
+    pub topbar: bool,
+    /// Last version that ran (to refresh icons once after an update).
+    pub last_version: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -51,6 +55,8 @@ impl Default for Settings {
             dock_hide_taskbar: false,
             dock_pins: default_pins(),
             taskbar_prev_autohide: None,
+            topbar: false,
+            last_version: String::new(),
         }
     }
 }

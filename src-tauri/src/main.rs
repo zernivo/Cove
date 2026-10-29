@@ -12,6 +12,7 @@ mod registry;
 mod search;
 mod settings;
 mod shell;
+mod topbar;
 mod tweaks;
 mod updater;
 
@@ -116,7 +117,81 @@ fn restore_all(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<Rest
     if let Some(w) = app.get_webview_window("dock") {
         let _ = w.hide();
     }
+    let had_bar = state.settings.lock().map(|mut s| {
+        let was = s.data.topbar;
+        s.data.topbar = false;
+        let _ = s.save();
+        was
+    }).unwrap_or(false);
+    if had_bar {
+        report.restored += 1;
+    }
+    topbar_apply(&app, false);
     Ok(report)
+}
+
+// ---- Cove top bar ----
+
+const TOPBAR_HEIGHT: f64 = 30.0;
+
+fn topbar_apply(app: &AppHandle, on: bool) {
+    let Some(w) = app.get_webview_window("topbar") else { return };
+    let Ok(hwnd) = w.hwnd() else { return };
+    let h = hwnd.0 as isize;
+    if on {
+        let sf = w.scale_factor().unwrap_or(1.0);
+        let (l, t, r, b) = topbar::register(h, (TOPBAR_HEIGHT * sf).round() as i32);
+        let _ = w.set_size(tauri::PhysicalSize::new((r - l).max(1) as u32, (b - t).max(1) as u32));
+        let _ = w.set_position(PhysicalPosition::new(l, t));
+        let _ = w.show();
+    } else {
+        topbar::unregister(h);
+        let _ = w.hide();
+    }
+}
+
+#[tauri::command]
+fn topbar_status(state: tauri::State<'_, AppState>) -> bool {
+    state.settings.lock().map(|s| s.data.topbar).unwrap_or(false)
+}
+
+#[tauri::command]
+fn topbar_set(enabled: bool, app: AppHandle, state: tauri::State<'_, AppState>) -> bool {
+    if let Ok(mut s) = state.settings.lock() {
+        s.data.topbar = enabled;
+        let _ = s.save();
+    }
+    topbar_apply(&app, enabled);
+    enabled
+}
+
+#[tauri::command]
+fn topbar_state() -> topbar::TopState {
+    topbar::state()
+}
+
+/// Top bar buttons. A fixed list: nothing else can be launched from here.
+#[tauri::command]
+fn topbar_open(what: String, app: AppHandle) -> Result<(), String> {
+    let uri = match what.as_str() {
+        "cove" => {
+            show_main(&app);
+            return Ok(());
+        }
+        "search" => {
+            toggle_search(&app);
+            return Ok(());
+        }
+        "lock" => return search::action("lock"),
+        "settings" => "ms-settings:",
+        "control" => "ms-actioncenter:controlcenter/&showFooter=true",
+        "notifications" => "ms-actioncenter:",
+        "battery" => "ms-settings:batterysaver",
+        "network" => "ms-settings:network",
+        "taskmgr" => "taskmgr.exe",
+        _ => return Err("Unknown item.".into()),
+    };
+    search::explorer(uri).map_err(|e| e.to_string())
 }
 
 // ---- Cove Dock ----
@@ -442,12 +517,27 @@ fn main() {
             clipboard::set_enabled(store.data.clipboard);
             search::warm();
             let dock_on = store.data.dock;
+            let bar_on = store.data.topbar;
+            // Once per new version: make Explorer drop stale cached icons.
+            let mut store = store;
+            if store.data.last_version != env!("CARGO_PKG_VERSION") {
+                topbar::refresh_icons();
+                store.data.last_version = env!("CARGO_PKG_VERSION").to_string();
+                let _ = store.save();
+            }
             let updated = std::env::args().any(|a| a == updater::UPDATED_FLAG);
             app.manage(AppState {
                 journal: Mutex::new(journal),
                 settings: Mutex::new(store),
                 just_updated: std::sync::atomic::AtomicBool::new(updated),
             });
+            #[cfg(target_os = "windows")]
+            if let Some(window) = app.get_webview_window("topbar") {
+                let _ = window_vibrancy::apply_acrylic(&window, None);
+            }
+            if bar_on {
+                topbar_apply(app.handle(), true);
+            }
             if dock_on {
                 let h = app.handle().clone();
                 let st = app.state::<AppState>();
@@ -533,6 +623,10 @@ fn main() {
             search_reveal,
             search_hide,
             search_files,
+            topbar_status,
+            topbar_set,
+            topbar_state,
+            topbar_open,
             dock_status,
             dock_set,
             dock_hide_taskbar_set,
@@ -558,6 +652,11 @@ fn main() {
         // it was (Cove hides it again next launch if the dock is on).
         if let RunEvent::Exit = event {
             hotkeys::stop();
+            if let Some(w) = handle.get_webview_window("topbar") {
+                if let Ok(h) = w.hwnd() {
+                    topbar::unregister(h.0 as isize);
+                }
+            }
             if let Some(state) = handle.try_state::<AppState>() {
                 if let Ok(mut s) = state.settings.lock() {
                     if let Some(prev) = s.data.taskbar_prev_autohide.take() {

@@ -241,7 +241,7 @@ fn render_icons(paths: Vec<String>) {
     });
 }
 
-fn explorer(arg: &str) -> std::io::Result<()> {
+pub fn explorer(arg: &str) -> std::io::Result<()> {
     #[cfg(windows)]
     {
         std::process::Command::new("explorer.exe").arg(arg).spawn()?;

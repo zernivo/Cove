@@ -27,6 +27,8 @@ const mock: Record<string, (a?: any) => unknown> = {
   update_install: () => null,
   just_updated: () => false,
   clipboard_set: (a) => a.enabled,
+  topbar_status: () => false,
+  topbar_set: (a) => a.enabled,
   dock_status: () => ({ enabled: false, hide_taskbar: false }),
   dock_set: (a) => ({ enabled: a.enabled, hide_taskbar: false }),
   dock_hide_taskbar_set: (a) => ({ enabled: true, hide_taskbar: a.enabled }),
@@ -146,6 +148,17 @@ $("dock-taskbar").addEventListener("change", async (e) => {
   renderDock(await invoke<DockStatus>("dock_hide_taskbar_set", { enabled: (e.target as HTMLInputElement).checked }));
 });
 invoke<DockStatus>("dock_status").then(renderDock);
+
+function renderTopbar(on: boolean): void {
+  ($("topbar-toggle") as HTMLInputElement).checked = on;
+  $("topbar-note").textContent = on
+    ? "On · the app in front, quick settings, battery and clock; windows make room for it"
+    : "Off · a thin bar across the top with the app in front, quick settings, battery and clock";
+}
+$("topbar-toggle").addEventListener("change", async (e) => {
+  renderTopbar(await invoke<boolean>("topbar_set", { enabled: (e.target as HTMLInputElement).checked }));
+});
+invoke<boolean>("topbar_status").then(renderTopbar);
 
 function renderClip(on: boolean): void {
   ($("clip-toggle") as HTMLInputElement).checked = on;

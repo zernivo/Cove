@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Cove Top Bar</title>
+    <link rel="stylesheet" href="./src/tokens.css" />
+    <link rel="stylesheet" href="./src/topbar.css" />
+  </head>
+  <body>
+    <div class="bar">
+      <div class="left">
+        <button class="mark" id="mark" title="Cove">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 6.5A7 7 0 1 0 17 17.5" /><rect x="10" y="10" width="4" height="4" rx="1" class="cube" /></svg>
+        </button>
+        <span class="app" id="app">Cove</span>
+      </div>
+      <div class="right">
+        <button class="pill" id="search" title="Cove Search (Alt+Space)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6" /><path d="M15 15l4.5 4.5" /></svg>
+        </button>
+        <button class="pill" id="control" title="Quick settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h10M18 8h2M4 16h2M10 16h10" /><circle cx="16" cy="8" r="2" /><circle cx="8" cy="16" r="2" /></svg>
+        </button>
+        <button class="pill hidden" id="battery" title="Battery"><span class="batt"><span class="fill" id="batt-fill"></span></span><span id="batt-text"></span></button>
+        <button class="pill clock" id="clock" title="Notifications and calendar"></button>
+      </div>
+    </div>
+    <div class="menu hidden" id="menu">
+      <button data-go="cove">Open Cove</button>
+      <button data-go="search">Cove Search <kbd>Alt Space</kbd></button>
+      <hr />
+      <button data-go="settings">Windows Settings</button>
+      <button data-go="taskmgr">Task Manager</button>
+      <hr />
+      <button data-go="lock">Lock screen</button>
+    </div>
+    <script type="module" src="./src/topbar.ts"></script>
+  </body>
+</html>

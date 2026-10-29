@@ -14,7 +14,7 @@
         <nav>
           <a href="#calm" class="nav-item active" data-view="calm">Calm</a>
           <a href="#habits" class="nav-item" data-view="habits">Mac habits</a>
-          <a href="#dock" class="nav-item" data-view="dock">Dock</a>
+          <a href="#dock" class="nav-item" data-view="dock">Dock &amp; top bar</a>
           <a href="#restore" class="nav-item" data-view="restore">Restore</a>
           <a href="#updates" class="nav-item" data-view="updates">Updates <span class="dot hidden" id="update-dot"></span></a>
         </nav>
@@ -81,6 +81,13 @@
               <p class="muted small">Uses Windows' own "Automatically hide the taskbar" switch, and puts it back when you turn the dock off or quit Cove</p>
             </div>
             <label class="switch"><input type="checkbox" id="dock-taskbar" /><span></span></label>
+          </div>
+          <div class="row card">
+            <div>
+              <h2>Cove top bar</h2>
+              <p class="muted small" id="topbar-note">Off</p>
+            </div>
+            <label class="switch"><input type="checkbox" id="topbar-toggle" /><span></span></label>
           </div>
           <p class="muted small">Click an app to open or switch to it, click again to minimise. Right-click for more. To add an app, find it in Cove Search (Alt+Space) and press Ctrl+D, or right-click a running app and choose Keep in Dock.</p>
         </section>

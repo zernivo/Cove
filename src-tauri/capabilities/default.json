@@ -4,9 +4,12 @@
   "description": "Permissions for Cove's windows",
   "windows": [
     "main",
-    "search"
+    "search",
+    "dock",
+    "topbar"
   ],
   "permissions": [
-    "core:default"
+    "core:default",
+    "core:window:allow-set-size"
   ]
 }
