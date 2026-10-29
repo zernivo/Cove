@@ -2,7 +2,7 @@
 
 Cove gives Windows 11 a calm, Mac-inspired way of working: smooth, flexible and uncluttered. It keeps every Windows feature but presents them through its own clean interface, and it teaches Mac habits (Alt+M to minimize, Alt+W to close, Alt+Space to search).
 
-> **Status:** early scaffold (v0.1.0). Nothing here changes your system yet.
+> **Status:** v0.1.0, early development. Nothing changes until you press Apply, and Restore puts it all back.
 
 ## Core principle
 **Smoothness and flexibility.** Strip out the parts of the Windows UI nobody uses, and make everything that's left fluid and adaptable. Every feature is judged against this.
@@ -36,8 +36,9 @@ npm run tauri dev
 ## Roadmap
 - [x] Research: macOS vs Windows, the tools landscape, Liquid Glass ([docs/research](docs/research))
 - [x] Repo scaffold, change journal
-- [ ] Settings engine: Calm preset with journaled restore
-- [ ] Habit layer: global hotkeys (Alt+M, Alt+W, Alt+Q, Alt+H, Alt+`)
+- [x] Calm preset (7 toggles) with journaled one-click restore
+- [x] Habit layer: Alt+W, Alt+M, Alt+H, Alt+Q, Alt+` (opt-in)
+- [x] Settings window: Calm, Mac habits, Back to stock
 - [ ] Cove Search
 - [ ] Top bar + Dock (AppBar)
 - [ ] Cove Tour (interactive onboarding)

@@ -8,23 +8,61 @@
     <link rel="stylesheet" href="./src/app.css" />
   </head>
   <body>
-    <main class="shell">
-      <header class="toolbar glass">
-        <span class="brand">cove</span>
-        <span class="tagline">Windows, made calm.</span>
-      </header>
-      <section class="content">
-        <h1>Welcome to Cove</h1>
-        <p class="muted">Early scaffold. Nothing on your system has been changed.</p>
-        <div class="cards">
-          <article class="card"><h2>Mac habits</h2><p>Alt+M, Alt+W, Alt+Q and more.</p></article>
-          <article class="card"><h2>Dock + top bar</h2><p>Calm, magnifying, out of the way.</p></article>
-          <article class="card"><h2>Cove Search</h2><p>One keyboard-first launcher.</p></article>
-          <article class="card"><h2>Calm look</h2><p>Hide the clutter. Restore anytime.</p></article>
-        </div>
-        <p id="status" class="muted"></p>
-      </section>
-    </main>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand"><span class="mark"></span>cove</div>
+        <nav>
+          <a href="#calm" class="nav-item active" data-view="calm">Calm</a>
+          <a href="#habits" class="nav-item" data-view="habits">Mac habits</a>
+          <a href="#restore" class="nav-item" data-view="restore">Restore</a>
+        </nav>
+        <p class="sidebar-foot" id="status">…</p>
+      </aside>
+
+      <main class="content">
+        <section class="view" id="view-calm">
+          <header class="view-head">
+            <h1>Calm</h1>
+            <p class="muted">Hide the parts of Windows nobody uses. Every change is recorded and can be undone in one click.</p>
+          </header>
+          <div class="list" id="calm-list"></div>
+          <div class="actions">
+            <button class="btn ghost" id="calm-all">Select all</button>
+            <button class="btn primary" id="calm-apply">Apply</button>
+          </div>
+        </section>
+
+        <section class="view hidden" id="view-habits">
+          <header class="view-head">
+            <h1>Mac habits</h1>
+            <p class="muted">Mac-style shortcuts for windows and apps. They work only while Cove is running.</p>
+          </header>
+          <div class="row card">
+            <div>
+              <h2>Keyboard shortcuts</h2>
+              <p class="muted small" id="hk-note">Off</p>
+            </div>
+            <label class="switch"><input type="checkbox" id="hk-toggle" /><span></span></label>
+          </div>
+          <div class="list" id="hk-list"></div>
+        </section>
+
+        <section class="view hidden" id="view-restore">
+          <header class="view-head">
+            <h1>Back to stock</h1>
+            <p class="muted">Put every setting Cove changed back exactly as it was.</p>
+          </header>
+          <div class="row card">
+            <div>
+              <h2>Recorded changes</h2>
+              <p class="muted small" id="journal-count">0</p>
+            </div>
+            <button class="btn danger" id="restore-btn">Restore everything</button>
+          </div>
+        </section>
+      </main>
+    </div>
+    <div class="toast hidden" id="toast"></div>
     <script type="module" src="./src/main.ts"></script>
   </body>
 </html>

@@ -86,6 +86,17 @@ impl Journal {
         self.save()
     }
 
+    /// Drop the newest entry (used when a write failed after recording).
+    pub fn pop_last(&mut self) -> io::Result<()> {
+        self.entries.pop();
+        self.save()
+    }
+
+    /// True if Cove has already changed this target.
+    pub fn touched(&self, target: &str) -> bool {
+        self.entries.iter().any(|c| c.target == target)
+    }
+
     /// Take every change, newest first, ready to be reverted.
     pub fn take_for_restore(&mut self) -> io::Result<Vec<Change>> {
         let mut changes = std::mem::take(&mut self.entries);
