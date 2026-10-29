@@ -1,0 +1,43 @@
+name: Release
+
+# Push a tag like v0.1.0 to build the Windows installer and publish it.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm install
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Cove ${{ github.ref_name }} (early preview)"
+          releaseBody: |
+            Early preview of Cove for Windows 11.
+
+            **Download:** `Cove_x.y.z_x64-setup.exe` below (or the `.msi`).
+
+            - Calm preset: 7 toggles that hide Windows clutter, with one-click restore
+            - Mac habits: Alt+W, Alt+M, Alt+H, Alt+Q, Alt+` (opt-in)
+
+            The installer is not code-signed yet, so Windows SmartScreen may warn you.
+            Click **More info → Run anyway**. Nothing changes until you press Apply,
+            and *Back to stock* restores every setting Cove changed.
+          releaseDraft: false
+          prerelease: false
