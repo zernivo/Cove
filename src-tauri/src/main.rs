@@ -24,6 +24,7 @@ use tweaks::{calm, TweakInfo};
 struct AppState {
     journal: Mutex<journal::Journal>,
     settings: Mutex<settings::Store>,
+    just_updated: std::sync::atomic::AtomicBool,
 }
 
 fn show_main(app: &AppHandle) {
@@ -185,6 +186,12 @@ fn search_hide(app: AppHandle) {
     }
 }
 
+/// True once, on the first launch after a silent update.
+#[tauri::command]
+fn just_updated(state: tauri::State<'_, AppState>) -> bool {
+    state.just_updated.swap(false, std::sync::atomic::Ordering::Relaxed)
+}
+
 #[tauri::command]
 fn hotkeys_status() -> hotkeys::HotkeyStatus {
     hotkeys::status()
@@ -200,9 +207,20 @@ async fn update_check() -> Result<updater::UpdateInfo, String> {
 /// Download, verify, start the installer, then quit so it can replace Cove.
 #[tauri::command]
 async fn update_install(app: AppHandle) -> Result<(), String> {
-    let path = tauri::async_runtime::spawn_blocking(updater::download)
-        .await
-        .map_err(|e| e.to_string())??;
+    let a = app.clone();
+    let path = tauri::async_runtime::spawn_blocking(move || {
+        let mut last = 0u64;
+        updater::download(|done, total| {
+            // ~1% steps are plenty for a progress bar.
+            if done == total || done - last > total / 100 {
+                last = done;
+                let _ = a.emit("update-progress", (done, total));
+            }
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    let _ = app.emit("update-installing", ());
     updater::launch(&path)?;
     hotkeys::stop();
     app.exit(0);
@@ -213,6 +231,7 @@ fn main() {
     let app = tauri::Builder::default()
         // Opening Cove again just brings the running copy forward.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             let journal = journal::Journal::load(dir.join("journal.json"))?;
@@ -225,10 +244,21 @@ fn main() {
             });
             hotkeys::configure(store.data.hotkeys, store.data.search);
             search::warm();
+            let updated = std::env::args().any(|a| a == updater::UPDATED_FLAG);
             app.manage(AppState {
                 journal: Mutex::new(journal),
                 settings: Mutex::new(store),
+                just_updated: std::sync::atomic::AtomicBool::new(updated),
             });
+            if updated {
+                use tauri_plugin_notification::NotificationExt;
+                let _ = app
+                    .notification()
+                    .builder()
+                    .title("Cove updated")
+                    .body(format!("You're now on Cove {}.", env!("CARGO_PKG_VERSION")))
+                    .show();
+            }
 
             // Tray: Cove keeps running (and the shortcuts keep working)
             // after the window is closed. Quit from here.
@@ -298,7 +328,8 @@ fn main() {
             search_index,
             search_open,
             search_reveal,
-            search_hide
+            search_hide,
+            just_updated
         ])
         .build(tauri::generate_context!())
         .expect("error while building Cove");

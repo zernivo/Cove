@@ -42,7 +42,7 @@ Requires Windows 11 (x64). No admin rights needed to use Cove's features.
 | **Cove Search** | Alt+Space opens a launcher: every app (desktop and Store), recent files, Settings pages, quick actions and a calculator. It learns what you open most. Fully local. |
 | **Mac habits** | Five window shortcuts, opt-in, active only while Cove runs. |
 | **Back to stock** | One click restores every setting Cove changed, exactly as it was. |
-| **Updates** | Cove checks for new versions and updates itself in one click (installer verified by SHA-256). |
+| **Updates** | One click: Cove downloads the update with a progress bar, checks its SHA-256, installs silently (no wizard), reopens and tells you it updated. |
 
 ## Mac shortcuts
 Alt sits where Cmd does on a Mac keyboard.

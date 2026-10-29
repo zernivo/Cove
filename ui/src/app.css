@@ -146,3 +146,6 @@ kbd {
 .btn:disabled { opacity: 0.6; cursor: default; }
 
 .list.dim { opacity: 0.55; }
+
+.progress { margin-top: 8px; height: 4px; border-radius: 999px; background: rgba(127,127,127,0.18); overflow: hidden; max-width: 320px; }
+.progress span { display: block; height: 100%; width: 0; background: var(--accent); border-radius: inherit; transition: width var(--motion-fast) linear; }

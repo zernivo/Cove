@@ -1,4 +1,5 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 interface Status { version: string; journal_entries: number; windows: boolean }
 interface Tweak { id: string; title: string; description: string; settings_uri: string; applied: boolean | null }
@@ -24,6 +25,7 @@ const mock: Record<string, (a?: any) => unknown> = {
   open_settings: () => null,
   update_check: () => ({ current: "0.1.2", latest: "0.1.2", available: false, notes: "", page: "" }),
   update_install: () => null,
+  just_updated: () => false,
 };
 
 function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -158,17 +160,32 @@ async function checkUpdates(quiet = false): Promise<void> {
 }
 
 $("up-check").addEventListener("click", () => checkUpdates());
+if (inTauri) {
+  listen<[number, number]>("update-progress", (e) => {
+    const [done, total] = e.payload;
+    const pct = total ? Math.round((done / total) * 100) : 0;
+    ($("up-bar") as HTMLElement).style.width = `${pct}%`;
+    $("up-install").textContent = `Downloading… ${pct}%`;
+  });
+  listen("update-installing", () => {
+    $("up-install").textContent = "Installing…";
+    $("up-note").textContent = "Cove will close for a few seconds and reopen on its own.";
+  });
+}
+
 $("up-install").addEventListener("click", async () => {
   const btn = $("up-install") as HTMLButtonElement;
   btn.disabled = true;
   btn.textContent = "Downloading…";
-  $("up-note").textContent = "Downloading and verifying the installer. Cove will close and the installer will open.";
+  $("up-progress").classList.remove("hidden");
+  $("up-note").textContent = "Downloading and checking the update.";
   try {
     await invoke("update_install");
   } catch (e) {
     $("up-note").textContent = String(e);
     btn.disabled = false;
     btn.textContent = "Try again";
+    $("up-progress").classList.add("hidden");
   }
 });
 
@@ -176,4 +193,9 @@ $("up-install").addEventListener("click", async () => {
 (async () => {
   await Promise.all([refreshStatus(), renderCalm(), invoke<HotkeyStatus>("hotkeys_status").then(renderHabits)]);
   checkUpdates(true);
+  if (await invoke<boolean>("just_updated")) toast(`Updated to Cove ${await currentVersion()} ✓`);
 })();
+
+async function currentVersion(): Promise<string> {
+  return (await invoke<UpdateInfo>("update_check").catch(() => null))?.current ?? "";
+}

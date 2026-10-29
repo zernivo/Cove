@@ -1,5 +1,6 @@
-//! "Update Cove" button: checks this repo's latest GitHub release, and
-//! downloads and runs its installer.
+//! "Update Cove" button: checks this repo's latest GitHub release,
+//! downloads its installer with progress, and installs it silently in
+//! update mode (no wizard, no uninstall step), then reopens Cove.
 //!
 //! Safety: only release assets of github.com/zernivo/Cove over HTTPS,
 //! size checked, and SHA-256 checked against the digest GitHub publishes
@@ -11,6 +12,8 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 
 const REPO: &str = "zernivo/Cove";
+/// Cove is relaunched with this after a silent update.
+pub const UPDATED_FLAG: &str = "--updated";
 
 #[derive(Debug, Deserialize)]
 struct Release {
@@ -72,7 +75,7 @@ pub fn check() -> Result<UpdateInfo, String> {
 }
 
 /// Download the latest setup.exe, verify it, and return its path.
-pub fn download() -> Result<PathBuf, String> {
+pub fn download(progress: impl Fn(u64, u64)) -> Result<PathBuf, String> {
     let r = latest_release()?;
     let asset = r
         .assets
@@ -104,6 +107,7 @@ pub fn download() -> Result<PathBuf, String> {
         hasher.update(&buf[..n]);
         file.write_all(&buf[..n]).map_err(|e| e.to_string())?;
         total += n as u64;
+        progress(total, asset.size);
     }
     drop(file);
 
@@ -127,7 +131,12 @@ pub fn download() -> Result<PathBuf, String> {
 pub fn launch(path: &PathBuf) -> Result<(), String> {
     #[cfg(windows)]
     {
-        std::process::Command::new(path).spawn().map_err(|e| e.to_string())?;
+        // Tauri NSIS flags: /S silent, /UPDATE keep the install (no uninstall
+        // step, no new shortcuts), /R relaunch Cove after, /ARGS passed to it.
+        std::process::Command::new(path)
+            .args(["/S", "/UPDATE", "/R", "/ARGS", UPDATED_FLAG])
+            .spawn()
+            .map_err(|e| e.to_string())?;
         Ok(())
     }
     #[cfg(not(windows))]
