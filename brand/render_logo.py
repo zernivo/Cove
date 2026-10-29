@@ -3,18 +3,20 @@ SDF ray-marched, orthographic isometric view, flat brand tones blended smoothly 
 Usage: python3 render_logo.py SIZE OUT.png [drop_beam]
 """
 import sys
+import os
 import numpy as np
 
 SIZE = int(sys.argv[1]) if len(sys.argv) > 1 else 512
 OUT = sys.argv[2] if len(sys.argv) > 2 else "logo.png"
 DROP = int(sys.argv[3]) if len(sys.argv) > 3 else 2
-SS = 2  # supersampling
+FLAT = os.environ.get("FLAT") == "1"
+SS = 1 if FLAT else 2  # supersampling
 
 T = 0.40      # beam thickness
-R = 0.10
+R = 0.004 if os.environ.get("FLAT") == "1" else 0.10
 K = 0.002     # joints: plain union (no bulge)
 CUBE = 0.19   # blue cube half size
-CR = 0.07
+CR = 0.004 if os.environ.get("FLAT") == "1" else 0.07
 
 # Hexagon loop of a unit cube's silhouette edges, viewed from (1,1,1)
 corners = [(1, 0, 0), (1, 1, 0), (0, 1, 0), (0, 1, 1), (0, 0, 1), (1, 0, 1)]
@@ -93,17 +95,22 @@ PERM = sys.argv[4] if len(sys.argv) > 4 else 'dml'
 TONES = {'m': hexc('#4A5160'), 'd': hexc('#15171C'), 'l': hexc('#AEB6C2')}
 TC = [TONES[ch] for ch in PERM]
 TB = [hexc('#3BA7FF'), hexc('#1C74C9'), hexc('#8FD0FF')]  # blue cube
-w = np.clip(nrm, 0, None) ** 10
+w = np.clip(nrm, 0, None) ** (60 if os.environ.get('FLAT') == '1' else 10)
 w /= w.sum(-1, keepdims=True) + 1e-9
 colC = w @ np.stack(TC); colB = w @ np.stack(TB)
 # soft rim highlight on rounded edges (where normal is between faces)
 rim = 1 - (np.clip(nrm, 0, None) ** 2).max(-1)
 rim = np.clip(rim * 1.2, 0, 1)[:, None]
 colC = colC + rim * 14; colB = colB + rim * 30
+if FLAT:
+    colC = w @ np.stack(TC); colB = w @ np.stack(TB)
 col = np.where((hit == 1)[:, None], colC, colB)
 alpha = (hit > 0).astype(float)
 img = np.concatenate([np.clip(col, 0, 255), alpha[:, None] * 255], -1).reshape(N, N, 4)
 
+if FLAT:
+    np.savez_compressed(OUT, col=col.reshape(N, N, 3).astype(np.uint8), hit=hit.reshape(N, N).astype(np.uint8))
+    sys.exit(0)
 from PIL import Image
 im = Image.fromarray(img.astype(np.uint8), "RGBA")
 # premultiplied downsample to avoid dark fringes
