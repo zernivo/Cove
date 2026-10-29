@@ -1,7 +1,4 @@
-<p align="center"><img src="brand/cove-logo.png" width="120" alt="Cove logo"></p>
-
-<h1 align="center">Cove</h1>
-<p align="center"><b>Windows, made calm.</b></p>
+<p align="center"><img src="brand/cove-banner.png" alt="Cove: Windows, made calm." width="100%"></p>
 
 Cove gives Windows 11 a calm, Mac-inspired way of working: smooth, flexible and uncluttered. It keeps every Windows feature but presents them through its own clean interface, and it teaches Mac habits (Alt+M to minimize, Alt+W to close, Alt+Space to search).
 

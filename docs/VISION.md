@@ -20,5 +20,5 @@ Smoothness and flexibility. Remove the UI nobody uses, and keep what's left flui
 - Hold Alt to see a cheat sheet. An optional habit coach gives a few gentle tips, then stops.
 
 ## Brand
-- Logo: an impossible isometric C (`brand/cove-logo.svg`). Palette: `#15171C`, `#4A5160`, `#AEB6C2`, accent `#3BA7FF`.
+- Logo: an isometric C built from thick, rounded square beams around a soft blue cube (`brand/cove-logo.png`, rendered by `brand/render_logo.py`). Palette: `#15171C`, `#4A5160`, `#AEB6C2`, accent `#3BA7FF`.
 - UI font: Segoe UI Variable (native). Brand wordmark: Inter.
