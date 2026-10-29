@@ -118,6 +118,8 @@ mod imp {
     }
 }
 
+pub use imp::with_com;
+
 #[cfg(test)]
 mod tests {
     #[test]

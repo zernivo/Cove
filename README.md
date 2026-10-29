@@ -15,7 +15,7 @@
 
 **Cove** gives Windows 11 a calm, Mac-inspired way of working: smooth, flexible and uncluttered. It keeps every Windows feature, hides the clutter, and teaches Mac habits like Alt+W to close and Alt+H to hide an app. Everything it changes can be undone in one click.
 
-> **Status: early preview (v0.1).** Nothing changes until you press **Apply**, and **Back to stock** puts everything back.
+> **Status: early preview (v0.3).** Every feature is off until you switch it on, and **Back to stock** puts everything back.
 
 ---
 
@@ -23,6 +23,8 @@
 - [Download](#download)
 - [What it does today](#what-it-does-today)
 - [Mac shortcuts](#mac-shortcuts)
+- [Cove Search](#cove-search)
+- [Dock, top bar & Control Centre](#dock-top-bar--control-centre)
 - [Safety](#safety)
 - [Roadmap](#roadmap)
 - [Build from source](#build-from-source)
@@ -39,8 +41,12 @@ Requires Windows 11 (x64). No admin rights needed to use Cove's features.
 | Area | What you get |
 |---|---|
 | **Calm** | 7 toggles that hide Task View, the taskbar search box, Widgets, the Copilot button, Start's Recommended section, lock-screen tips, and tips & suggestions. |
-| **Cove Search** | Alt+Space opens a launcher: every app (desktop and Store), recent files, Settings pages, quick actions and a calculator. It learns what you open most. Fully local. |
+| **Cove Search** | Alt+Space opens a launcher: every app (desktop and Store) with its real icon, files deep in your personal folders, Settings pages, quick actions and a calculator. It learns what you open most. Fully local. |
+| **Clipboard history** | A Clipboard tab in Search with your last 50 text copies. Enter pastes, kept in memory only, and password-manager copies are skipped. |
 | **Mac habits** | Five window shortcuts, opt-in, active only while Cove runs. |
+| **Cove Dock** | A floating dock with pinned and running apps, hover magnification, running dots, Recycle Bin, and an optional auto-hiding Windows taskbar. |
+| **Top bar** | A thin bar across the top: the app in front, a Cove menu, Wi-Fi, sound, battery and the clock. Windows make room for it. |
+| **Control Centre** | From the top bar: sound and brightness sliders, mute, dark mode, Wi-Fi name, shortcuts to Bluetooth, Night light and Focus. |
 | **Back to stock** | One click restores every setting Cove changed, exactly as it was. |
 | **Updates** | One click: Cove downloads the update with a progress bar, checks its SHA-256, installs silently (no wizard), reopens and tells you it updated. |
 
@@ -66,10 +72,18 @@ Press **Alt+Space** anywhere.
 | `↑` `↓` | Move |
 | `Enter` | Open (on a sum: copy the answer) |
 | `Ctrl+Enter` | Show a file in its folder |
-| `Tab` | Switch tab: All, Apps, Files, Settings |
+| `Tab` | Switch tab: All, Apps, Files, Settings, Clipboard |
+| `Ctrl+D` | Keep the selected app in the Dock |
 | `Esc` | Clear, then close |
 
 Try `blu` for Bluetooth, `vsc` for Visual Studio Code, or `128*4+7`. Turn it off in **Mac habits** if Alt+Space is taken (e.g. by PowerToys Run).
+
+## Dock, top bar & Control Centre
+Turn them on in Cove → **Dock & top bar**.
+
+- **Dock:** click an app to open or switch to it, and click the app in front to minimise it. Right-click for **Keep in Dock**, **Remove from Dock** and **Close window**. Turning on *Auto-hide the Windows taskbar* uses Windows' own setting and is undone when the dock goes off or Cove quits.
+- **Top bar:** registered as a standard Windows app bar, so maximised windows sit below it. Click the Cove mark for the menu, or the app name to open Cove.
+- **Control Centre:** click the sliders, Wi-Fi or sound icon in the top bar. Dark mode writes the same setting as Windows Settings → Personalization → Colors. The brightness slider shows only on screens Windows can dim (most laptops).
 
 ## Safety
 - **Per-user only:** Cove writes documented settings under your own account (HKCU), never system-wide.
@@ -84,7 +98,7 @@ Calm settings stay applied after you close Cove (like changing them in Settings)
 |---|---|---|
 | v0.1 | Calm preset, Mac shortcuts, restore, installer, updater | ✅ |
 | v0.2 | Cove Search (Alt+Space) | ✅ |
-| v0.3 | Dock + top bar | ⬜ |
+| v0.3 | Dock, top bar, Control Centre | ✅ (folder stacks, multi-monitor next) |
 | v0.4 | App-grouped switcher, App Exposé | ⬜ |
 | v0.5 | Cove Glass theme, wallpaper gallery | ⬜ |
 | v0.6 | Cove Tour (interactive tutorial) | ⬜ |

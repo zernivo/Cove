@@ -3,6 +3,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod clipboard;
+mod controls;
 mod dock;
 mod files;
 mod hotkeys;
@@ -166,8 +167,29 @@ fn topbar_set(enabled: bool, app: AppHandle, state: tauri::State<'_, AppState>) 
 }
 
 #[tauri::command]
-fn topbar_state() -> topbar::TopState {
+async fn topbar_state() -> topbar::TopState {
     topbar::state()
+}
+
+// ---- Control Centre (async: runs off the UI thread) ----
+
+#[tauri::command]
+async fn controls_get() -> controls::Controls {
+    controls::get()
+}
+
+#[tauri::command]
+async fn controls_set(what: String, value: u8) -> Result<(), String> {
+    match what.as_str() {
+        "volume" => controls::set_volume(value),
+        "brightness" => controls::set_brightness(value),
+        "mute" => {
+            controls::toggle_mute();
+            Ok(())
+        }
+        "dark" => controls::set_dark(value != 0),
+        _ => Err("Unknown control.".into()),
+    }
 }
 
 /// Top bar buttons. A fixed list: nothing else can be launched from here.
@@ -188,6 +210,12 @@ fn topbar_open(what: String, app: AppHandle) -> Result<(), String> {
         "notifications" => "ms-actioncenter:",
         "battery" => "ms-settings:batterysaver",
         "network" => "ms-settings:network",
+        "wifi" => "ms-availablenetworks:",
+        "bluetooth" => "ms-settings:bluetooth",
+        "nightlight" => "ms-settings:nightlight",
+        "focus" => "ms-settings:quiethours",
+        "sound" => "ms-settings:sound",
+        "display" => "ms-settings:display",
         "taskmgr" => "taskmgr.exe",
         _ => return Err("Unknown item.".into()),
     };
@@ -627,6 +655,8 @@ fn main() {
             topbar_set,
             topbar_state,
             topbar_open,
+            controls_get,
+            controls_set,
             dock_status,
             dock_set,
             dock_hide_taskbar_set,

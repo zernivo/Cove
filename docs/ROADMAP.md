@@ -34,7 +34,7 @@ Legend: ✅ done · 🔨 in progress · ⬜ planned
 - ⬜ Measure open time on real hardware (target under 100 ms)
 
 ## Phase 3: Dock + top bar 🟡 (v0.3)
-- ✅ Top bar (AppBar API): active app name, Cove menu, quick settings, battery, clock (v0.3.1); own Control Centre panel to come
+- ✅ Top bar (AppBar API): active app name, Cove menu, quick settings, battery, clock (v0.3.1); Control Centre panel: sound/brightness sliders, mute, dark mode, Wi-Fi (v0.3.2)
 - ✅ Dock: pinned + running apps, running dots, gentle magnification, Recycle Bin (v0.3.0); folder stacks to come
 - ✅ Taskbar auto-hide only through its own documented setting, restored when Cove quits (v0.3.0)
 - ⬜ Multi-monitor and per-DPI support

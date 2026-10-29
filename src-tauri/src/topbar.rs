@@ -15,10 +15,13 @@ pub struct Battery {
 pub struct TopState {
     pub app: String,
     pub battery: Option<Battery>,
+    pub volume: Option<u8>,
+    pub muted: bool,
 }
 
 pub fn state() -> TopState {
-    TopState { app: imp::front_app(), battery: imp::battery() }
+    let (volume, muted) = crate::controls::sound();
+    TopState { app: imp::front_app(), battery: imp::battery(), volume, muted }
 }
 
 pub use imp::{refresh_icons, register, unregister};
