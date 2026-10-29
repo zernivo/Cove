@@ -4,6 +4,7 @@
 //!   Alt+W  close window        Alt+M  minimize window
 //!   Alt+H  hide app            Alt+Q  quit app (closes its windows)
 //!   Alt+`  next window of the same app
+//!   Alt+Space  Cove Search (separate switch)
 
 use serde::Serialize;
 
@@ -31,16 +32,36 @@ pub static BINDINGS: &[Binding] = &[
     Binding { id: 5, label: "Alt+`", key: 0xC0, action: Action::CycleAppWindows }, // VK_OEM_3
 ];
 
-#[derive(Debug, Clone, Serialize)]
+pub const SEARCH_ID: i32 = 10;
+pub const SEARCH_LABEL: &str = "Alt+Space";
+
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct HotkeyStatus {
+    /// Mac habit shortcuts active.
     pub running: bool,
+    /// Alt+Space search active.
+    pub search: bool,
     /// Shortcuts another app already owns.
     pub conflicts: Vec<&'static str>,
 }
 
+/// Called (on the hotkey thread) when Alt+Space is pressed.
+static ON_SEARCH: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>> = std::sync::OnceLock::new();
+
+pub fn set_search_handler(f: impl Fn() + Send + Sync + 'static) {
+    let _ = ON_SEARCH.set(Box::new(f));
+}
+
+#[allow(dead_code)]
+fn fire_search() {
+    if let Some(f) = ON_SEARCH.get() {
+        f();
+    }
+}
+
 #[cfg(windows)]
 mod imp {
-    use super::{Action, HotkeyStatus, BINDINGS};
+    use super::{fire_search, Action, HotkeyStatus, BINDINGS, SEARCH_ID, SEARCH_LABEL};
     use std::ffi::c_void;
     use std::sync::{mpsc, Mutex};
     use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, RECT};
@@ -57,7 +78,11 @@ mod imp {
         WM_HOTKEY, WM_QUIT,
     };
 
-    static THREAD: Mutex<Option<(u32, Vec<&'static str>)>> = Mutex::new(None);
+    struct Running {
+        tid: u32,
+        status: HotkeyStatus,
+    }
+    static THREAD: Mutex<Option<Running>> = Mutex::new(None);
 
     /// Never act on the desktop or taskbar (WM_CLOSE on the desktop opens
     /// the shutdown dialog).
@@ -167,65 +192,81 @@ mod imp {
         }
     }
 
-    pub fn start() -> HotkeyStatus {
-        if let Some((_, conflicts)) = THREAD.lock().unwrap().as_ref() {
-            return HotkeyStatus { running: true, conflicts: conflicts.clone() };
+    fn stop_thread() {
+        if let Some(r) = THREAD.lock().unwrap().take() {
+            unsafe { PostThreadMessageW(r.tid, WM_QUIT, 0, 0) };
+        }
+    }
+
+    /// (Re)start the hotkey thread with the chosen groups.
+    pub fn configure(habits: bool, search: bool) -> HotkeyStatus {
+        stop_thread();
+        if !habits && !search {
+            return HotkeyStatus::default();
         }
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
             let null: HWND = std::ptr::null_mut::<c_void>();
             let mut conflicts = Vec::new();
-            for b in BINDINGS {
-                let ok = unsafe { RegisterHotKey(null, b.id, MOD_ALT | MOD_NOREPEAT, b.key) };
-                if ok == 0 {
-                    conflicts.push(b.label);
+            let mut ids = Vec::new();
+            if habits {
+                for b in BINDINGS {
+                    if unsafe { RegisterHotKey(null, b.id, MOD_ALT | MOD_NOREPEAT, b.key) } == 0 {
+                        conflicts.push(b.label);
+                    } else {
+                        ids.push(b.id);
+                    }
+                }
+            }
+            if search {
+                // VK_SPACE = 0x20
+                if unsafe { RegisterHotKey(null, SEARCH_ID, MOD_ALT | MOD_NOREPEAT, 0x20) } == 0 {
+                    conflicts.push(SEARCH_LABEL);
+                } else {
+                    ids.push(SEARCH_ID);
                 }
             }
             let _ = tx.send((unsafe { GetCurrentThreadId() }, conflicts));
             let mut msg: MSG = unsafe { std::mem::zeroed() };
             while unsafe { GetMessageW(&mut msg, null, 0, 0) } > 0 {
                 if msg.message == WM_HOTKEY {
-                    if let Some(b) = BINDINGS.iter().find(|b| b.id == msg.wParam as i32) {
+                    let id = msg.wParam as i32;
+                    if id == SEARCH_ID {
+                        fire_search();
+                    } else if let Some(b) = BINDINGS.iter().find(|b| b.id == id) {
                         run(b.action);
                     }
                 }
             }
-            for b in BINDINGS {
-                unsafe { UnregisterHotKey(null, b.id) };
+            for id in ids {
+                unsafe { UnregisterHotKey(null, id) };
             }
         });
         let (tid, conflicts) = rx.recv().unwrap_or((0, Vec::new()));
-        *THREAD.lock().unwrap() = Some((tid, conflicts.clone()));
-        HotkeyStatus { running: true, conflicts }
+        let status = HotkeyStatus { running: habits, search, conflicts };
+        *THREAD.lock().unwrap() = Some(Running { tid, status: status.clone() });
+        status
     }
 
-    pub fn stop() -> HotkeyStatus {
-        if let Some((tid, _)) = THREAD.lock().unwrap().take() {
-            unsafe { PostThreadMessageW(tid, WM_QUIT, 0, 0) };
-        }
-        HotkeyStatus { running: false, conflicts: Vec::new() }
+    pub fn stop() {
+        stop_thread();
     }
 
     pub fn status() -> HotkeyStatus {
-        match THREAD.lock().unwrap().as_ref() {
-            Some((_, c)) => HotkeyStatus { running: true, conflicts: c.clone() },
-            None => HotkeyStatus { running: false, conflicts: Vec::new() },
-        }
+        THREAD.lock().unwrap().as_ref().map(|r| r.status.clone()).unwrap_or_default()
     }
 }
 
 #[cfg(not(windows))]
 mod imp {
     use super::HotkeyStatus;
-    pub fn start() -> HotkeyStatus {
-        HotkeyStatus { running: false, conflicts: Vec::new() }
+    pub fn configure(_habits: bool, _search: bool) -> HotkeyStatus {
+        HotkeyStatus::default()
     }
-    pub fn stop() -> HotkeyStatus {
-        start()
-    }
+    pub fn stop() {}
     pub fn status() -> HotkeyStatus {
-        start()
+        HotkeyStatus::default()
     }
 }
 
-pub use imp::{start, status, stop};
+pub use imp::{configure, status, stop};

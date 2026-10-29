@@ -4,11 +4,19 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     /// Mac-style shortcuts on.
     pub hotkeys: bool,
+    /// Alt+Space opens Cove Search.
+    pub search: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Settings { hotkeys: false, search: true }
+    }
 }
 
 pub struct Store {

@@ -39,6 +39,7 @@ Requires Windows 11 (x64). No admin rights needed to use Cove's features.
 | Area | What you get |
 |---|---|
 | **Calm** | 7 toggles that hide Task View, the taskbar search box, Widgets, the Copilot button, Start's Recommended section, lock-screen tips, and tips & suggestions. |
+| **Cove Search** | Alt+Space opens a launcher: every app (desktop and Store), recent files, Settings pages, quick actions and a calculator. It learns what you open most. Fully local. |
 | **Mac habits** | Five window shortcuts, opt-in, active only while Cove runs. |
 | **Back to stock** | One click restores every setting Cove changed, exactly as it was. |
 | **Updates** | Cove checks for new versions and updates itself in one click (installer verified by SHA-256). |
@@ -56,6 +57,20 @@ Alt sits where Cmd does on a Mac keyboard.
 
 Cove remembers whether shortcuts are on. Closing the window keeps Cove in the system tray so shortcuts keep working; quit from the tray icon. Cove never acts on the desktop or taskbar, and marks any shortcut another app already uses as **In use**.
 
+## Cove Search
+Press **Alt+Space** anywhere.
+
+| Key | Does |
+|---|---|
+| Type | Instant results as you type (apps first, then files, settings) |
+| `↑` `↓` | Move |
+| `Enter` | Open (on a sum: copy the answer) |
+| `Ctrl+Enter` | Show a file in its folder |
+| `Tab` | Switch tab: All, Apps, Files, Settings |
+| `Esc` | Clear, then close |
+
+Try `blu` for Bluetooth, `vsc` for Visual Studio Code, or `128*4+7`. Turn it off in **Mac habits** if Alt+Space is taken (e.g. by PowerToys Run).
+
 ## Safety
 - **Per-user only:** Cove writes documented settings under your own account (HKCU), never system-wide.
 - **Journaled:** every change is saved with its previous value, so restore is exact.
@@ -67,8 +82,8 @@ Calm settings stay applied after you close Cove (like changing them in Settings)
 ## Roadmap
 | Version | Milestone | Status |
 |---|---|---|
-| v0.1 | Calm preset, Mac shortcuts, restore, installer | ✅ |
-| v0.2 | Cove Search (Alt+Space) | ⬜ |
+| v0.1 | Calm preset, Mac shortcuts, restore, installer, updater | ✅ |
+| v0.2 | Cove Search (Alt+Space) | ✅ |
 | v0.3 | Dock + top bar | ⬜ |
 | v0.4 | App-grouped switcher, App Exposé | ⬜ |
 | v0.5 | Cove Glass theme, wallpaper gallery | ⬜ |

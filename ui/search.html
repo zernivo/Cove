@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Cove Search</title>
+    <link rel="stylesheet" href="./src/tokens.css" />
+    <link rel="stylesheet" href="./src/search.css" />
+  </head>
+  <body>
+    <div class="panel">
+      <div class="bar">
+        <svg class="glass" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5 20 20" /></svg>
+        <input id="q" type="text" placeholder="Search apps, files, settings…" autocomplete="off" spellcheck="false" autofocus />
+        <kbd class="hint">esc</kbd>
+      </div>
+      <nav class="tabs" id="tabs">
+        <button data-tab="all" class="on">All</button>
+        <button data-tab="app">Apps</button>
+        <button data-tab="file">Files</button>
+        <button data-tab="setting">Settings</button>
+      </nav>
+      <ul class="results" id="results"></ul>
+      <footer class="foot">
+        <span><kbd>↑↓</kbd> move</span>
+        <span><kbd>↵</kbd> open</span>
+        <span><kbd>ctrl ↵</kbd> show in folder</span>
+        <span><kbd>tab</kbd> switch tab</span>
+      </footer>
+    </div>
+    <script type="module" src="./src/search.ts"></script>
+  </body>
+</html>

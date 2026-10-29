@@ -5,6 +5,7 @@
 mod hotkeys;
 mod journal;
 mod registry;
+mod search;
 mod settings;
 mod shell;
 mod tweaks;
@@ -15,7 +16,7 @@ use std::sync::Mutex;
 use serde::Serialize;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, RunEvent, WindowEvent};
 
 use tweaks::{calm, TweakInfo};
 
@@ -106,16 +107,81 @@ fn open_settings(uri: String) -> Result<(), String> {
     shell::open_settings(&uri).map_err(|e| e.to_string())
 }
 
+/// Save a switch and re-register shortcuts to match.
+fn reconfigure(state: &AppState, f: impl FnOnce(&mut settings::Settings)) -> hotkeys::HotkeyStatus {
+    let (habits, search) = match state.settings.lock() {
+        Ok(mut s) => {
+            f(&mut s.data);
+            let _ = s.save();
+            (s.data.hotkeys, s.data.search)
+        }
+        Err(_) => (false, true),
+    };
+    hotkeys::configure(habits, search)
+}
+
 #[tauri::command]
 fn hotkeys_set(enabled: bool, state: tauri::State<'_, AppState>) -> hotkeys::HotkeyStatus {
-    if let Ok(mut s) = state.settings.lock() {
-        s.data.hotkeys = enabled;
-        let _ = s.save();
+    reconfigure(&state, |s| s.hotkeys = enabled)
+}
+
+#[tauri::command]
+fn search_set(enabled: bool, state: tauri::State<'_, AppState>) -> hotkeys::HotkeyStatus {
+    reconfigure(&state, |s| s.search = enabled)
+}
+
+// ---- Cove Search ----
+
+/// Show the search panel on the monitor under the cursor, a fifth of the
+/// way down (where the eye already is), or hide it if it's open.
+fn toggle_search(app: &AppHandle) {
+    let Some(w) = app.get_webview_window("search") else { return };
+    if w.is_visible().unwrap_or(false) {
+        let _ = w.hide();
+        return;
     }
-    if enabled {
-        hotkeys::start()
-    } else {
-        hotkeys::stop()
+    let monitor = app
+        .cursor_position()
+        .ok()
+        .and_then(|p| app.monitor_from_point(p.x, p.y).ok().flatten())
+        .or_else(|| w.current_monitor().ok().flatten());
+    if let (Some(m), Ok(size)) = (monitor, w.outer_size()) {
+        let (mp, ms) = (m.position(), m.size());
+        let x = mp.x + (ms.width as i32 - size.width as i32) / 2;
+        let y = mp.y + (ms.height as f64 * 0.2) as i32;
+        let _ = w.set_position(PhysicalPosition::new(x, y));
+    }
+    let _ = w.show();
+    let _ = w.set_focus();
+    let _ = w.emit("search-open", ());
+    search::warm();
+}
+
+#[tauri::command]
+fn search_index() -> Vec<search::Item> {
+    search::index()
+}
+
+#[tauri::command]
+fn search_open(kind: String, target: String, app: AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("search") {
+        let _ = w.hide();
+    }
+    search::open(&kind, &target)
+}
+
+#[tauri::command]
+fn search_reveal(target: String, app: AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("search") {
+        let _ = w.hide();
+    }
+    search::reveal(&target)
+}
+
+#[tauri::command]
+fn search_hide(app: AppHandle) {
+    if let Some(w) = app.get_webview_window("search") {
+        let _ = w.hide();
     }
 }
 
@@ -151,9 +217,14 @@ fn main() {
             let dir = app.path().app_data_dir()?;
             let journal = journal::Journal::load(dir.join("journal.json"))?;
             let store = settings::Store::load(dir.join("settings.json"));
-            if store.data.hotkeys {
-                hotkeys::start();
-            }
+            let handle = app.handle().clone();
+            hotkeys::set_search_handler(move || {
+                let h = handle.clone();
+                // Window work belongs on the main thread.
+                let _ = handle.run_on_main_thread(move || toggle_search(&h));
+            });
+            hotkeys::configure(store.data.hotkeys, store.data.search);
+            search::warm();
             app.manage(AppState {
                 journal: Mutex::new(journal),
                 settings: Mutex::new(store),
@@ -180,14 +251,38 @@ fn main() {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window_vibrancy::apply_mica(&window, None);
             }
+            // Search panel: acrylic blur of the desktop behind it.
+            #[cfg(target_os = "windows")]
+            if let Some(window) = app.get_webview_window("search") {
+                let _ = window_vibrancy::apply_acrylic(&window, None);
+                if let Ok(hwnd) = window.hwnd() {
+                    use windows_sys::Win32::Graphics::Dwm::{
+                        DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE,
+                    };
+                    let round: u32 = 2; // DWMWCP_ROUND
+                    unsafe {
+                        DwmSetWindowAttribute(
+                            hwnd.0 as _,
+                            DWMWA_WINDOW_CORNER_PREFERENCE as _,
+                            &round as *const u32 as *const _,
+                            4,
+                        );
+                    }
+                }
+            }
             Ok(())
         })
-        .on_window_event(|window, event| {
+        .on_window_event(|window, event| match event {
             // Closing the window hides it to the tray instead of quitting.
-            if let WindowEvent::CloseRequested { api, .. } = event {
+            WindowEvent::CloseRequested { api, .. } => {
                 let _ = window.hide();
                 api.prevent_close();
             }
+            // Search disappears as soon as you click elsewhere.
+            WindowEvent::Focused(false) if window.label() == "search" => {
+                let _ = window.hide();
+            }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             cove_status,
@@ -198,7 +293,12 @@ fn main() {
             hotkeys_set,
             hotkeys_status,
             update_check,
-            update_install
+            update_install,
+            search_set,
+            search_index,
+            search_open,
+            search_reveal,
+            search_hide
         ])
         .build(tauri::generate_context!())
         .expect("error while building Cove");

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Cove",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "identifier": "app.cove.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -21,6 +21,22 @@
         "resizable": true,
         "transparent": true,
         "decorations": true
+      },
+      {
+        "label": "search",
+        "title": "Cove Search",
+        "url": "search.html",
+        "width": 680,
+        "height": 440,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "resizable": false,
+        "center": true,
+        "shadow": true,
+        "focus": false
       }
     ],
     "security": {
@@ -29,7 +45,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "msi"],
+    "targets": [
+      "nsis",
+      "msi"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

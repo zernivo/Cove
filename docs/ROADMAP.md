@@ -18,14 +18,19 @@ Legend: ✅ done · 🔨 in progress · ⬜ planned
 - ✅ Hotkeys: Alt+W close, Alt+M minimize, Alt+H hide app, Alt+Q quit app, Alt+` cycle app windows (opt-in, conflict detection)
 - ✅ Settings window: Calm / Mac habits / Back to stock
 - ✅ Release pipeline: Windows installer built on every version tag
+- ✅ Remembered settings, close to tray, single instance, one-click updater, new app icon
 - ⬜ Test on real Windows 11 24H2/25H2/26H2 and fix setting names that differ
 - ⬜ Tray icon, launch at sign-in (optional), remember hotkey on/off
 
-## Phase 2: Cove Search ⬜ (v0.2)
-- ⬜ Alt+Space launcher, visible in under 100 ms
-- ⬜ Apps (Start menu index), files (Windows Search index, no own crawler), settings pages, calculator
-- ⬜ Tabs: Apps / Files / Actions / Clipboard; quick keys (Tab to switch, Enter to open, Ctrl+Enter to reveal)
-- ⬜ Fully local, no web results, no telemetry
+## Phase 2: Cove Search 🔨 (v0.2)
+- ✅ Alt+Space launcher (pre-created hidden window, opens on the monitor under the cursor)
+- ✅ Apps via Get-StartApps (desktop + Store), recent files, 27 Settings pages, quick actions, calculator
+- ✅ Tabs: All / Apps / Files / Settings; Tab to switch, Enter to open, Ctrl+Enter to reveal
+- ✅ Learns what you open most; fully local, no web results, no telemetry
+- ⬜ Real app icons in results
+- ⬜ Full file search through the Windows Search index
+- ⬜ Clipboard history tab
+- ⬜ Measure open time on real hardware (target under 100 ms)
 
 ## Phase 3: Dock + top bar ⬜ (v0.3)
 - ⬜ Top bar (AppBar API): active app name, common actions, Wi-Fi/volume/battery, clock, Control Centre-style panel

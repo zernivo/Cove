@@ -4,7 +4,7 @@ interface Status { version: string; journal_entries: number; windows: boolean }
 interface Tweak { id: string; title: string; description: string; settings_uri: string; applied: boolean | null }
 interface ApplyReport { applied: string[]; failed: [string, string][] }
 interface RestoreReport { restored: number; failed: [string, string][] }
-interface HotkeyStatus { running: boolean; conflicts: string[] }
+interface HotkeyStatus { running: boolean; search: boolean; conflicts: string[] }
 interface UpdateInfo { current: string; latest: string; available: boolean; notes: string; page: string }
 
 const inTauri = "__TAURI_INTERNALS__" in window;
@@ -18,8 +18,9 @@ const mock: Record<string, (a?: any) => unknown> = {
   ],
   calm_apply: (a) => ({ applied: a.ids, failed: [] }),
   restore_all: () => ({ restored: 0, failed: [] }),
-  hotkeys_set: (a) => ({ running: a.enabled, conflicts: [] }),
-  hotkeys_status: () => ({ running: false, conflicts: [] }),
+  hotkeys_set: (a) => ({ running: a.enabled, search: true, conflicts: [] }),
+  search_set: (a) => ({ running: false, search: a.enabled, conflicts: [] }),
+  hotkeys_status: () => ({ running: false, search: true, conflicts: [] }),
   open_settings: () => null,
   update_check: () => ({ current: "0.1.2", latest: "0.1.2", available: false, notes: "", page: "" }),
   update_install: () => null,
@@ -105,14 +106,24 @@ const SHORTCUTS: [string, string][] = [
 ];
 
 function renderHabits(s: HotkeyStatus): void {
+  ($("search-toggle") as HTMLInputElement).checked = s.search;
+  $("search-note").textContent = s.search
+    ? s.conflicts.includes("Alt+Space") ? "Alt+Space is taken by another app (PowerToys Run?)" : "On · press Alt+Space anywhere"
+    : "Off";
   ($("hk-toggle") as HTMLInputElement).checked = s.running;
   $("hk-note").textContent = s.running
     ? s.conflicts.length ? `On · taken by another app: ${s.conflicts.join(", ")}` : "On"
     : "Off · Cove remembers this, and keeps running in the tray when you close the window";
+  $("hk-list").classList.toggle("dim", !s.running);
   $("hk-list").innerHTML = SHORTCUTS.map(
     ([k, d]) => `<div class="row item"><kbd>${k}</kbd><div class="grow">${d}</div>${s.conflicts.includes(k) ? '<span class="pill warn">In use</span>' : ""}</div>`,
   ).join("");
 }
+
+$("search-toggle").addEventListener("change", async (e) => {
+  const enabled = (e.target as HTMLInputElement).checked;
+  renderHabits(await invoke<HotkeyStatus>("search_set", { enabled }));
+});
 
 $("hk-toggle").addEventListener("change", async (e) => {
   const enabled = (e.target as HTMLInputElement).checked;

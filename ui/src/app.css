@@ -144,3 +144,5 @@ kbd {
   padding: var(--space-4); margin: 0;
 }
 .btn:disabled { opacity: 0.6; cursor: default; }
+
+.list.dim { opacity: 0.55; }
