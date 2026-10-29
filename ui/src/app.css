@@ -1,0 +1,53 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  font-family: var(--font-ui);
+  color: var(--text);
+  background: transparent; /* Mica shows through */
+}
+.shell {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-window);
+  background: var(--surface-base);
+  overflow: hidden;
+}
+.glass {
+  background: var(--glass-tint);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border-bottom: 1px solid var(--glass-stroke);
+  box-shadow: inset 0 1px 0 var(--glass-rim);
+}
+.toolbar {
+  -webkit-app-region: drag;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+}
+.brand { font-family: var(--font-brand); font-weight: 700; font-size: 18px; }
+.tagline { color: var(--text-muted); font-size: 13px; }
+.content { padding: var(--space-8); overflow: auto; }
+h1 { font-size: 28px; font-weight: 600; margin: 0 0 var(--space-2); }
+.muted { color: var(--text-muted); }
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-6) 0;
+}
+.card {
+  background: var(--surface-content);
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
+  box-shadow: var(--elev-1);
+  transition: transform var(--motion-fast) var(--ease-out), box-shadow var(--motion-fast) var(--ease-out);
+}
+.card:hover { transform: translateY(-2px); box-shadow: var(--elev-2); }
+.card h2 { font-size: 15px; margin: 0 0 var(--space-1); }
+.card p { margin: 0; font-size: 13px; color: var(--text-muted); }
+.card h2::before {
+  content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 8px;
+  border-radius: 2px; background: var(--accent); vertical-align: middle;
+}
