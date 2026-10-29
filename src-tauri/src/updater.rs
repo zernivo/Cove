@@ -75,7 +75,7 @@ pub fn check() -> Result<UpdateInfo, String> {
 }
 
 /// Download the latest setup.exe, verify it, and return its path.
-pub fn download(progress: impl Fn(u64, u64)) -> Result<PathBuf, String> {
+pub fn download(mut progress: impl FnMut(u64, u64)) -> Result<PathBuf, String> {
     let r = latest_release()?;
     let asset = r
         .assets
