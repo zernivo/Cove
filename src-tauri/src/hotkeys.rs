@@ -43,13 +43,15 @@ mod imp {
     use super::{Action, HotkeyStatus, BINDINGS};
     use std::ffi::c_void;
     use std::sync::{mpsc, Mutex};
-    use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM};
+    use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, RECT};
+    use windows_sys::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
     use windows_sys::Win32::System::Threading::GetCurrentThreadId;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
         RegisterHotKey, UnregisterHotKey, MOD_ALT, MOD_NOREPEAT,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         EnumWindows, GetClassNameW, GetForegroundWindow, GetMessageW, GetWindow,
+        GetWindowLongW, GetWindowRect, GetWindowTextLengthW, GWL_EXSTYLE, WS_EX_TOOLWINDOW,
         GetWindowThreadProcessId, IsIconic, IsWindowVisible, PostMessageW, PostThreadMessageW,
         SetForegroundWindow, ShowWindow, GW_OWNER, MSG, SW_MINIMIZE, SW_RESTORE, WM_CLOSE,
         WM_HOTKEY, WM_QUIT,
@@ -80,13 +82,40 @@ mod imp {
         found: Vec<HWND>,
     }
 
+    /// A "real" window, the kind Alt+Tab shows: visible, not cloaked
+    /// (hidden by DWM, e.g. on another virtual desktop), not a tool
+    /// window, has a title and a size. Apps like Chrome own many invisible
+    /// helper windows that would otherwise be picked.
+    unsafe fn is_real_window(hwnd: HWND) -> bool {
+        if IsWindowVisible(hwnd) == 0 || !GetWindow(hwnd, GW_OWNER).is_null() {
+            return false;
+        }
+        if (GetWindowLongW(hwnd, GWL_EXSTYLE) as u32) & WS_EX_TOOLWINDOW != 0 {
+            return false;
+        }
+        let mut cloaked: u32 = 0;
+        let hr = DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_CLOAKED as _,
+            &mut cloaked as *mut u32 as *mut c_void,
+            std::mem::size_of::<u32>() as u32,
+        );
+        if hr == 0 && cloaked != 0 {
+            return false;
+        }
+        if GetWindowTextLengthW(hwnd) == 0 {
+            return false;
+        }
+        let mut r: RECT = std::mem::zeroed();
+        if GetWindowRect(hwnd, &mut r) != 0 && (r.right - r.left <= 1 || r.bottom - r.top <= 1) {
+            return IsIconic(hwnd) != 0; // minimized windows still count
+        }
+        true
+    }
+
     unsafe extern "system" fn enum_cb(hwnd: HWND, lparam: LPARAM) -> BOOL {
         let c = &mut *(lparam as *mut Collect);
-        if IsWindowVisible(hwnd) != 0
-            && GetWindow(hwnd, GW_OWNER).is_null()
-            && pid_of(hwnd) == c.pid
-            && !is_shell(hwnd)
-        {
+        if pid_of(hwnd) == c.pid && is_real_window(hwnd) && !is_shell(hwnd) {
             c.found.push(hwnd);
         }
         1

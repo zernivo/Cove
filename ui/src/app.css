@@ -133,3 +133,6 @@ kbd {
   background: var(--glass-tint); backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--glass-stroke); box-shadow: var(--elev-2); font-size: 13px;
 }
+
+.btn.link { height: 26px; padding: 0 10px; font-size: 12px; background: transparent; color: var(--accent); }
+.btn.link:hover { background: rgba(59, 167, 255, 0.12); }

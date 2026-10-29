@@ -5,19 +5,31 @@
 mod hotkeys;
 mod journal;
 mod registry;
+mod settings;
 mod shell;
 mod tweaks;
 
 use std::sync::Mutex;
 
 use serde::Serialize;
-use tauri::{Manager, RunEvent};
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::TrayIconBuilder;
+use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
 
 use tweaks::{calm, TweakInfo};
 
 /// Shared app state. Every system change goes through the journal.
 struct AppState {
     journal: Mutex<journal::Journal>,
+    settings: Mutex<settings::Store>,
+}
+
+fn show_main(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+    }
 }
 
 #[derive(Serialize)]
@@ -94,7 +106,11 @@ fn open_settings(uri: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn hotkeys_set(enabled: bool) -> hotkeys::HotkeyStatus {
+fn hotkeys_set(enabled: bool, state: tauri::State<'_, AppState>) -> hotkeys::HotkeyStatus {
+    if let Ok(mut s) = state.settings.lock() {
+        s.data.hotkeys = enabled;
+        let _ = s.save();
+    }
     if enabled {
         hotkeys::start()
     } else {
@@ -109,12 +125,35 @@ fn hotkeys_status() -> hotkeys::HotkeyStatus {
 
 fn main() {
     let app = tauri::Builder::default()
+        // Opening Cove again just brings the running copy forward.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             let journal = journal::Journal::load(dir.join("journal.json"))?;
+            let store = settings::Store::load(dir.join("settings.json"));
+            if store.data.hotkeys {
+                hotkeys::start();
+            }
             app.manage(AppState {
                 journal: Mutex::new(journal),
+                settings: Mutex::new(store),
             });
+
+            // Tray: Cove keeps running (and the shortcuts keep working)
+            // after the window is closed. Quit from here.
+            let open = MenuItem::with_id(app, "open", "Open Cove", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Quit Cove", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&open, &quit])?;
+            let mut tray = TrayIconBuilder::with_id("cove").tooltip("Cove").menu(&menu);
+            if let Some(icon) = app.default_window_icon() {
+                tray = tray.icon(icon.clone());
+            }
+            tray.on_menu_event(|app, event| match event.id.as_ref() {
+                "open" => show_main(app),
+                "quit" => app.exit(0),
+                _ => {}
+            })
+            .build(app)?;
 
             // Mica: Windows' own cheap backdrop for the main window.
             #[cfg(target_os = "windows")]
@@ -122,6 +161,13 @@ fn main() {
                 let _ = window_vibrancy::apply_mica(&window, None);
             }
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Closing the window hides it to the tray instead of quitting.
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                let _ = window.hide();
+                api.prevent_close();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             cove_status,

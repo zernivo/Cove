@@ -66,9 +66,14 @@ async function renderCalm(): Promise<void> {
     row.innerHTML = `
       <input type="checkbox" value="${t.id}" ${t.applied ? "checked disabled" : ""} />
       <div class="grow"><h2></h2><p class="muted small"></p></div>
-      <span class="pill ${t.applied ? "on" : ""}">${t.applied ? "On" : t.applied === null ? "—" : "Off"}</span>`;
+      <span class="pill ${t.applied ? "on" : ""}">${t.applied ? "On" : t.applied === null ? "—" : "Off"}</span>
+      ${t.applied || !t.settings_uri ? "" : `<button class="btn link" data-uri="${t.settings_uri}" title="Change it in Windows Settings">Settings ›</button>`}`;
     row.querySelector("h2")!.textContent = t.title;
     row.querySelector("p")!.textContent = t.description;
+    row.querySelector<HTMLButtonElement>("button.link")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      invoke("open_settings", { uri: t.settings_uri });
+    });
     list.appendChild(row);
   }
 }
@@ -81,7 +86,9 @@ $("calm-apply").addEventListener("click", async () => {
   const ids = [...document.querySelectorAll<HTMLInputElement>("#calm-list input:checked:not(:disabled)")].map((i) => i.value);
   if (ids.length === 0) return toast("Pick something to tidy first.");
   const r = await invoke<ApplyReport>("calm_apply", { ids });
-  toast(r.failed.length ? `${r.applied.length} applied, ${r.failed.length} need Settings` : `${r.applied.length} applied. Restore anytime.`);
+  toast(r.failed.length
+    ? `${r.applied.length} applied. Windows blocked ${r.failed.length}: use its Settings button.`
+    : `${r.applied.length} applied. Restore anytime.`);
   await Promise.all([renderCalm(), refreshStatus()]);
 });
 
@@ -98,7 +105,7 @@ function renderHabits(s: HotkeyStatus): void {
   ($("hk-toggle") as HTMLInputElement).checked = s.running;
   $("hk-note").textContent = s.running
     ? s.conflicts.length ? `On · taken by another app: ${s.conflicts.join(", ")}` : "On"
-    : "Off";
+    : "Off · Cove remembers this, and keeps running in the tray when you close the window";
   $("hk-list").innerHTML = SHORTCUTS.map(
     ([k, d]) => `<div class="row item"><kbd>${k}</kbd><div class="grow">${d}</div>${s.conflicts.includes(k) ? '<span class="pill warn">In use</span>' : ""}</div>`,
   ).join("");

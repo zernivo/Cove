@@ -53,7 +53,7 @@ Alt sits where Cmd does on a Mac keyboard.
 | `Alt+Q` | Cmd+Q | Quit the app (closes each window politely, so you can still save) |
 | ``Alt+` `` | Cmd+` | Jump between windows of the same app |
 
-Cove never acts on the desktop or taskbar, and marks any shortcut another app already uses as **In use**.
+Cove remembers whether shortcuts are on. Closing the window keeps Cove in the system tray so shortcuts keep working; quit from the tray icon. Cove never acts on the desktop or taskbar, and marks any shortcut another app already uses as **In use**.
 
 ## Safety
 - **Per-user only:** Cove writes documented settings under your own account (HKCU), never system-wide.
