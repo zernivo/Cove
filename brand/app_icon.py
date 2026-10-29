@@ -33,11 +33,24 @@ mask = down(squircle(OFF, BODY))
 y = np.mgrid[0:S, 0:S][0].astype(np.float32)
 t = np.clip((y - OFF) / BODY, 0, 1)[..., None]
 
-if mode == "dark":
-    top, bot = np.array([44, 50, 62]), np.array([18, 21, 27])
+# Premium palettes: diagonal gradient (top-left -> bottom-right) plus a
+# soft glow behind the mark so its darkest faces separate from the tile.
+PALETTES = {
+    "dark":     ([44, 50, 62], [18, 21, 27], None),
+    "light":    ([250, 252, 255], [214, 225, 238], None),
+    "ocean":    ([38, 112, 196], [10, 28, 74], [120, 190, 255]),
+    "aurora":   ([64, 196, 214], [24, 52, 130], [190, 240, 255]),
+    "indigo":   ([110, 92, 230], [26, 22, 78], [170, 160, 255]),
+    "steel":    ([150, 170, 198], [52, 64, 88], [235, 242, 255]),
+}
+_top, _bot, GLOW = PALETTES[mode]
+top, bot = np.array(_top, np.float32), np.array(_bot, np.float32)
+if mode in ("dark", "light"):
+    bg = top * (1 - t) + bot * t
 else:
-    top, bot = np.array([250, 252, 255]), np.array([214, 225, 238])
-bg = top * (1 - t) + bot * t
+    yy, xx = np.mgrid[0:S, 0:S].astype(np.float32)
+    td = np.clip(((xx - OFF) + (yy - OFF)) / (2 * BODY), 0, 1)[..., None]
+    bg = top * (1 - td) + bot * td
 
 canvas = np.zeros((S, S, 4), np.float32)
 
@@ -55,11 +68,15 @@ def over(dst, rgb, a):
 
 # 2. opaque tile
 over(canvas, bg, mask)
+if GLOW is not None:
+    yy, xx = np.mgrid[0:S, 0:S].astype(np.float32)
+    r = np.hypot(xx - S / 2, yy - S * 0.49) / (BODY * 0.5)
+    over(canvas, np.array(GLOW, np.float32), mask * np.exp(-(r ** 2) * 2.2) * 0.38)
 
 # 3. soft top sheen (light coming from above)
 ys, xs = np.mgrid[0:S, 0:S].astype(np.float32)
 sheen = np.exp(-(((xs - S * 0.42) / (BODY * 0.55)) ** 2 + ((ys - OFF) / (BODY * 0.35)) ** 2))
-over(canvas, np.full(3, 255.0), mask * sheen * (0.18 if mode == "light" else 0.10))
+over(canvas, np.full(3, 255.0), mask * sheen * (0.18 if mode != "dark" else 0.10))
 
 # 4. specular rim: bright top-left edge, faint bottom-right edge
 inner = ndimage.distance_transform_edt(mask > 0.5)

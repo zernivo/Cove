@@ -88,6 +88,7 @@ Calm settings stay applied after you close Cove (like changing them in Settings)
 | v0.4 | App-grouped switcher, App Exposé | ⬜ |
 | v0.5 | Cove Glass theme, wallpaper gallery | ⬜ |
 | v0.6 | Cove Tour (interactive tutorial) | ⬜ |
+| v0.7 | UI polish pass across every screen | ⬜ |
 | 1.0 | Safe mode, code signing, auto-update, performance gates | ⬜ |
 
 Details: [docs/ROADMAP.md](docs/ROADMAP.md)

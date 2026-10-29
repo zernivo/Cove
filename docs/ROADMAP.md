@@ -53,7 +53,14 @@ Legend: ✅ done · 🔨 in progress · ⬜ planned
 - ⬜ Interactive first-run tutorial: try each shortcut live, pick a preset
 - ⬜ Replayable anytime from settings
 
-## Phase 7: Beta → 1.0 ⬜
+## Phase 7: UI polish ⬜ (v0.7)
+- ⬜ One pass over every screen: spacing, type scale, colour, contrast, empty states
+- ⬜ Premium window backgrounds (subtle gradient that sets off the logo), light and dark
+- ⬜ Motion: page transitions, toggles, search pop-in, all at 60 fps and respecting reduced motion
+- ⬜ Real app icons in Search, refined tray menu, onboarding visuals
+- ⬜ Final app icon and installer artwork; consistency check across DPI and multiple monitors
+
+## Phase 8: Beta → 1.0 ⬜
 - ⬜ Safe mode (hold a key at start to skip every Cove change)
 - ⬜ Code signing (e.g. SignPath Foundation for open source) so SmartScreen stops warning
 - ⬜ Auto-update (Tauri updater, signed)
