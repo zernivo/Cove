@@ -41,6 +41,7 @@ Requires Windows 11 (x64). No admin rights needed to use Cove's features.
 | **Calm** | 7 toggles that hide Task View, the taskbar search box, Widgets, the Copilot button, Start's Recommended section, lock-screen tips, and tips & suggestions. |
 | **Mac habits** | Five window shortcuts, opt-in, active only while Cove runs. |
 | **Back to stock** | One click restores every setting Cove changed, exactly as it was. |
+| **Updates** | Cove checks for new versions and updates itself in one click (installer verified by SHA-256). |
 
 ## Mac shortcuts
 Alt sits where Cmd does on a Mac keyboard.

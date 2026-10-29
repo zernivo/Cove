@@ -8,6 +8,7 @@ mod registry;
 mod settings;
 mod shell;
 mod tweaks;
+mod updater;
 
 use std::sync::Mutex;
 
@@ -123,6 +124,25 @@ fn hotkeys_status() -> hotkeys::HotkeyStatus {
     hotkeys::status()
 }
 
+#[tauri::command]
+async fn update_check() -> Result<updater::UpdateInfo, String> {
+    tauri::async_runtime::spawn_blocking(updater::check)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Download, verify, start the installer, then quit so it can replace Cove.
+#[tauri::command]
+async fn update_install(app: AppHandle) -> Result<(), String> {
+    let path = tauri::async_runtime::spawn_blocking(updater::download)
+        .await
+        .map_err(|e| e.to_string())??;
+    updater::launch(&path)?;
+    hotkeys::stop();
+    app.exit(0);
+    Ok(())
+}
+
 fn main() {
     let app = tauri::Builder::default()
         // Opening Cove again just brings the running copy forward.
@@ -176,7 +196,9 @@ fn main() {
             restore_all,
             open_settings,
             hotkeys_set,
-            hotkeys_status
+            hotkeys_status,
+            update_check,
+            update_install
         ])
         .build(tauri::generate_context!())
         .expect("error while building Cove");

@@ -15,6 +15,7 @@
           <a href="#calm" class="nav-item active" data-view="calm">Calm</a>
           <a href="#habits" class="nav-item" data-view="habits">Mac habits</a>
           <a href="#restore" class="nav-item" data-view="restore">Restore</a>
+          <a href="#updates" class="nav-item" data-view="updates">Updates <span class="dot hidden" id="update-dot"></span></a>
         </nav>
         <p class="sidebar-foot" id="status">…</p>
       </aside>
@@ -59,6 +60,21 @@
             </div>
             <button class="btn danger" id="restore-btn">Restore everything</button>
           </div>
+        </section>
+        <section class="view hidden" id="view-updates">
+          <header class="view-head">
+            <h1>Updates</h1>
+            <p class="muted">Cove checks GitHub for new versions. Updating keeps your settings and recorded changes.</p>
+          </header>
+          <div class="row card">
+            <div class="grow">
+              <h2 id="up-title">Cove</h2>
+              <p class="muted small" id="up-note">Checking…</p>
+            </div>
+            <button class="btn ghost" id="up-check">Check now</button>
+            <button class="btn primary hidden" id="up-install">Update</button>
+          </div>
+          <pre class="notes hidden" id="up-notes"></pre>
         </section>
       </main>
     </div>

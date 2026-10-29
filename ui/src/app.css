@@ -136,3 +136,11 @@ kbd {
 
 .btn.link { height: 26px; padding: 0 10px; font-size: 12px; background: transparent; color: var(--accent); }
 .btn.link:hover { background: rgba(59, 167, 255, 0.12); }
+
+.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-left: 6px; vertical-align: middle; }
+.notes {
+  white-space: pre-wrap; font: 12px/1.5 var(--font-ui); color: var(--text-muted);
+  background: var(--surface-content); border-radius: var(--radius-card); box-shadow: var(--elev-1);
+  padding: var(--space-4); margin: 0;
+}
+.btn:disabled { opacity: 0.6; cursor: default; }

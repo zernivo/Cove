@@ -5,6 +5,7 @@ interface Tweak { id: string; title: string; description: string; settings_uri: 
 interface ApplyReport { applied: string[]; failed: [string, string][] }
 interface RestoreReport { restored: number; failed: [string, string][] }
 interface HotkeyStatus { running: boolean; conflicts: string[] }
+interface UpdateInfo { current: string; latest: string; available: boolean; notes: string; page: string }
 
 const inTauri = "__TAURI_INTERNALS__" in window;
 
@@ -20,6 +21,8 @@ const mock: Record<string, (a?: any) => unknown> = {
   hotkeys_set: (a) => ({ running: a.enabled, conflicts: [] }),
   hotkeys_status: () => ({ running: false, conflicts: [] }),
   open_settings: () => null,
+  update_check: () => ({ current: "0.1.2", latest: "0.1.2", available: false, notes: "", page: "" }),
+  update_install: () => null,
 };
 
 function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -123,7 +126,43 @@ $("restore-btn").addEventListener("click", async () => {
   await Promise.all([renderCalm(), refreshStatus()]);
 });
 
+// ---- updates ----
+async function checkUpdates(quiet = false): Promise<void> {
+  const note = $("up-note");
+  const btn = $("up-install");
+  if (!quiet) note.textContent = "Checking…";
+  try {
+    const u = await invoke<UpdateInfo>("update_check");
+    $("up-title").textContent = `Cove ${u.current}`;
+    btn.classList.toggle("hidden", !u.available);
+    $("update-dot").classList.toggle("hidden", !u.available);
+    const notes = $("up-notes");
+    notes.textContent = u.notes;
+    notes.classList.toggle("hidden", !u.available || !u.notes);
+    note.textContent = u.available ? `Version ${u.latest} is available.` : "You're on the latest version.";
+    btn.textContent = `Update to ${u.latest}`;
+  } catch (e) {
+    note.textContent = String(e);
+  }
+}
+
+$("up-check").addEventListener("click", () => checkUpdates());
+$("up-install").addEventListener("click", async () => {
+  const btn = $("up-install") as HTMLButtonElement;
+  btn.disabled = true;
+  btn.textContent = "Downloading…";
+  $("up-note").textContent = "Downloading and verifying the installer. Cove will close and the installer will open.";
+  try {
+    await invoke("update_install");
+  } catch (e) {
+    $("up-note").textContent = String(e);
+    btn.disabled = false;
+    btn.textContent = "Try again";
+  }
+});
+
 // ---- boot ----
 (async () => {
   await Promise.all([refreshStatus(), renderCalm(), invoke<HotkeyStatus>("hotkeys_status").then(renderHabits)]);
+  checkUpdates(true);
 })();
