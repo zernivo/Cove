@@ -82,7 +82,7 @@ pub fn launch(target: &str) -> Result<(), String> {
     }
 }
 
-pub fn state(pins: &[crate::settings::Pin]) -> DockState {
+pub fn state(pins: &[crate::settings::Pin], stacks: &[String]) -> DockState {
     let wins = imp::windows();
     let fg = imp::foreground();
     let mut used = vec![false; wins.len()];
@@ -138,6 +138,17 @@ pub fn state(pins: &[crate::settings::Pin]) -> DockState {
         });
     }
     items.extend(groups);
+
+    // Folder stacks sit between the apps and the Recycle Bin.
+    for key in stacks {
+        let (Some(label), Some(dir)) = (crate::stacks::label(key), crate::stacks::folder(key)) else { continue };
+        let path = dir.to_string_lossy().to_string();
+        let icon = crate::icons::get(&path);
+        if icon.is_none() {
+            icon_jobs.push(path);
+        }
+        items.push(DockItem { kind: "stack", name: label.into(), target: key.clone(), windows: vec![], active: false, icon });
+    }
 
     let trash = "::{645FF040-5081-101B-9F08-08002B2CF60E}".to_string();
     let icon = crate::icons::get(&trash);

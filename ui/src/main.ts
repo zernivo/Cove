@@ -29,9 +29,10 @@ const mock: Record<string, (a?: any) => unknown> = {
   clipboard_set: (a) => a.enabled,
   topbar_status: () => false,
   topbar_set: (a) => a.enabled,
-  dock_status: () => ({ enabled: false, hide_taskbar: false }),
-  dock_set: (a) => ({ enabled: a.enabled, hide_taskbar: false }),
-  dock_hide_taskbar_set: (a) => ({ enabled: true, hide_taskbar: a.enabled }),
+  dock_status: () => ({ enabled: false, hide_taskbar: false, stacks: ["downloads"] }),
+  dock_set: (a) => ({ enabled: a.enabled, hide_taskbar: false, stacks: ["downloads"] }),
+  dock_hide_taskbar_set: (a) => ({ enabled: true, hide_taskbar: a.enabled, stacks: ["downloads"] }),
+  dock_stacks_set: (a) => ({ enabled: true, hide_taskbar: false, stacks: a.keys }),
   clipboard_status: () => true,
 };
 
@@ -134,8 +135,22 @@ $("search-toggle").addEventListener("change", async (e) => {
   renderHabits(await invoke<HotkeyStatus>("search_set", { enabled }));
 });
 
-interface DockStatus { enabled: boolean; hide_taskbar: boolean }
+interface DockStatus { enabled: boolean; hide_taskbar: boolean; stacks: string[] }
+const STACKS: [string, string][] = [["downloads", "Downloads"], ["documents", "Documents"], ["desktop", "Desktop"], ["pictures", "Pictures"]];
+let dockStacks: string[] = [];
 function renderDock(d: DockStatus): void {
+  dockStacks = d.stacks;
+  $("dock-stacks").innerHTML = "";
+  for (const [k, label] of STACKS) {
+    const b = document.createElement("button");
+    b.className = `chip${d.stacks.includes(k) ? " on" : ""}`;
+    b.textContent = label;
+    b.addEventListener("click", async () => {
+      const keys = dockStacks.includes(k) ? dockStacks.filter((x) => x !== k) : [...dockStacks, k];
+      renderDock(await invoke<DockStatus>("dock_stacks_set", { keys }));
+    });
+    $("dock-stacks").appendChild(b);
+  }
   ($("dock-toggle") as HTMLInputElement).checked = d.enabled;
   ($("dock-taskbar") as HTMLInputElement).checked = d.hide_taskbar;
   ($("dock-taskbar") as HTMLInputElement).disabled = !d.enabled;

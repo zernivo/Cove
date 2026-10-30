@@ -13,6 +13,7 @@ mod registry;
 mod search;
 mod settings;
 mod shell;
+mod stacks;
 mod topbar;
 mod tweaks;
 mod updater;
@@ -228,6 +229,7 @@ fn topbar_open(what: String, app: AppHandle) -> Result<(), String> {
 struct DockStatus {
     enabled: bool,
     hide_taskbar: bool,
+    stacks: Vec<String>,
 }
 
 /// Make the taskbar's auto-hide match the settings, remembering (and later
@@ -248,12 +250,12 @@ fn sync_taskbar(s: &mut settings::Store) {
 }
 
 fn dock_apply(app: &AppHandle, state: &AppState) -> DockStatus {
-    let (enabled, hide) = match state.settings.lock() {
+    let (enabled, hide, stacks) = match state.settings.lock() {
         Ok(mut s) => {
             sync_taskbar(&mut s);
-            (s.data.dock, s.data.dock_hide_taskbar)
+            (s.data.dock, s.data.dock_hide_taskbar, s.data.dock_stacks.clone())
         }
-        Err(_) => (false, false),
+        Err(_) => (false, false, Vec::new()),
     };
     if let Some(w) = app.get_webview_window("dock") {
         if enabled {
@@ -263,13 +265,13 @@ fn dock_apply(app: &AppHandle, state: &AppState) -> DockStatus {
             let _ = w.hide();
         }
     }
-    DockStatus { enabled, hide_taskbar: hide }
+    DockStatus { enabled, hide_taskbar: hide, stacks }
 }
 
 #[tauri::command]
 fn dock_status(state: tauri::State<'_, AppState>) -> DockStatus {
     let s = state.settings.lock().unwrap();
-    DockStatus { enabled: s.data.dock, hide_taskbar: s.data.dock_hide_taskbar }
+    DockStatus { enabled: s.data.dock, hide_taskbar: s.data.dock_hide_taskbar, stacks: s.data.dock_stacks.clone() }
 }
 
 #[tauri::command]
@@ -292,8 +294,38 @@ fn dock_hide_taskbar_set(enabled: bool, app: AppHandle, state: tauri::State<'_, 
 
 #[tauri::command]
 fn dock_state(state: tauri::State<'_, AppState>) -> dock::DockState {
-    let pins = state.settings.lock().map(|s| s.data.dock_pins.clone()).unwrap_or_default();
-    dock::state(&pins)
+    let (pins, stacks) = state
+        .settings
+        .lock()
+        .map(|s| (s.data.dock_pins.clone(), s.data.dock_stacks.clone()))
+        .unwrap_or_default();
+    dock::state(&pins, &stacks)
+}
+
+// ---- Dock folder stacks ----
+
+#[tauri::command]
+fn dock_stacks_set(keys: Vec<String>, app: AppHandle, state: tauri::State<'_, AppState>) -> DockStatus {
+    if let Ok(mut s) = state.settings.lock() {
+        s.data.dock_stacks = stacks::clean(&keys);
+        let _ = s.save();
+    }
+    dock_apply(&app, &state)
+}
+
+#[tauri::command]
+async fn stack_list(key: String) -> Vec<stacks::StackFile> {
+    stacks::list(&key, 30)
+}
+
+#[tauri::command]
+fn stack_open(path: String, reveal: bool) -> Result<(), String> {
+    stacks::open(&path, reveal)
+}
+
+#[tauri::command]
+fn stack_folder(key: String) -> Result<(), String> {
+    stacks::open_folder(&key)
 }
 
 /// Click: open a pinned app, bring its window forward, or minimise it if
@@ -661,6 +693,10 @@ fn main() {
             dock_set,
             dock_hide_taskbar_set,
             dock_state,
+            dock_stacks_set,
+            stack_list,
+            stack_open,
+            stack_folder,
             dock_open,
             dock_launch,
             dock_close,

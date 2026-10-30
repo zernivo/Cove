@@ -44,7 +44,7 @@ Requires Windows 11 (x64). No admin rights needed to use Cove's features.
 | **Cove Search** | Alt+Space opens a launcher: every app (desktop and Store) with its real icon, files deep in your personal folders, Settings pages, quick actions and a calculator. It learns what you open most. Fully local. |
 | **Clipboard history** | A Clipboard tab in Search with your last 50 text copies. Enter pastes, kept in memory only, and password-manager copies are skipped. |
 | **Mac habits** | Five window shortcuts, opt-in, active only while Cove runs. |
-| **Cove Dock** | A floating dock with pinned and running apps, hover magnification, running dots, Recycle Bin, and an optional auto-hiding Windows taskbar. |
+| **Cove Dock** | A floating dock with pinned and running apps, hover magnification, running dots, folder stacks (Downloads, Documents, Desktop, Pictures), Recycle Bin, and an optional auto-hiding Windows taskbar. |
 | **Top bar** | A thin bar across the top: the app in front, a Cove menu, Wi-Fi, sound, battery and the clock. Windows make room for it. |
 | **Control Centre** | From the top bar: sound and brightness sliders, mute, dark mode, Wi-Fi name, shortcuts to Bluetooth, Night light and Focus. |
 | **Back to stock** | One click restores every setting Cove changed, exactly as it was. |
@@ -81,7 +81,7 @@ Try `blu` for Bluetooth, `vsc` for Visual Studio Code, or `128*4+7`. Turn it off
 ## Dock, top bar & Control Centre
 Turn them on in Cove → **Dock & top bar**.
 
-- **Dock:** click an app to open or switch to it, and click the app in front to minimise it. Right-click for **Keep in Dock**, **Remove from Dock** and **Close window**. Turning on *Auto-hide the Windows taskbar* uses Windows' own setting and is undone when the dock goes off or Cove quits.
+- **Dock:** click an app to open or switch to it, and click the app in front to minimise it. Right-click for **Keep in Dock**, **Remove from Dock** and **Close window**. Click a folder stack (Downloads by default) to see its newest files in a grid: click to open, Ctrl+click to show in its folder. Choose stacks under **Folder stacks**. Turning on *Auto-hide the Windows taskbar* uses Windows' own setting and is undone when the dock goes off or Cove quits.
 - **Top bar:** registered as a standard Windows app bar, so maximised windows sit below it. Click the Cove mark for the menu, or the app name to open Cove.
 - **Control Centre:** click the sliders, Wi-Fi or sound icon in the top bar. Dark mode writes the same setting as Windows Settings → Personalization → Colors. The brightness slider shows only on screens Windows can dim (most laptops).
 
@@ -98,7 +98,7 @@ Calm settings stay applied after you close Cove (like changing them in Settings)
 |---|---|---|
 | v0.1 | Calm preset, Mac shortcuts, restore, installer, updater | ✅ |
 | v0.2 | Cove Search (Alt+Space) | ✅ |
-| v0.3 | Dock, top bar, Control Centre | ✅ (folder stacks, multi-monitor next) |
+| v0.3 | Dock, top bar, Control Centre, folder stacks | ✅ (multi-monitor next) |
 | v0.4 | App-grouped switcher, App Exposé | ⬜ |
 | v0.5 | Cove Glass theme, wallpaper gallery | ⬜ |
 | v0.6 | Cove Tour (interactive tutorial) | ⬜ |
