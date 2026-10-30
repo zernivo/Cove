@@ -14,6 +14,7 @@ mod search;
 mod settings;
 mod shell;
 mod stacks;
+mod switcher;
 mod topbar;
 mod tweaks;
 mod updater;
@@ -129,6 +130,16 @@ fn restore_all(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<Rest
         report.restored += 1;
     }
     topbar_apply(&app, false);
+    let had_switcher = state.settings.lock().map(|mut s| {
+        let was = s.data.switcher;
+        s.data.switcher = false;
+        let _ = s.save();
+        was
+    }).unwrap_or(false);
+    if had_switcher {
+        switcher::set_enabled(false);
+        report.restored += 1;
+    }
     Ok(report)
 }
 
@@ -312,6 +323,94 @@ fn dock_state(state: tauri::State<'_, AppState>) -> dock::DockState {
         .map(|s| (s.data.dock_pins.clone(), s.data.dock_stacks.clone()))
         .unwrap_or_default();
     dock::state(&pins, &stacks)
+}
+
+// ---- App switcher (Alt+Tab, opt-in) ----
+
+#[tauri::command]
+fn switcher_status(state: tauri::State<'_, AppState>) -> bool {
+    state.settings.lock().map(|s| s.data.switcher).unwrap_or(false)
+}
+
+#[tauri::command]
+fn switcher_set(enabled: bool, state: tauri::State<'_, AppState>) -> bool {
+    if let Ok(mut s) = state.settings.lock() {
+        s.data.switcher = enabled;
+        let _ = s.save();
+    }
+    switcher::set_enabled(enabled);
+    enabled
+}
+
+#[tauri::command]
+fn switcher_pick(index: usize) {
+    switcher::pick(index);
+}
+
+/// Centre the switcher on the screen under the pointer, sized to its icons.
+fn place_switcher(app: &AppHandle, w: &tauri::WebviewWindow, n: usize) {
+    let Some(m) = app
+        .cursor_position()
+        .ok()
+        .and_then(|p| app.monitor_from_point(p.x, p.y).ok().flatten())
+        .or_else(|| app.primary_monitor().ok().flatten())
+    else {
+        return;
+    };
+    let sf = m.scale_factor();
+    let (mp, ms) = (m.position(), m.size());
+    let cols = n.clamp(1, 10) as f64;
+    let (lw, lh) = (cols * 104.0 + 36.0, if n > 10 { 290.0 } else { 172.0 });
+    let (pw, ph) = ((lw * sf).round() as i32, (lh * sf).round() as i32);
+    let pw = pw.min(ms.width as i32 - 40);
+    let pos = PhysicalPosition::new(mp.x + (ms.width as i32 - pw) / 2, mp.y + (ms.height as i32 - ph) / 2);
+    let _ = w.set_position(pos);
+    let _ = w.set_size(tauri::PhysicalSize::new(pw as u32, ph as u32));
+    let _ = w.set_position(pos);
+}
+
+fn switcher_ui(app: &AppHandle, u: switcher::Ui) {
+    let a = app.clone();
+    match u {
+        switcher::Ui::Open(st) => {
+            let n = st.apps.len();
+            let a2 = a.clone();
+            let _ = a.run_on_main_thread(move || {
+                if let Some(w) = a2.get_webview_window("switcher") {
+                    let _ = w.emit("switch-state", &st);
+                    place_switcher(&a2, &w, n);
+                }
+            });
+            // A quick Alt+Tab tap just switches; show the panel only if Alt is held.
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(110));
+                if switcher::is_open() {
+                    let a3 = a.clone();
+                    let _ = a.run_on_main_thread(move || {
+                        if let Some(w) = a3.get_webview_window("switcher") {
+                            let _ = w.show();
+                        }
+                    });
+                }
+            });
+        }
+        switcher::Ui::Update(st) => {
+            let a2 = a.clone();
+            let _ = a.run_on_main_thread(move || {
+                if let Some(w) = a2.get_webview_window("switcher") {
+                    let _ = w.emit("switch-state", &st);
+                }
+            });
+        }
+        switcher::Ui::Hide => {
+            let a2 = a.clone();
+            let _ = a.run_on_main_thread(move || {
+                if let Some(w) = a2.get_webview_window("switcher") {
+                    let _ = w.hide();
+                }
+            });
+        }
+    }
 }
 
 // ---- Displays: keep the dock and top bar right when screens change ----
@@ -677,6 +776,11 @@ fn main() {
             });
             hotkeys::configure(store.data.hotkeys, store.data.search);
             clipboard::set_enabled(store.data.clipboard);
+            {
+                let h = app.handle().clone();
+                switcher::set_ui_handler(move |u| switcher_ui(&h, u));
+            }
+            switcher::set_enabled(store.data.switcher);
             search::warm();
             let dock_on = store.data.dock;
             let bar_on = store.data.topbar;
@@ -804,6 +908,9 @@ fn main() {
             dock_state,
             dock_stacks_set,
             dock_display_set,
+            switcher_status,
+            switcher_set,
+            switcher_pick,
             stack_list,
             stack_open,
             stack_folder,
@@ -828,6 +935,7 @@ fn main() {
         // it was (Cove hides it again next launch if the dock is on).
         if let RunEvent::Exit = event {
             hotkeys::stop();
+            switcher::set_enabled(false);
             if let Some(w) = handle.get_webview_window("topbar") {
                 if let Ok(h) = w.hwnd() {
                     topbar::unregister(h.0 as isize);

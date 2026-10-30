@@ -6,7 +6,8 @@
     "main",
     "search",
     "dock",
-    "topbar"
+    "topbar",
+    "switcher"
   ],
   "permissions": [
     "core:default",

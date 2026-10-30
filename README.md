@@ -44,6 +44,7 @@ Requires Windows 11 (x64). No admin rights needed to use Cove's features.
 | **Cove Search** | Alt+Space opens a launcher: every app (desktop and Store) with its real icon, files deep in your personal folders, Settings pages, quick actions and a calculator. It learns what you open most. Fully local. |
 | **Clipboard history** | A Clipboard tab in Search with your last 50 text copies. Enter pastes, kept in memory only, and password-manager copies are skipped. |
 | **Mac habits** | Five window shortcuts, opt-in, active only while Cove runs. |
+| **App switcher** | Opt-in Alt+Tab that shows one icon per app, Mac style, with a window count badge. Release Alt to switch. |
 | **Cove Dock** | A floating dock with pinned and running apps, hover magnification, running dots, folder stacks (Downloads, Documents, Desktop, Pictures), Recycle Bin, and an optional auto-hiding Windows taskbar. |
 | **Top bar** | A thin bar across the top: the app in front, a Cove menu, Wi-Fi, sound, battery and the clock. Windows make room for it. |
 | **Control Centre** | From the top bar: sound and brightness sliders, mute, dark mode, Wi-Fi name, shortcuts to Bluetooth, Night light and Focus. |
@@ -60,6 +61,8 @@ Alt sits where Cmd does on a Mac keyboard.
 | `Alt+H` | Cmd+H | Hide every window of the current app |
 | `Alt+Q` | Cmd+Q | Quit the app (closes each window politely, so you can still save) |
 | ``Alt+` `` | Cmd+` | Jump between windows of the same app |
+
+**App switcher (opt-in):** turn on *App switcher (Alt+Tab)* in **Mac habits**. Hold Alt and tap Tab to move through your apps (one icon each, most recent first), Shift+Tab or ← to go back, Esc to cancel, release Alt to switch. A quick Alt+Tab tap jumps straight to the previous app. It uses a standard Windows keyboard hook that's removed when you turn it off or quit Cove, and Windows' own Alt+Tab comes back.
 
 Cove remembers whether shortcuts are on. Closing the window keeps Cove in the system tray so shortcuts keep working; quit from the tray icon. Cove never acts on the desktop or taskbar, and marks any shortcut another app already uses as **In use**.
 
@@ -99,7 +102,7 @@ Calm settings stay applied after you close Cove (like changing them in Settings)
 | v0.1 | Calm preset, Mac shortcuts, restore, installer, updater | ✅ |
 | v0.2 | Cove Search (Alt+Space) | ✅ |
 | v0.3 | Dock, top bar, Control Centre, folder stacks, multi-display | ✅ |
-| v0.4 | App-grouped switcher, App Exposé | ⬜ |
+| v0.4 | App-grouped switcher ✅, App Exposé, window snapping | 🚧 |
 | v0.5 | Cove Glass theme, wallpaper gallery | ⬜ |
 | v0.6 | Cove Tour (interactive tutorial) | ⬜ |
 | v0.7 | UI polish pass across every screen | ⬜ |

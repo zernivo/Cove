@@ -29,7 +29,7 @@ pub struct Win {
     pub title: String,
 }
 
-fn stem(exe: &str) -> String {
+pub fn stem(exe: &str) -> String {
     std::path::Path::new(exe)
         .file_stem()
         .map(|s| s.to_string_lossy().to_lowercase())
@@ -163,7 +163,7 @@ pub fn state(pins: &[crate::settings::Pin], stacks: &[String]) -> DockState {
     DockState { items }
 }
 
-pub use imp::{activate, close_windows, cursor, minimize, monitor_at, taskbar_autohide, work_area};
+pub use imp::{activate, close_windows, cursor, foreground, minimize, monitor_at, taskbar_autohide, windows, work_area};
 
 /// One display: its full rectangle and its work area (physical px,
 /// left/top/right/bottom).

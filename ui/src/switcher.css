@@ -1,0 +1,87 @@
+html, body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  font-family: "Segoe UI Variable", "Segoe UI", Inter, system-ui, sans-serif;
+  --bg: rgba(246, 247, 250, 0.82);
+  --fg: #15171c;
+  --edge: rgba(255, 255, 255, 0.7);
+  --sel: rgba(0, 0, 0, 0.12);
+}
+@media (prefers-color-scheme: dark) {
+  html, body {
+    --bg: rgba(34, 36, 44, 0.8);
+    --fg: #f2f3f6;
+    --edge: rgba(255, 255, 255, 0.14);
+    --sel: rgba(255, 255, 255, 0.16);
+  }
+}
+body { display: flex; align-items: center; justify-content: center; }
+.panel {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px;
+  margin: 8px;
+  border-radius: 22px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--edge);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(30px) saturate(1.4);
+  max-width: calc(100% - 16px);
+  box-sizing: border-box;
+}
+.app {
+  position: relative;
+  width: 96px;
+  height: 112px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding-top: 10px;
+  box-sizing: border-box;
+  border-radius: 16px;
+  cursor: default;
+}
+.app.sel { background: var(--sel); }
+.app img, .app .letter { width: 64px; height: 64px; object-fit: contain; }
+.app .letter {
+  display: grid;
+  place-items: center;
+  border-radius: 15px;
+  background: linear-gradient(135deg, #3ba7ff, #2a6fdb);
+  color: #fff;
+  font-size: 28px;
+  font-weight: 600;
+}
+.app .name {
+  margin-top: 8px;
+  max-width: 88px;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+}
+.app.sel .name, .app:hover .name { opacity: 1; }
+.app .count {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  background: #3ba7ff;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  display: grid;
+  place-items: center;
+}

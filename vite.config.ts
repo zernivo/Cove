@@ -15,6 +15,7 @@ export default defineConfig({
         search: resolve(__dirname, "ui/search.html"),
         dock: resolve(__dirname, "ui/dock.html"),
         topbar: resolve(__dirname, "ui/topbar.html"),
+        switcher: resolve(__dirname, "ui/switcher.html"),
       },
     },
   },

@@ -35,6 +35,8 @@ const mock: Record<string, (a?: any) => unknown> = {
   dock_stacks_set: (a) => ({ enabled: true, hide_taskbar: false, stacks: a.keys, display: "main" }),
   dock_display_set: (a) => ({ enabled: true, hide_taskbar: false, stacks: ["downloads"], display: a.display }),
   clipboard_status: () => true,
+  switcher_status: () => false,
+  switcher_set: (a) => a.enabled,
 };
 
 function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -172,6 +174,17 @@ $("dock-taskbar").addEventListener("change", async (e) => {
   renderDock(await invoke<DockStatus>("dock_hide_taskbar_set", { enabled: (e.target as HTMLInputElement).checked }));
 });
 invoke<DockStatus>("dock_status").then(renderDock);
+
+function renderSwitcher(on: boolean): void {
+  ($("sw-toggle") as HTMLInputElement).checked = on;
+  $("sw-note").textContent = on
+    ? "On · hold Alt and tap Tab: one icon per app. Shift+Tab goes back, Esc cancels, release Alt to switch"
+    : "Off · Windows' own Alt+Tab. Turn on for Mac-style switching by app instead of by window";
+}
+$("sw-toggle").addEventListener("change", async (e) => {
+  renderSwitcher(await invoke<boolean>("switcher_set", { enabled: (e.target as HTMLInputElement).checked }));
+});
+invoke<boolean>("switcher_status").then(renderSwitcher);
 
 function renderTopbar(on: boolean): void {
   ($("topbar-toggle") as HTMLInputElement).checked = on;

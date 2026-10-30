@@ -40,8 +40,8 @@ Legend: ✅ done · 🔨 in progress · ⬜ planned
 - ✅ Multi-monitor and per-DPI support: dock on main display or follows the pointer (bottom-edge rest), dock + top bar re-fit on display plug/resize/scale changes (v0.3.4). Top bar stays on the main display.
 - Note: a true global menu bar can't work for Chrome, Electron or Store apps, so the top bar shows the active app and common actions instead
 
-## Phase 4: Window overview ⬜ (v0.4)
-- ⬜ App-grouped switcher (Alt+Tab replacement, opt-in)
+## Phase 4: Window overview 🚧 (v0.4)
+- ✅ App-grouped switcher (Alt+Tab replacement, opt-in, WH_KEYBOARD_LL hook removed when off) (v0.4.0)
 - ⬜ App Exposé: all windows of one app at a glance
 - ⬜ Window snapping presets with smooth, interruptible motion (150–250 ms)
 

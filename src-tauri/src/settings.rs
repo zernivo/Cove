@@ -26,6 +26,8 @@ pub struct Settings {
     pub dock_stacks: Vec<String>,
     /// The taskbar's auto-hide state before Cove changed it.
     pub taskbar_prev_autohide: Option<bool>,
+    /// Alt+Tab shows Cove's app switcher (one icon per app).
+    pub switcher: bool,
     /// Cove top bar on.
     pub topbar: bool,
     /// Last version that ran (to refresh icons once after an update).
@@ -63,6 +65,7 @@ impl Default for Settings {
             dock_display: "main".into(),
             taskbar_prev_autohide: None,
             topbar: false,
+            switcher: false,
             last_version: String::new(),
         }
     }
