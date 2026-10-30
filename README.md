@@ -95,7 +95,10 @@ Open Cove → **Look**.
 - **Appearance:** Follow Windows, Light or Dark. This changes Cove's own windows only, never Windows' setting.
 - **Accent colour:** the theme's own, or follow the accent chosen in Windows Settings → Personalization → Colors (read-only).
 
-Changes apply instantly to the dock, top bar, Control Centre, Search, the app switcher and App Exposé. With *Transparency effects* off in Windows, Cove uses solid surfaces.
+- **Wallpaper:** four original 4K scenes (Tidepool, Lagoon, Dune, Slate), each with a light and a dark version. The desktop switches version with Cove's appearance. **Restore my wallpaper** puts back the one you had before (Restore all does too).
+- **Light & dark schedule:** switch Cove and its wallpaper to light and dark at set times (default 07:00 and 19:00). Picking Light or Dark yourself holds until the next switch.
+
+Changes apply instantly to the dock, top bar, Control Centre, Search, the app switcher and App Exposé. With *Transparency effects* off in Windows, Cove uses solid surfaces. Wallpapers are set through Windows' documented wallpaper setting; the art is original and made by `brand/wallpapers.py`.
 
 ## Dock, top bar & Control Centre
 Turn them on in Cove → **Dock & top bar**.
@@ -119,7 +122,7 @@ Calm settings stay applied after you close Cove (like changing them in Settings)
 | v0.2 | Cove Search (Alt+Space) | ✅ |
 | v0.3 | Dock, top bar, Control Centre, folder stacks, multi-display | ✅ |
 | v0.4 | App-grouped switcher ✅, App Exposé ✅, window snapping ✅ | ✅ |
-| v0.5 | Cove Glass theme ✅, wallpaper gallery | 🚧 |
+| v0.5 | Cove Glass theme, wallpaper gallery, light/dark schedule | ✅ |
 | v0.6 | Cove Tour (interactive tutorial) | ⬜ |
 | v0.7 | UI polish pass across every screen | ⬜ |
 | 1.0 | Safe mode, code signing, auto-update, performance gates | ⬜ |

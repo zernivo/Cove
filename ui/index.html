@@ -119,6 +119,29 @@
             </div>
             <div class="chips" id="look-accent"></div>
           </div>
+          <div class="card wall-card">
+            <div class="row">
+              <div>
+                <h2>Wallpaper</h2>
+                <p class="muted small" id="wall-note">Original Cove art in light and dark versions. The desktop switches with Cove's appearance</p>
+              </div>
+              <button class="btn link hidden" id="wall-restore">Restore my wallpaper</button>
+            </div>
+            <div class="walls" id="walls"></div>
+          </div>
+          <div class="row card">
+            <div>
+              <h2>Light &amp; dark schedule</h2>
+              <p class="muted small" id="sched-note">Switch Cove (and its wallpaper) to light and dark at set times. Picking Light or Dark yourself holds until the next switch</p>
+            </div>
+            <div class="sched">
+              <div class="chips" id="sched-mode"></div>
+              <div class="sched-times" id="sched-times">
+                <label>Light at <input type="time" id="sched-light" /></label>
+                <label>Dark at <input type="time" id="sched-dark" /></label>
+              </div>
+            </div>
+          </div>
         </section>
 
         <section class="view hidden" id="view-dock">

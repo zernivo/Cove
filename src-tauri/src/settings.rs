@@ -39,6 +39,19 @@ pub struct Settings {
     /// "cove" (the theme's accent) or "windows" (follow the Windows accent).
     #[serde(default = "cove_accent")]
     pub accent: String,
+    /// Cove wallpaper scene in use, or "" for the user's own.
+    #[serde(default)]
+    pub wallpaper: String,
+    /// The wallpaper path from before Cove first changed it.
+    #[serde(default)]
+    pub wallpaper_prev: Option<String>,
+    /// Light/dark schedule: "off" or "times".
+    #[serde(default = "off")]
+    pub schedule: String,
+    #[serde(default = "light_at")]
+    pub light_at: String,
+    #[serde(default = "dark_at")]
+    pub dark_at: String,
     /// Cove Search also asks the Windows Search index (read-only).
     #[serde(default = "yes")]
     pub search_winindex: bool,
@@ -57,6 +70,16 @@ pub struct Pin {
     pub name: String,
     /// Start-menu AppID (opened through shell:AppsFolder).
     pub target: String,
+}
+
+fn off() -> String {
+    "off".into()
+}
+fn light_at() -> String {
+    "07:00".into()
+}
+fn dark_at() -> String {
+    "19:00".into()
 }
 
 fn tidepool() -> String {
@@ -103,6 +126,11 @@ impl Default for Settings {
             theme: tidepool(),
             appearance: system_mode(),
             accent: cove_accent(),
+            wallpaper: String::new(),
+            wallpaper_prev: None,
+            schedule: off(),
+            light_at: light_at(),
+            dark_at: dark_at(),
             snap_animate: true,
             last_version: String::new(),
         }

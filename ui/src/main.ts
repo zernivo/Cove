@@ -42,6 +42,10 @@ const mock: Record<string, (a?: any) => unknown> = {
   search_winindex_set: (a) => ({ winindex: a.enabled, timing: { last: null, median: null, count: 0 } }),
   theme_get: () => ({ theme: "tidepool", mode: "system", accent_source: "cove", accent: null }),
   theme_set: (a) => ({ theme: a.theme, mode: a.mode, accent_source: a.accent, accent: a.accent === "windows" ? "#0078d4" : null }),
+  wallpaper_status: () => mockWall,
+  wallpaper_set: (a) => ({ ...(mockWall = { ...mockWall, current: a.scene as string, has_prev: true }) }),
+  wallpaper_restore: () => ({ ...(mockWall = { ...mockWall, current: "", has_prev: false }) }),
+  schedule_set: (a) => ({ ...(mockWall = { ...mockWall, schedule: a.schedule as string, light_at: a.light_at as string, dark_at: a.dark_at as string }) }),
   snap_status: () => ({ enabled: false, animate: true, conflicts: [] }),
   snap_set: (a) => ({ enabled: a.enabled, animate: a.animate, conflicts: [] }),
 };
@@ -161,6 +165,56 @@ invoke<SearchInfo>("search_info").then(renderSearchInfo);
 window.addEventListener("focus", () => invoke<SearchInfo>("search_info").then(renderSearchInfo));
 
 // ---- Look (Cove Glass) ----
+interface WallStatus { scenes: string[]; current: string; has_prev: boolean; schedule: string; light_at: string; dark_at: string; dark_now: boolean }
+let mockWall: WallStatus = { scenes: ["tidepool", "lagoon", "dune", "slate"], current: "", has_prev: false, schedule: "off", light_at: "07:00", dark_at: "19:00", dark_now: false };
+const WALL_NAMES: Record<string, string> = { tidepool: "Tidepool", lagoon: "Lagoon", dune: "Dune", slate: "Slate" };
+let wall: WallStatus = mockWall;
+function renderWall(w: WallStatus): void {
+  wall = w;
+  const v = (document.documentElement.dataset.mode === "dark") ? "dark" : "light";
+  $("walls").innerHTML = "";
+  for (const sc of w.scenes) {
+    const b = document.createElement("button");
+    b.className = `wall${w.current === sc ? " on" : ""}`;
+    const img = document.createElement("img");
+    img.src = `/wallpapers/${sc}-${v}.jpg`;
+    img.alt = "";
+    const t = document.createElement("span");
+    t.textContent = WALL_NAMES[sc] ?? sc;
+    b.append(img, t);
+    b.addEventListener("click", async () => {
+      try { renderWall(await invoke<WallStatus>("wallpaper_set", { scene: sc })); }
+      catch (e) { $("wall-note").textContent = String(e); }
+    });
+    $("walls").appendChild(b);
+  }
+  $("wall-restore").classList.toggle("hidden", !w.has_prev);
+  chipGroup("sched-mode", [["off", "Off"], ["times", "On a schedule"]], w.schedule, (k) => saveSched(k));
+  ($("sched-light") as HTMLInputElement).value = w.light_at;
+  ($("sched-dark") as HTMLInputElement).value = w.dark_at;
+  $("sched-times").classList.toggle("off", w.schedule !== "times");
+}
+async function saveSched(mode?: string): Promise<void> {
+  try {
+    renderWall(await invoke<WallStatus>("schedule_set", {
+      schedule: mode ?? wall.schedule,
+      light_at: ($("sched-light") as HTMLInputElement).value || "07:00",
+      dark_at: ($("sched-dark") as HTMLInputElement).value || "19:00",
+    }));
+    invoke<ThemeState>("theme_get").then(renderLook);
+  } catch (e) { $("sched-note").textContent = String(e); }
+}
+$("sched-light").addEventListener("change", () => saveSched());
+$("sched-dark").addEventListener("change", () => saveSched());
+$("wall-restore").addEventListener("click", async () => renderWall(await invoke<WallStatus>("wallpaper_restore")));
+invoke<WallStatus>("wallpaper_status").then(renderWall);
+if (inTauri) {
+  listen("wallpaper-changed", () => {
+    invoke<WallStatus>("wallpaper_status").then(renderWall);
+    invoke<ThemeState>("theme_get").then(renderLook);
+  });
+}
+
 let look: ThemeState = { theme: "tidepool", mode: "system", accent_source: "cove", accent: null };
 const LOOK_NOTES: Record<string, string> = {
   tidepool: "Tidepool: warm glass that lets your wallpaper's colour through, with a soft glow on the app in front",
@@ -183,6 +237,7 @@ async function setLook(p: Partial<{ theme: string; mode: string; accent: string 
 function renderLook(t: ThemeState): void {
   look = t;
   applyTheme(t);
+  if (wall) renderWall(wall);
   chipGroup("look-theme", [["tidepool", "Tidepool"], ["slate", "Slate"]], t.theme, (k) => setLook({ theme: k }));
   chipGroup("look-mode", [["system", "Follow Windows"], ["light", "Light"], ["dark", "Dark"]], t.mode, (k) => setLook({ mode: k }));
   chipGroup("look-accent", [["cove", "Theme's own"], ["windows", "Windows accent"]], t.accent_source, (k) => setLook({ accent: k }));

@@ -19,6 +19,7 @@ mod expose;
 mod snap;
 mod winindex;
 mod theme;
+mod wallpaper;
 mod topbar;
 mod tweaks;
 mod updater;
@@ -153,6 +154,15 @@ fn restore_all(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<Rest
     if had_snap {
         snap::configure(false, true);
         report.restored += 1;
+    }
+    match wallpaper_put_back(&state) {
+        Ok(true) => report.restored += 1,
+        Ok(false) => {}
+        Err(e) => report.failed.push(("Wallpaper".into(), e)),
+    }
+    if let Ok(mut s) = state.settings.lock() {
+        s.data.schedule = "off".into();
+        let _ = s.save();
     }
     Ok(report)
 }
@@ -394,7 +404,175 @@ fn theme_set(theme: String, mode: String, accent: String, app: AppHandle, state:
     }
     let st = theme_now(&state);
     theme_apply(&app, &st);
+    let _ = wallpaper_sync(&app, &state);
     st
+}
+
+// ---- Wallpapers and the light/dark schedule ----
+
+/// The wallpaper file last handed to Windows, so the minute tick doesn't re-set it.
+static WALL_LAST: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+/// The schedule's last decision; the schedule only acts when it changes, so a
+/// manual Light/Dark pick holds until the next scheduled switch.
+static SCHED_LAST: std::sync::Mutex<Option<bool>> = std::sync::Mutex::new(None);
+
+fn effective_dark(s: &settings::Settings) -> bool {
+    match s.appearance.as_str() {
+        "dark" => true,
+        "light" => false,
+        _ => wallpaper::windows_dark(),
+    }
+}
+
+fn wallpaper_status_of(s: &settings::Settings) -> wallpaper::WallpaperStatus {
+    wallpaper::WallpaperStatus {
+        scenes: wallpaper::SCENES.iter().map(|x| x.to_string()).collect(),
+        current: s.wallpaper.clone(),
+        has_prev: s.wallpaper_prev.is_some(),
+        schedule: s.schedule.clone(),
+        light_at: s.light_at.clone(),
+        dark_at: s.dark_at.clone(),
+        dark_now: effective_dark(s),
+    }
+}
+
+/// Put the right light/dark version of the chosen scene on the desktop.
+fn wallpaper_sync(app: &AppHandle, state: &AppState) -> Result<(), String> {
+    let (scene, dark) = {
+        let s = state.settings.lock().map_err(|e| e.to_string())?;
+        (s.data.wallpaper.clone(), effective_dark(&s.data))
+    };
+    if scene.is_empty() {
+        return Ok(());
+    }
+    let name = wallpaper::file_name(&scene, dark);
+    let src = app
+        .path()
+        .resolve(format!("wallpapers/{}", name), tauri::path::BaseDirectory::Resource)
+        .map_err(|e| e.to_string())?;
+    // A copy in Cove's data folder keeps the path stable across updates.
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("wallpapers");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let dst = dir.join(&name);
+    let dst_s = dst.to_string_lossy().to_string();
+    if WALL_LAST.lock().map(|l| *l == dst_s).unwrap_or(false) && dst.exists() {
+        return Ok(());
+    }
+    if !dst.exists() {
+        std::fs::copy(&src, &dst).map_err(|e| format!("Couldn't copy the wallpaper: {}", e))?;
+    }
+    wallpaper::set(&dst_s)?;
+    if let Ok(mut l) = WALL_LAST.lock() {
+        *l = dst_s;
+    }
+    Ok(())
+}
+
+fn wallpaper_put_back(state: &AppState) -> Result<bool, String> {
+    let mut s = state.settings.lock().map_err(|e| e.to_string())?;
+    s.data.wallpaper.clear();
+    let prev = s.data.wallpaper_prev.take();
+    let _ = s.save();
+    drop(s);
+    if let Ok(mut l) = WALL_LAST.lock() {
+        l.clear();
+    }
+    match prev {
+        Some(p) => wallpaper::set(&p).map(|_| true),
+        None => Ok(false),
+    }
+}
+
+/// Once a minute: follow the schedule, and keep the wallpaper's light/dark
+/// version in step (also when Cove follows Windows' mode).
+fn schedule_tick(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let decided = state.settings.lock().ok().and_then(|s| {
+        if s.data.schedule != "times" {
+            return None;
+        }
+        let l = wallpaper::parse_hm(&s.data.light_at)?;
+        let d = wallpaper::parse_hm(&s.data.dark_at)?;
+        Some(wallpaper::scheduled_dark(wallpaper::local_minutes(), l, d))
+    });
+    let mut changed = false;
+    if let Some(dark) = decided {
+        let fire = SCHED_LAST.lock().map(|mut last| {
+            let f = *last != Some(dark);
+            *last = Some(dark);
+            f
+        }).unwrap_or(false);
+        if fire {
+            if let Ok(mut s) = state.settings.lock() {
+                let want = if dark { "dark" } else { "light" };
+                if s.data.appearance != want {
+                    s.data.appearance = want.to_string();
+                    let _ = s.save();
+                    changed = true;
+                }
+            }
+        }
+    }
+    if changed {
+        let st = theme_now(&state);
+        theme_apply(app, &st);
+        let _ = app.emit("wallpaper-changed", ());
+    }
+    let _ = wallpaper_sync(app, &state);
+}
+
+#[tauri::command]
+fn wallpaper_status(state: tauri::State<'_, AppState>) -> Result<wallpaper::WallpaperStatus, String> {
+    let s = state.settings.lock().map_err(|e| e.to_string())?;
+    Ok(wallpaper_status_of(&s.data))
+}
+
+#[tauri::command]
+fn wallpaper_set(scene: String, app: AppHandle, state: tauri::State<'_, AppState>) -> Result<wallpaper::WallpaperStatus, String> {
+    if !wallpaper::SCENES.contains(&scene.as_str()) {
+        return Err("Unknown wallpaper".into());
+    }
+    {
+        let mut s = state.settings.lock().map_err(|e| e.to_string())?;
+        if s.data.wallpaper_prev.is_none() {
+            s.data.wallpaper_prev = Some(wallpaper::current().unwrap_or_default());
+        }
+        s.data.wallpaper = scene;
+        let _ = s.save();
+    }
+    wallpaper_sync(&app, &state)?;
+    wallpaper_status(state)
+}
+
+#[tauri::command]
+fn wallpaper_restore(state: tauri::State<'_, AppState>) -> Result<wallpaper::WallpaperStatus, String> {
+    wallpaper_put_back(&state)?;
+    wallpaper_status(state)
+}
+
+#[tauri::command]
+fn schedule_set(
+    schedule: String,
+    light_at: String,
+    dark_at: String,
+    app: AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<wallpaper::WallpaperStatus, String> {
+    if wallpaper::parse_hm(&light_at).is_none() || wallpaper::parse_hm(&dark_at).is_none() {
+        return Err("Times look like 07:00".into());
+    }
+    {
+        let mut s = state.settings.lock().map_err(|e| e.to_string())?;
+        s.data.schedule = if schedule == "times" { "times".into() } else { "off".into() };
+        s.data.light_at = light_at;
+        s.data.dark_at = dark_at;
+        let _ = s.save();
+    }
+    if let Ok(mut l) = SCHED_LAST.lock() {
+        *l = None;
+    }
+    schedule_tick(&app);
+    wallpaper_status(state)
 }
 
 // ---- Window snapping (Ctrl+Alt, opt-in) ----
@@ -960,6 +1138,15 @@ fn main() {
             switcher::set_enabled(store.data.switcher);
             snap::configure(store.data.snap, store.data.snap_animate);
             theme_apply(app.handle(), &theme::state(&store.data.theme, &store.data.appearance, &store.data.accent));
+            {
+                let h = app.handle().clone();
+                std::thread::spawn(move || loop {
+                    std::thread::sleep(std::time::Duration::from_secs(5));
+                    let h2 = h.clone();
+                    let _ = h.run_on_main_thread(move || schedule_tick(&h2));
+                    std::thread::sleep(std::time::Duration::from_secs(55));
+                });
+            }
             search::warm();
             let dock_on = store.data.dock;
             let bar_on = store.data.topbar;
@@ -1102,6 +1289,10 @@ fn main() {
             snap_set,
             theme_get,
             theme_set,
+            wallpaper_status,
+            wallpaper_set,
+            wallpaper_restore,
+            schedule_set,
             expose_open,
             expose_pick,
             expose_close,
