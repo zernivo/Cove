@@ -27,8 +27,8 @@ mod updater;
 use std::sync::Mutex;
 
 use serde::Serialize;
-use tauri::menu::{Menu, MenuItem};
-use tauri::tray::TrayIconBuilder;
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, RunEvent, WindowEvent};
 
 use tweaks::{calm, TweakInfo};
@@ -205,6 +205,7 @@ fn topbar_set(enabled: bool, app: AppHandle, state: tauri::State<'_, AppState>) 
         let _ = s.save();
     }
     topbar_apply(&app, enabled);
+    tray_sync(&app);
     enabled
 }
 
@@ -327,7 +328,9 @@ fn dock_set(enabled: bool, app: AppHandle, state: tauri::State<'_, AppState>) ->
         s.data.dock = enabled;
         let _ = s.save();
     }
-    dock_apply(&app, &state)
+    let st = dock_apply(&app, &state);
+    tray_sync(&app);
+    st
 }
 
 #[tauri::command]
@@ -357,12 +360,13 @@ fn switcher_status(state: tauri::State<'_, AppState>) -> bool {
 }
 
 #[tauri::command]
-fn switcher_set(enabled: bool, state: tauri::State<'_, AppState>) -> bool {
+fn switcher_set(enabled: bool, app: AppHandle, state: tauri::State<'_, AppState>) -> bool {
     if let Ok(mut s) = state.settings.lock() {
         s.data.switcher = enabled;
         let _ = s.save();
     }
     switcher::set_enabled(enabled);
+    tray_sync(&app);
     enabled
 }
 
@@ -405,7 +409,69 @@ fn theme_set(theme: String, mode: String, accent: String, app: AppHandle, state:
     let st = theme_now(&state);
     theme_apply(&app, &st);
     let _ = wallpaper_sync(&app, &state);
+    tray_sync(&app);
     st
+}
+
+// ---- Tray menu ----
+
+/// The tray's check marks, kept in step with Settings.
+struct TrayChecks {
+    dock: CheckMenuItem<tauri::Wry>,
+    topbar: CheckMenuItem<tauri::Wry>,
+    hotkeys: CheckMenuItem<tauri::Wry>,
+    switcher: CheckMenuItem<tauri::Wry>,
+    snap: CheckMenuItem<tauri::Wry>,
+    system: CheckMenuItem<tauri::Wry>,
+    light: CheckMenuItem<tauri::Wry>,
+    dark: CheckMenuItem<tauri::Wry>,
+}
+
+fn tray_sync(app: &AppHandle) {
+    let Some(t) = app.try_state::<TrayChecks>() else { return };
+    let state = app.state::<AppState>();
+    let Ok(g) = state.settings.lock() else { return };
+    let d = &g.data;
+    let _ = t.dock.set_checked(d.dock);
+    let _ = t.topbar.set_checked(d.topbar);
+    let _ = t.hotkeys.set_checked(d.hotkeys);
+    let _ = t.switcher.set_checked(d.switcher);
+    let _ = t.snap.set_checked(d.snap);
+    let _ = t.system.set_checked(d.appearance == "system");
+    let _ = t.light.set_checked(d.appearance == "light");
+    let _ = t.dark.set_checked(d.appearance == "dark");
+}
+
+fn tray_action(app: &AppHandle, id: &str) {
+    let state = app.state::<AppState>();
+    let cur = match state.settings.lock() {
+        Ok(s) => s.data.clone(),
+        Err(_) => return,
+    };
+    match id {
+        "open" => show_main(app),
+        "search" => toggle_search(app),
+        "t-dock" => { dock_set(!cur.dock, app.clone(), state); }
+        "t-topbar" => { topbar_set(!cur.topbar, app.clone(), state); }
+        "t-hotkeys" => { hotkeys_set(!cur.hotkeys, app.clone(), state); }
+        "t-switcher" => { switcher_set(!cur.switcher, app.clone(), state); }
+        "t-snap" => { snap_set(!cur.snap, cur.snap_animate, app.clone(), state); }
+        "m-system" | "m-light" | "m-dark" => {
+            theme_set(cur.theme.clone(), id[2..].to_string(), cur.accent.clone(), app.clone(), state);
+        }
+        "tour" => {
+            show_main(app);
+            let _ = app.emit("tour-open", ());
+        }
+        "updates" | "restore" => {
+            show_main(app);
+            let _ = app.emit("nav", id.to_string());
+        }
+        "quit" => app.exit(0),
+        _ => {}
+    }
+    tray_sync(app);
+    let _ = app.emit("settings-changed", ());
 }
 
 // ---- Cove Tour ----
@@ -542,6 +608,7 @@ fn schedule_tick(app: &AppHandle) {
     if changed {
         let st = theme_now(&state);
         theme_apply(app, &st);
+        tray_sync(app);
         let _ = app.emit("wallpaper-changed", ());
     }
     let _ = wallpaper_sync(app, &state);
@@ -621,13 +688,14 @@ fn snap_status(state: tauri::State<'_, AppState>) -> SnapInfo {
 }
 
 #[tauri::command]
-fn snap_set(enabled: bool, animate: bool, state: tauri::State<'_, AppState>) -> SnapInfo {
+fn snap_set(enabled: bool, animate: bool, app: AppHandle, state: tauri::State<'_, AppState>) -> SnapInfo {
     if let Ok(mut s) = state.settings.lock() {
         s.data.snap = enabled;
         s.data.snap_animate = animate;
         let _ = s.save();
     }
     snap::configure(enabled, animate);
+    tray_sync(&app);
     snap_info(&state)
 }
 
@@ -967,8 +1035,10 @@ fn reconfigure(state: &AppState, f: impl FnOnce(&mut settings::Settings)) -> hot
 }
 
 #[tauri::command]
-fn hotkeys_set(enabled: bool, state: tauri::State<'_, AppState>) -> hotkeys::HotkeyStatus {
-    reconfigure(&state, |s| s.hotkeys = enabled)
+fn hotkeys_set(enabled: bool, app: AppHandle, state: tauri::State<'_, AppState>) -> hotkeys::HotkeyStatus {
+    let st = reconfigure(&state, |s| s.hotkeys = enabled);
+    tray_sync(&app);
+    st
 }
 
 #[tauri::command]
@@ -1223,19 +1293,63 @@ fn main() {
 
             // Tray: Cove keeps running (and the shortcuts keep working)
             // after the window is closed. Quit from here.
+            // Left-click opens Cove; right-click shows the menu.
             let open = MenuItem::with_id(app, "open", "Open Cove", true, None::<&str>)?;
+            let search_item = MenuItem::with_id(app, "search", "Search\tAlt+Space", true, None::<&str>)?;
+            let checks = {
+                let st = app.state::<AppState>();
+                let d = st.settings.lock().map(|s| s.data.clone()).unwrap_or_default();
+                TrayChecks {
+                    dock: CheckMenuItem::with_id(app, "t-dock", "Dock", true, d.dock, None::<&str>)?,
+                    topbar: CheckMenuItem::with_id(app, "t-topbar", "Top bar", true, d.topbar, None::<&str>)?,
+                    hotkeys: CheckMenuItem::with_id(app, "t-hotkeys", "Mac shortcuts", true, d.hotkeys, None::<&str>)?,
+                    switcher: CheckMenuItem::with_id(app, "t-switcher", "App switcher", true, d.switcher, None::<&str>)?,
+                    snap: CheckMenuItem::with_id(app, "t-snap", "Window snapping", true, d.snap, None::<&str>)?,
+                    system: CheckMenuItem::with_id(app, "m-system", "Follow Windows", true, d.appearance == "system", None::<&str>)?,
+                    light: CheckMenuItem::with_id(app, "m-light", "Light", true, d.appearance == "light", None::<&str>)?,
+                    dark: CheckMenuItem::with_id(app, "m-dark", "Dark", true, d.appearance == "dark", None::<&str>)?,
+                }
+            };
+            let appearance = Submenu::with_items(app, "Appearance", true, &[&checks.system, &checks.light, &checks.dark])?;
+            let tour = MenuItem::with_id(app, "tour", "Take the tour", true, None::<&str>)?;
+            let updates = MenuItem::with_id(app, "updates", "Check for updates", true, None::<&str>)?;
+            let restore = MenuItem::with_id(app, "restore", "Restore…", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit Cove", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open, &quit])?;
-            let mut tray = TrayIconBuilder::with_id("cove").tooltip("Cove").menu(&menu);
+            let menu = Menu::with_items(
+                app,
+                &[
+                    &open,
+                    &search_item,
+                    &PredefinedMenuItem::separator(app)?,
+                    &checks.dock,
+                    &checks.topbar,
+                    &checks.hotkeys,
+                    &checks.switcher,
+                    &checks.snap,
+                    &appearance,
+                    &PredefinedMenuItem::separator(app)?,
+                    &tour,
+                    &updates,
+                    &restore,
+                    &PredefinedMenuItem::separator(app)?,
+                    &quit,
+                ],
+            )?;
+            app.manage(checks);
+            let mut tray = TrayIconBuilder::with_id("cove")
+                .tooltip(format!("Cove {}", env!("CARGO_PKG_VERSION")))
+                .menu(&menu)
+                .show_menu_on_left_click(false);
             if let Some(icon) = app.default_window_icon() {
                 tray = tray.icon(icon.clone());
             }
-            tray.on_menu_event(|app, event| match event.id.as_ref() {
-                "open" => show_main(app),
-                "quit" => app.exit(0),
-                _ => {}
-            })
-            .build(app)?;
+            tray.on_menu_event(|app, event| tray_action(app, event.id.as_ref()))
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+                        show_main(tray.app_handle());
+                    }
+                })
+                .build(app)?;
 
             // Mica: Windows' own cheap backdrop for the main window.
             #[cfg(target_os = "windows")]

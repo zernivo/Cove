@@ -608,3 +608,17 @@ if (inTauri) {
   });
 }
 invoke<boolean>("tour_status").then((done) => { if (!done) tourOpen(); });
+
+// ---- Tray menu hooks ----
+if (inTauri) {
+  listen("tour-open", () => tourOpen());
+  listen<string>("nav", (e) => document.querySelector<HTMLAnchorElement>(`.nav-item[data-view="${e.payload}"]`)?.click());
+  listen("settings-changed", () => {
+    invoke<DockStatus>("dock_status").then(renderDock);
+    invoke<boolean>("switcher_status").then(renderSwitcher);
+    invoke<SnapInfo>("snap_status").then(renderSnap);
+    invoke<boolean>("topbar_status").then(renderTopbar);
+    invoke<ThemeState>("theme_get").then(renderLook);
+    invoke<HotkeyStatus>("hotkeys_status").then(renderHabits);
+  });
+}
