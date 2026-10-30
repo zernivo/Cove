@@ -30,6 +30,15 @@ pub struct Settings {
     pub switcher: bool,
     /// Cove top bar on.
     pub topbar: bool,
+    /// Cove Glass theme: "tidepool" or "slate".
+    #[serde(default = "tidepool")]
+    pub theme: String,
+    /// "system", "light" or "dark".
+    #[serde(default = "system_mode")]
+    pub appearance: String,
+    /// "cove" (the theme's accent) or "windows" (follow the Windows accent).
+    #[serde(default = "cove_accent")]
+    pub accent: String,
     /// Cove Search also asks the Windows Search index (read-only).
     #[serde(default = "yes")]
     pub search_winindex: bool,
@@ -48,6 +57,16 @@ pub struct Pin {
     pub name: String,
     /// Start-menu AppID (opened through shell:AppsFolder).
     pub target: String,
+}
+
+fn tidepool() -> String {
+    "tidepool".into()
+}
+fn system_mode() -> String {
+    "system".into()
+}
+fn cove_accent() -> String {
+    "cove".into()
 }
 
 fn yes() -> bool {
@@ -81,6 +100,9 @@ impl Default for Settings {
             switcher: false,
             snap: false,
             search_winindex: true,
+            theme: tidepool(),
+            appearance: system_mode(),
+            accent: cove_accent(),
             snap_animate: true,
             last_version: String::new(),
         }

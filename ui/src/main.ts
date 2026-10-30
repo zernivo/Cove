@@ -1,3 +1,4 @@
+import { applyTheme, type ThemeState } from "./theme";
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -39,6 +40,8 @@ const mock: Record<string, (a?: any) => unknown> = {
   switcher_set: (a) => a.enabled,
   search_info: () => ({ winindex: true, timing: { last: null, median: null, count: 0 } }),
   search_winindex_set: (a) => ({ winindex: a.enabled, timing: { last: null, median: null, count: 0 } }),
+  theme_get: () => ({ theme: "tidepool", mode: "system", accent_source: "cove", accent: null }),
+  theme_set: (a) => ({ theme: a.theme, mode: a.mode, accent_source: a.accent, accent: a.accent === "windows" ? "#0078d4" : null }),
   snap_status: () => ({ enabled: false, animate: true, conflicts: [] }),
   snap_set: (a) => ({ enabled: a.enabled, animate: a.animate, conflicts: [] }),
 };
@@ -156,6 +159,40 @@ $("wi-toggle").addEventListener("change", async (e) => {
 });
 invoke<SearchInfo>("search_info").then(renderSearchInfo);
 window.addEventListener("focus", () => invoke<SearchInfo>("search_info").then(renderSearchInfo));
+
+// ---- Look (Cove Glass) ----
+let look: ThemeState = { theme: "tidepool", mode: "system", accent_source: "cove", accent: null };
+const LOOK_NOTES: Record<string, string> = {
+  tidepool: "Tidepool: warm glass that lets your wallpaper's colour through, with a soft glow on the app in front",
+  slate: "Slate: quiet and mostly solid, graphite with one blue focus colour. Good for work",
+};
+function chipGroup(id: string, opts: [string, string][], on: string, pick: (k: string) => void): void {
+  $(id).innerHTML = "";
+  for (const [k, label] of opts) {
+    const b = document.createElement("button");
+    b.className = `chip${on === k ? " on" : ""}`;
+    b.textContent = label;
+    b.addEventListener("click", () => pick(k));
+    $(id).appendChild(b);
+  }
+}
+async function setLook(p: Partial<{ theme: string; mode: string; accent: string }>): Promise<void> {
+  const args = { theme: look.theme, mode: look.mode, accent: look.accent_source, ...p };
+  renderLook(await invoke<ThemeState>("theme_set", args));
+}
+function renderLook(t: ThemeState): void {
+  look = t;
+  applyTheme(t);
+  chipGroup("look-theme", [["tidepool", "Tidepool"], ["slate", "Slate"]], t.theme, (k) => setLook({ theme: k }));
+  chipGroup("look-mode", [["system", "Follow Windows"], ["light", "Light"], ["dark", "Dark"]], t.mode, (k) => setLook({ mode: k }));
+  chipGroup("look-accent", [["cove", "Theme's own"], ["windows", "Windows accent"]], t.accent_source, (k) => setLook({ accent: k }));
+  $("look-theme-note").textContent = LOOK_NOTES[t.theme] ?? "";
+  $("look-accent-note").textContent = t.accent_source === "windows"
+    ? t.accent ? `Following Windows (${t.accent}). Change it in Settings → Personalization → Colors` : "Couldn't read the Windows accent, so the theme's own is used"
+    : "The theme's own, or the accent you chose in Windows Settings";
+}
+invoke<ThemeState>("theme_get").then(renderLook);
+window.addEventListener("focus", () => { if (look.accent_source === "windows") invoke<ThemeState>("theme_get").then(renderLook); });
 
 interface DockStatus { enabled: boolean; hide_taskbar: boolean; stacks: string[]; display: string }
 const STACKS: [string, string][] = [["downloads", "Downloads"], ["documents", "Documents"], ["desktop", "Desktop"], ["pictures", "Pictures"]];

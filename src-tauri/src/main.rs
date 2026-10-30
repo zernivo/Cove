@@ -18,6 +18,7 @@ mod switcher;
 mod expose;
 mod snap;
 mod winindex;
+mod theme;
 mod topbar;
 mod tweaks;
 mod updater;
@@ -353,6 +354,47 @@ fn switcher_set(enabled: bool, state: tauri::State<'_, AppState>) -> bool {
     }
     switcher::set_enabled(enabled);
     enabled
+}
+
+// ---- Cove Glass theme ----
+
+fn theme_now(state: &AppState) -> theme::ThemeState {
+    state
+        .settings
+        .lock()
+        .map(|s| theme::state(&s.data.theme, &s.data.appearance, &s.data.accent))
+        .unwrap_or_else(|_| theme::state("tidepool", "system", "cove"))
+}
+
+/// Light/dark for the OS material behind every Cove window, then tell the pages.
+fn theme_apply(app: &AppHandle, st: &theme::ThemeState) {
+    let t = match st.mode.as_str() {
+        "light" => Some(tauri::Theme::Light),
+        "dark" => Some(tauri::Theme::Dark),
+        _ => None,
+    };
+    for (_, w) in app.webview_windows() {
+        let _ = w.set_theme(t);
+    }
+    let _ = app.emit("theme-changed", st.clone());
+}
+
+#[tauri::command]
+fn theme_get(state: tauri::State<'_, AppState>) -> theme::ThemeState {
+    theme_now(&state)
+}
+
+#[tauri::command]
+fn theme_set(theme: String, mode: String, accent: String, app: AppHandle, state: tauri::State<'_, AppState>) -> theme::ThemeState {
+    if let Ok(mut s) = state.settings.lock() {
+        s.data.theme = theme::pick(&theme, theme::THEMES).to_string();
+        s.data.appearance = theme::pick(&mode, theme::MODES).to_string();
+        s.data.accent = theme::pick(&accent, theme::ACCENTS).to_string();
+        let _ = s.save();
+    }
+    let st = theme_now(&state);
+    theme_apply(&app, &st);
+    st
 }
 
 // ---- Window snapping (Ctrl+Alt, opt-in) ----
@@ -917,6 +959,7 @@ fn main() {
             }
             switcher::set_enabled(store.data.switcher);
             snap::configure(store.data.snap, store.data.snap_animate);
+            theme_apply(app.handle(), &theme::state(&store.data.theme, &store.data.appearance, &store.data.accent));
             search::warm();
             let dock_on = store.data.dock;
             let bar_on = store.data.topbar;
@@ -1057,6 +1100,8 @@ fn main() {
             switcher_pick,
             snap_status,
             snap_set,
+            theme_get,
+            theme_set,
             expose_open,
             expose_pick,
             expose_close,

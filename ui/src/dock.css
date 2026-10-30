@@ -6,27 +6,25 @@ html, body {
   user-select: none;
   font-family: "Segoe UI Variable", "Segoe UI", Inter, system-ui, sans-serif;
   --size: 48px;
-  --pill: rgba(246, 247, 250, 0.72);
+  --pill: var(--panel-tint);
   --edge: rgba(255, 255, 255, 0.7);
   --line: rgba(0, 0, 0, 0.12);
   --label-bg: rgba(30, 32, 38, 0.86);
   --label-fg: #fff;
   --dot: rgba(20, 22, 28, 0.75);
-  --stack-bg: rgba(246, 247, 250, 0.9);
-  --stack-fg: #15171c;
+  --stack-bg: var(--menu-bg);
+  --stack-fg: var(--text);
 }
-@media (prefers-color-scheme: dark) {
-  html, body {
-    --pill: rgba(34, 36, 44, 0.66);
+html[data-mode="dark"], html[data-mode="dark"] body {
+    --pill: var(--panel-tint);
     --edge: rgba(255, 255, 255, 0.14);
     --line: rgba(255, 255, 255, 0.16);
     --label-bg: rgba(240, 242, 246, 0.92);
     --label-fg: #15171c;
     --dot: rgba(255, 255, 255, 0.8);
-    --stack-bg: rgba(34, 36, 44, 0.9);
-    --stack-fg: #f2f3f6;
+    --stack-bg: var(--menu-bg);
+    --stack-fg: var(--text);
   }
-}
 .stage {
   position: absolute;
   inset: 0;
@@ -40,7 +38,7 @@ html, body {
   align-items: flex-end;
   gap: 6px;
   padding: 7px 10px 9px;
-  border-radius: 22px;
+  border-radius: var(--radius-dock);
   background: var(--pill);
   border: 1px solid var(--edge);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.25);
@@ -87,7 +85,7 @@ html, body {
   border-radius: 50%;
   background: var(--dot);
 }
-.item.active .dot { width: 14px; border-radius: 3px; }
+.item.active .dot { width: 14px; border-radius: 3px; background: var(--accent); box-shadow: var(--glow); }
 .label {
   position: absolute;
   bottom: calc(100% + 10px);

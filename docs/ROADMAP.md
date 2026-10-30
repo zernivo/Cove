@@ -45,8 +45,8 @@ Legend: ✅ done · 🔨 in progress · ⬜ planned
 - ✅ App Exposé: all windows of one app at a glance, live DWM thumbnails; Dock right-click or ↓ in the switcher (v0.4.1)
 - ✅ Window snapping presets with smooth, interruptible motion (200 ms glide, Ctrl+Alt presets, opt-in) (v0.4.2)
 
-## Phase 5: Calm look ⬜ (v0.5)
-- ⬜ Cove Glass theme for Cove's own surfaces (light/dark, accent #3BA7FF)
+## Phase 5: Calm look 🚧 (v0.5)
+- ✅ Cove Glass themes for Cove's own surfaces: Tidepool (default) and Slate, light/dark/follow Windows, theme accent or Windows accent (v0.5.0)
 - ⬜ Wallpaper gallery: 4K, light/dark pairs, permissively licensed or original only
 - ⬜ Accent, light/dark and wallpaper scheduling through documented settings
 

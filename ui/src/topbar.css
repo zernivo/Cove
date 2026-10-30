@@ -5,15 +5,12 @@ html, body {
   background: transparent;
   user-select: none;
   font: 13px/1 "Segoe UI Variable", "Segoe UI", Inter, system-ui, sans-serif;
-  color: #15171c;
-  --tint: rgba(255, 255, 255, 0.35);
+  color: var(--text);
+  --tint: var(--bar-tint);
   --hover: rgba(0, 0, 0, 0.08);
-  --menu: rgba(250, 250, 252, 0.97);
-  --accent: #3ba7ff;
+  --menu: var(--menu-bg);
 }
-@media (prefers-color-scheme: dark) {
-  html, body { color: #f1f2f5; --tint: rgba(20, 22, 28, 0.35); --hover: rgba(255, 255, 255, 0.12); --menu: rgba(36, 38, 46, 0.97); }
-}
+html[data-mode="dark"], html[data-mode="dark"] body { color: var(--text); --tint: var(--bar-tint); --hover: rgba(255, 255, 255, 0.12); --menu: var(--menu-bg); }
 .bar {
   height: 30px;
   display: flex;

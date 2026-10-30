@@ -15,6 +15,7 @@
           <a href="#calm" class="nav-item active" data-view="calm">Calm</a>
           <a href="#habits" class="nav-item" data-view="habits">Mac habits</a>
           <a href="#dock" class="nav-item" data-view="dock">Dock &amp; top bar</a>
+          <a href="#look" class="nav-item" data-view="look">Look</a>
           <a href="#restore" class="nav-item" data-view="restore">Restore</a>
           <a href="#updates" class="nav-item" data-view="updates">Updates <span class="dot hidden" id="update-dot"></span></a>
         </nav>
@@ -90,6 +91,34 @@
             <label class="switch"><input type="checkbox" id="snap-animate" /><span></span></label>
           </div>
           <div class="list" id="snap-list"></div>
+        </section>
+
+        <section class="view hidden" id="view-look">
+          <header class="view-head">
+            <h1>Look</h1>
+            <p class="muted">Cove Glass: how the dock, top bar, Search, Control Centre and switcher look. Changes apply at once and only to Cove.</p>
+          </header>
+          <div class="row card">
+            <div>
+              <h2>Theme</h2>
+              <p class="muted small" id="look-theme-note">Tidepool: warm glass that lets your wallpaper's colour through</p>
+            </div>
+            <div class="chips" id="look-theme"></div>
+          </div>
+          <div class="row card">
+            <div>
+              <h2>Appearance</h2>
+              <p class="muted small">Light, dark, or follow Windows. Cove's own windows only; Windows' setting is not changed</p>
+            </div>
+            <div class="chips" id="look-mode"></div>
+          </div>
+          <div class="row card">
+            <div>
+              <h2>Accent colour</h2>
+              <p class="muted small" id="look-accent-note">The theme's own, or the accent you chose in Windows Settings</p>
+            </div>
+            <div class="chips" id="look-accent"></div>
+          </div>
         </section>
 
         <section class="view hidden" id="view-dock">

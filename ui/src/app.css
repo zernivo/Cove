@@ -48,7 +48,7 @@ nav { display: flex; flex-direction: column; gap: 2px; }
   transition: background var(--motion-fast) var(--ease-out);
 }
 .nav-item:hover { background: rgba(127, 127, 127, 0.12); }
-.nav-item.active { background: rgba(59, 167, 255, 0.16); font-weight: 600; }
+.nav-item.active { background: color-mix(in srgb, var(--accent) 16%, transparent); font-weight: 600; }
 .sidebar-foot { margin-top: auto; padding: 0 var(--space-2); font-size: 12px; color: var(--text-muted); }
 
 /* Content: calm, near-solid surface */
@@ -85,7 +85,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
   font-size: 11px; padding: 2px 8px; border-radius: 999px;
   background: rgba(127, 127, 127, 0.14); color: var(--text-muted);
 }
-.pill.on { background: rgba(59, 167, 255, 0.16); color: var(--accent); }
+.pill.on { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
 .pill.warn { background: rgba(255, 159, 10, 0.16); color: #c77700; }
 
 kbd {
@@ -135,7 +135,7 @@ kbd {
 }
 
 .btn.link { height: 26px; padding: 0 10px; font-size: 12px; background: transparent; color: var(--accent); }
-.btn.link:hover { background: rgba(59, 167, 255, 0.12); }
+.btn.link:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 
 .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-left: 6px; vertical-align: middle; }
 .notes {

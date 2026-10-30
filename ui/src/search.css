@@ -7,9 +7,9 @@ body { font-family: var(--font-ui); color: var(--text); -webkit-font-smoothing: 
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: color-mix(in srgb, var(--surface-base) 55%, transparent);
+  background: var(--panel-tint);
   border: 1px solid var(--glass-stroke);
-  border-radius: 12px;
+  border-radius: var(--radius-panel);
   box-shadow: inset 0 1px 0 var(--glass-rim);
   animation: pop 160ms var(--ease-out);
 }
@@ -19,7 +19,7 @@ body { font-family: var(--font-ui); color: var(--text); -webkit-font-smoothing: 
 .glass { width: 22px; height: 22px; fill: none; stroke: var(--text-muted); stroke-width: 2; stroke-linecap: round; flex: none; }
 #q {
   flex: 1; font: 400 22px/1.2 var(--font-ui); color: var(--text);
-  background: transparent; border: 0; outline: none; caret-color: var(--accent);
+  background: transparent; border: 0; outline: none; caret-color: var(--focus);
 }
 #q::placeholder { color: var(--text-muted); opacity: 0.7; }
 
@@ -35,13 +35,13 @@ kbd {
   transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
 }
 .tabs button:hover { background: rgba(127, 127, 127, 0.12); }
-.tabs button.on { background: rgba(59, 167, 255, 0.18); color: var(--accent); }
+.tabs button.on { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
 
 .results { list-style: none; margin: 0; padding: 6px; flex: 1; overflow-y: auto; scrollbar-width: thin; }
 .row {
-  display: flex; align-items: center; gap: 12px; padding: 7px 10px; border-radius: 8px; cursor: default;
+  display: flex; align-items: center; gap: 12px; padding: 7px 10px; border-radius: var(--radius-control); cursor: default;
 }
-.row.sel { background: rgba(59, 167, 255, 0.22); }
+.row.sel { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 .tile {
   width: 30px; height: 30px; border-radius: 7px; flex: none;
   display: grid; place-items: center; font: 700 14px var(--font-brand); color: #fff;

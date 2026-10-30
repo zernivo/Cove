@@ -5,19 +5,17 @@ html, body {
   overflow: hidden;
   user-select: none;
   font-family: "Segoe UI Variable", "Segoe UI", Inter, system-ui, sans-serif;
-  --bg: rgba(246, 247, 250, 0.82);
-  --fg: #15171c;
+  --bg: var(--panel-tint);
+  --fg: var(--text);
   --edge: rgba(255, 255, 255, 0.7);
   --sel: rgba(0, 0, 0, 0.12);
 }
-@media (prefers-color-scheme: dark) {
-  html, body {
-    --bg: rgba(34, 36, 44, 0.8);
-    --fg: #f2f3f6;
+html[data-mode="dark"], html[data-mode="dark"] body {
+    --bg: var(--panel-tint);
+    --fg: var(--text);
     --edge: rgba(255, 255, 255, 0.14);
     --sel: rgba(255, 255, 255, 0.16);
   }
-}
 body { display: flex; align-items: center; justify-content: center; }
 .panel {
   display: flex;
@@ -26,7 +24,7 @@ body { display: flex; align-items: center; justify-content: center; }
   gap: 8px;
   padding: 14px;
   margin: 8px;
-  border-radius: 22px;
+  border-radius: var(--radius-dock);
   background: var(--bg);
   color: var(--fg);
   border: 1px solid var(--edge);
@@ -48,13 +46,13 @@ body { display: flex; align-items: center; justify-content: center; }
   border-radius: 16px;
   cursor: default;
 }
-.app.sel { background: var(--sel); }
+.app.sel { background: var(--sel); box-shadow: var(--glow); }
 .app img, .app .letter { width: 64px; height: 64px; object-fit: contain; }
 .app .letter {
   display: grid;
   place-items: center;
   border-radius: 15px;
-  background: linear-gradient(135deg, #3ba7ff, #2a6fdb);
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #000));
   color: #fff;
   font-size: 28px;
   font-weight: 600;
@@ -78,7 +76,7 @@ body { display: flex; align-items: center; justify-content: center; }
   padding: 0 5px;
   box-sizing: border-box;
   border-radius: 9px;
-  background: #3ba7ff;
+  background: var(--accent);
   color: #fff;
   font-size: 11px;
   font-weight: 600;
