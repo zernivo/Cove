@@ -30,6 +30,9 @@ pub struct Settings {
     pub switcher: bool,
     /// Cove top bar on.
     pub topbar: bool,
+    /// Cove Search also asks the Windows Search index (read-only).
+    #[serde(default = "yes")]
+    pub search_winindex: bool,
     /// Ctrl+Alt window snapping presets.
     #[serde(default)]
     pub snap: bool,
@@ -77,6 +80,7 @@ impl Default for Settings {
             topbar: false,
             switcher: false,
             snap: false,
+            search_winindex: true,
             snap_animate: true,
             last_version: String::new(),
         }

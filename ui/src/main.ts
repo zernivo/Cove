@@ -37,6 +37,8 @@ const mock: Record<string, (a?: any) => unknown> = {
   clipboard_status: () => true,
   switcher_status: () => false,
   switcher_set: (a) => a.enabled,
+  search_info: () => ({ winindex: true, timing: { last: null, median: null, count: 0 } }),
+  search_winindex_set: (a) => ({ winindex: a.enabled, timing: { last: null, median: null, count: 0 } }),
   snap_status: () => ({ enabled: false, animate: true, conflicts: [] }),
   snap_set: (a) => ({ enabled: a.enabled, animate: a.animate, conflicts: [] }),
 };
@@ -139,6 +141,21 @@ $("search-toggle").addEventListener("change", async (e) => {
   const enabled = (e.target as HTMLInputElement).checked;
   renderHabits(await invoke<HotkeyStatus>("search_set", { enabled }));
 });
+
+interface SearchInfo { winindex: boolean; timing: { last: number | null; median: number | null; count: number } }
+function renderSearchInfo(i: SearchInfo): void {
+  ($("wi-toggle") as HTMLInputElement).checked = i.winindex;
+  const t = i.timing;
+  const speed = t.median != null ? ` · Search opens in about ${t.median} ms (last ${t.last} ms, ${t.count} open${t.count > 1 ? "s" : ""})` : "";
+  $("wi-note").textContent = (i.winindex
+    ? "On · also finds files by their contents, from the same index as File Explorer's search box. Read-only"
+    : "Off · Cove searches your personal folders by name only") + speed;
+}
+$("wi-toggle").addEventListener("change", async (e) => {
+  renderSearchInfo(await invoke<SearchInfo>("search_winindex_set", { enabled: (e.target as HTMLInputElement).checked }));
+});
+invoke<SearchInfo>("search_info").then(renderSearchInfo);
+window.addEventListener("focus", () => invoke<SearchInfo>("search_info").then(renderSearchInfo));
 
 interface DockStatus { enabled: boolean; hide_taskbar: boolean; stacks: string[]; display: string }
 const STACKS: [string, string][] = [["downloads", "Downloads"], ["documents", "Documents"], ["desktop", "Desktop"], ["pictures", "Pictures"]];

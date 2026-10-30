@@ -28,10 +28,10 @@ Legend: ✅ done · 🔨 in progress · ⬜ planned
 - ✅ Tabs: All / Apps / Files / Settings; Tab to switch, Enter to open, Ctrl+Enter to reveal
 - ✅ Learns what you open most; fully local, no web results, no telemetry
 - ⬜ Real app icons in results
-- ✅ Deeper file search across your personal folders (v0.2.3); Windows Search index still to come
+- ✅ Deeper file search across your personal folders (v0.2.3); Windows Search index results, including file contents (v0.4.3)
 - ✅ Real app and file icons (v0.2.2)
 - ✅ Clipboard history tab, text only, memory only (v0.2.3)
-- ⬜ Measure open time on real hardware (target under 100 ms)
+- ✅ Built-in open-time measurement shown in Settings (v0.4.3); target under 100 ms still to confirm on real hardware
 
 ## Phase 3: Dock + top bar 🟡 (v0.3)
 - ✅ Top bar (AppBar API): active app name, Cove menu, quick settings, battery, clock (v0.3.1); Control Centre panel: sound/brightness sliders, mute, dark mode, Wi-Fi (v0.3.2)

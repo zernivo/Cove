@@ -194,7 +194,8 @@ function fetchDeep(attempt = 0): void {
     const i = shown.findIndex((s) => key(s) === prev);
     if (i > 0) { sel = i; render(); }
     // Index or icons still warming up: look again shortly.
-    if (attempt < 3 && (!got.length || got.some((g) => !g.icon))) setTimeout(() => fetchDeep(attempt + 1), 700);
+    // Index, icons or Windows Search results still arriving: look again shortly.
+    if (attempt < 3 && (attempt < 1 || !got.length || got.some((g) => !g.icon))) setTimeout(() => fetchDeep(attempt + 1), 700);
   }, attempt ? 0 : 90);
 }
 
@@ -244,6 +245,8 @@ function opened(): void {
   loadClips();
   q.focus();
   reload();
+  // Measure Alt+Space -> first painted frame.
+  if (inTauri) requestAnimationFrame(() => requestAnimationFrame(() => { invoke("search_shown").catch(() => {}); }));
 }
 
 if (inTauri) listen("search-open", opened);

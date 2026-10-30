@@ -17,6 +17,7 @@ mod stacks;
 mod switcher;
 mod expose;
 mod snap;
+mod winindex;
 mod topbar;
 mod tweaks;
 mod updater;
@@ -776,9 +777,37 @@ fn search_reveal(target: String, app: AppHandle) -> Result<(), String> {
     search::reveal(&target)
 }
 
+/// Async so the brief wait for the Windows Search index never blocks the UI thread.
 #[tauri::command]
-fn search_files(query: String) -> Vec<search::Item> {
+async fn search_files(query: String) -> Vec<search::Item> {
     search::files(&query)
+}
+
+/// Search window painted its first frame after Alt+Space.
+#[tauri::command]
+fn search_shown() -> Option<u32> {
+    search::mark_shown()
+}
+
+#[derive(serde::Serialize)]
+struct SearchInfo {
+    winindex: bool,
+    timing: search::Timing,
+}
+
+#[tauri::command]
+fn search_info() -> SearchInfo {
+    SearchInfo { winindex: winindex::enabled(), timing: search::timing() }
+}
+
+#[tauri::command]
+fn search_winindex_set(enabled: bool, state: tauri::State<'_, AppState>) -> SearchInfo {
+    if let Ok(mut s) = state.settings.lock() {
+        s.data.search_winindex = enabled;
+        let _ = s.save();
+    }
+    winindex::set_enabled(enabled);
+    search_info()
 }
 
 #[tauri::command]
@@ -874,12 +903,14 @@ fn main() {
             let store = settings::Store::load(dir.join("settings.json"));
             let handle = app.handle().clone();
             hotkeys::set_search_handler(move || {
+                search::mark_open();
                 let h = handle.clone();
                 // Window work belongs on the main thread.
                 let _ = handle.run_on_main_thread(move || toggle_search(&h));
             });
             hotkeys::configure(store.data.hotkeys, store.data.search);
             clipboard::set_enabled(store.data.clipboard);
+            winindex::set_enabled(store.data.search_winindex);
             {
                 let h = app.handle().clone();
                 switcher::set_ui_handler(move |u| switcher_ui(&h, u));
@@ -1006,6 +1037,9 @@ fn main() {
             search_reveal,
             search_hide,
             search_files,
+            search_shown,
+            search_info,
+            search_winindex_set,
             topbar_status,
             topbar_set,
             topbar_state,

@@ -41,7 +41,7 @@ Requires Windows 11 (x64). No admin rights needed to use Cove's features.
 | Area | What you get |
 |---|---|
 | **Calm** | 7 toggles that hide Task View, the taskbar search box, Widgets, the Copilot button, Start's Recommended section, lock-screen tips, and tips & suggestions. |
-| **Cove Search** | Alt+Space opens a launcher: every app (desktop and Store) with its real icon, files deep in your personal folders, Settings pages, quick actions and a calculator. It learns what you open most. Fully local. |
+| **Cove Search** | Alt+Space opens a launcher: every app (desktop and Store) with its real icon, files deep in your personal folders plus Windows Search index results (finds files by their contents too), Settings pages, quick actions and a calculator. It learns what you open most. Fully local. |
 | **Clipboard history** | A Clipboard tab in Search with your last 50 text copies. Enter pastes, kept in memory only, and password-manager copies are skipped. |
 | **Mac habits** | Five window shortcuts, opt-in, active only while Cove runs. |
 | **Window snapping** | Opt-in Ctrl+Alt presets: halves (press again for ⅔ and ⅓), quarters, thirds, two-thirds, fill, centre, restore, and move to the next display. Windows glide into place in about 0.2 s. |
@@ -85,7 +85,7 @@ Press **Alt+Space** anywhere.
 | `Ctrl+D` | Keep the selected app in the Dock |
 | `Esc` | Clear, then close |
 
-Try `blu` for Bluetooth, `vsc` for Visual Studio Code, or `128*4+7`. Turn it off in **Mac habits** if Alt+Space is taken (e.g. by PowerToys Run).
+Try `blu` for Bluetooth, `vsc` for Visual Studio Code, or `128*4+7`. Results marked *Windows Search* come from the same read-only index as File Explorer's search box, so a word inside a document can find it; turn *Use the Windows Search index* off in **Mac habits** for name-only search of your personal folders. The same card shows how fast Search opens on your PC (Alt+Space to first frame). Turn it off in **Mac habits** if Alt+Space is taken (e.g. by PowerToys Run).
 
 ## Dock, top bar & Control Centre
 Turn them on in Cove → **Dock & top bar**.

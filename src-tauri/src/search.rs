@@ -177,6 +177,14 @@ pub fn files(query: &str) -> Vec<Item> {
         .into_iter()
         .map(|(name, path, folder)| Item { kind: "file", subtitle: folder, name, target: path, icon: None })
         .collect();
+    // Windows Search index: adds matches by contents and in folders Cove doesn't walk.
+    let seen: std::collections::HashSet<String> = v.iter().map(|i| i.target.to_lowercase()).collect();
+    for (name, path, folder) in crate::winindex::find(query) {
+        if !seen.contains(&path.to_lowercase()) {
+            let subtitle = if folder.is_empty() { "Windows Search".to_string() } else { format!("{folder} · Windows Search") };
+            v.push(Item { kind: "file", subtitle, name, target: path, icon: None });
+        }
+    }
     let mut missing = Vec::new();
     for it in v.iter_mut() {
         match crate::icons::get(&it.target) {
@@ -296,6 +304,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn timing_median() {
+        assert_eq!(timing_of(&[]), Timing::default());
+        let t = timing_of(&[120, 40, 60]);
+        assert_eq!((t.last, t.median, t.count), (Some(60), Some(60), 3));
+    }
+
+    #[test]
     fn static_items_are_safe() {
         for s in SETTINGS {
             assert!(s.1.starts_with("ms-settings:"));
@@ -304,4 +319,43 @@ mod tests {
         assert!(open("nope", "x").is_err());
         assert!(!valid_app_id("a\"b"));
     }
+}
+
+// ---- How fast Search opens (hotkey -> first painted frame) ----
+
+static OPEN_AT: Mutex<Option<Instant>> = Mutex::new(None);
+static OPEN_MS: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+
+/// Alt+Space pressed.
+pub fn mark_open() {
+    *OPEN_AT.lock().unwrap() = Some(Instant::now());
+}
+
+/// Search's first frame painted after opening; returns the time it took.
+pub fn mark_shown() -> Option<u32> {
+    let t = OPEN_AT.lock().unwrap().take()?;
+    let ms = t.elapsed().as_millis().min(60_000) as u32;
+    let mut v = OPEN_MS.lock().unwrap();
+    v.push(ms);
+    if v.len() > 20 {
+        v.remove(0);
+    }
+    Some(ms)
+}
+
+#[derive(Debug, Clone, Serialize, Default, PartialEq)]
+pub struct Timing {
+    pub last: Option<u32>,
+    pub median: Option<u32>,
+    pub count: usize,
+}
+
+pub fn timing_of(v: &[u32]) -> Timing {
+    let mut s = v.to_vec();
+    s.sort_unstable();
+    Timing { last: v.last().copied(), median: s.get(s.len() / 2).copied(), count: v.len() }
+}
+
+pub fn timing() -> Timing {
+    timing_of(&OPEN_MS.lock().unwrap())
 }
