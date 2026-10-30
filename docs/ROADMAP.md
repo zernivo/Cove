@@ -54,10 +54,10 @@ Legend: ✅ done · 🔨 in progress · ⬜ planned
 - ✅ Interactive first-run tour: pick a starting preset (Mac-like, Light touch, or change nothing), then try Search, Mac shortcuts, snapping, the switcher and App Exposé live; each step ticks itself off when you use it (v0.6.0)
 - ✅ Replayable anytime from Take the tour in the sidebar (v0.6.0)
 
-## Phase 7: UI polish ⬜ (v0.7)
-- ⬜ One pass over every screen: spacing, type scale, colour, contrast, empty states
-- ⬜ Premium window backgrounds (subtle gradient that sets off the logo), light and dark
-- ⬜ Motion: page transitions, toggles, search pop-in, all at 60 fps and respecting reduced motion
+## Phase 7: UI polish 🚧 (v0.7)
+- ✅ One pass over the settings screens: type scale, spacing, contrast-safe text on the accent (also with the Windows accent), keyboard focus rings, empty states (v0.7.0)
+- ✅ Window backgrounds: a soft Tidepool wash that sets off the logo, a quiet gradient for Slate, light and dark (v0.7.0)
+- ✅ Motion: page fade, sliding nav indicator, chip/card/toggle transitions, all off with reduced motion (v0.7.0); 60 fps still to confirm on hardware
 - ⬜ Refined tray menu, onboarding visuals
 - ⬜ Final app icon and installer artwork; consistency check across DPI and multiple monitors
 

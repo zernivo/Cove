@@ -106,6 +106,13 @@ async function renderCalm(): Promise<void> {
     });
     list.appendChild(row);
   }
+  if (!tweaks.length) list.innerHTML = `<p class="empty-state">Calm tweaks are available on Windows 11.</p>`;
+  else if (tweaks.every((t) => t.applied)) {
+    const p = document.createElement("p");
+    p.className = "empty-state";
+    p.textContent = "All calm. Restore puts everything back.";
+    list.appendChild(p);
+  }
 }
 
 $("calm-all").addEventListener("click", () =>

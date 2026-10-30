@@ -2,7 +2,8 @@
 html, body { margin: 0; height: 100%; }
 body {
   font-family: var(--font-ui);
-  font-size: 14px;
+  font-size: var(--text-base);
+  line-height: var(--leading);
   color: var(--text);
   background: transparent; /* Mica shows through */
   -webkit-font-smoothing: antialiased;
@@ -25,6 +26,7 @@ body {
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border-right: 1px solid var(--glass-stroke);
   box-shadow: inset -1px 0 0 var(--glass-rim);
+  background-image: var(--sidebar-glow);
 }
 .brand {
   font-family: var(--font-brand);
@@ -35,29 +37,35 @@ body {
   gap: var(--space-2);
   padding: 0 var(--space-2);
 }
-.mark { width: 18px; height: 18px; border-radius: 5px; background: var(--ink-900); position: relative; }
-.mark::after {
-  content: ""; position: absolute; inset: 6px; border-radius: 2px; background: var(--accent);
-}
+.mark { width: 22px; height: 22px; fill: none; stroke: var(--text); stroke-width: 2.4; stroke-linecap: round; flex: none; }
+.mark .cube { fill: var(--accent); stroke: none; filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 50%, transparent)); }
 nav { display: flex; flex-direction: column; gap: 2px; }
 .nav-item {
   padding: 7px var(--space-3);
   border-radius: var(--radius-control);
   color: var(--text);
   text-decoration: none;
-  transition: background var(--motion-fast) var(--ease-out);
+  position: relative;
+  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
 }
+.nav-item.active::before {
+  content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 2px;
+  background: var(--accent); box-shadow: var(--glow); animation: nav-in var(--motion-base) var(--ease-out);
+}
+@keyframes nav-in { from { transform: scaleY(0.2); opacity: 0; } }
 .nav-item:hover { background: rgba(127, 127, 127, 0.12); }
 .nav-item.active { background: color-mix(in srgb, var(--accent) 16%, transparent); font-weight: 600; }
-.sidebar-foot { margin-top: auto; padding: 0 var(--space-2); font-size: 12px; color: var(--text-muted); }
+.sidebar-foot { margin-top: auto; padding: 0 var(--space-2); font-size: var(--text-xs); color: var(--text-muted); }
 
 /* Content: calm, near-solid surface */
-.content { flex: 1; overflow: auto; padding: var(--space-8); background: var(--surface-base); }
-.view { max-width: 680px; animation: in var(--motion-base) var(--ease-out); }
-@keyframes in { from { opacity: 0; transform: translateY(4px); } }
+.content { flex: 1; overflow: auto; padding: 40px var(--space-8) var(--space-8); background: var(--window-bg); background-attachment: fixed; }
+.view { max-width: 700px; margin: 0 auto; animation: in var(--motion-base) var(--ease-out); }
+@keyframes in { from { opacity: 0; transform: translateY(6px); } }
 .view-head { margin-bottom: var(--space-6); }
-h1 { font-size: 26px; font-weight: 650; margin: 0 0 var(--space-1); letter-spacing: -0.01em; }
-h2 { font-size: 14px; font-weight: 600; margin: 0 0 2px; }
+.view-head p { max-width: 58ch; }
+h1 { font-family: var(--font-brand); font-size: var(--text-title); font-weight: 650; line-height: 1.15; margin: 0 0 6px; letter-spacing: -0.02em; }
+h2 { font-size: var(--text-base); font-weight: 600; margin: 0 0 2px; line-height: 1.3; }
+.small { line-height: 1.4; }
 p { margin: 0; }
 
 .list {
@@ -69,15 +77,21 @@ p { margin: 0; }
 .row { display: flex; align-items: center; gap: var(--space-3); }
 .item { padding: var(--space-3) var(--space-4); cursor: default; }
 .item + .item { border-top: 1px solid rgba(127, 127, 127, 0.14); }
+label.item { transition: background var(--motion-fast) var(--ease-out); }
+label.item:hover { background: rgba(127, 127, 127, 0.06); }
+.empty-state { padding: 28px var(--space-4); text-align: center; color: var(--text-muted); font-size: var(--text-sm); }
 label.item { cursor: pointer; }
 .card {
   background: var(--surface-content);
   border-radius: var(--radius-card);
   box-shadow: var(--elev-1);
-  padding: var(--space-4);
+  padding: 18px 20px;
   justify-content: space-between;
   margin-bottom: var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--glass-stroke) 60%, transparent);
+  transition: box-shadow var(--motion-fast) var(--ease-out);
 }
+.card:hover { box-shadow: var(--elev-2); }
 
 input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; }
 
@@ -86,7 +100,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
   background: rgba(127, 127, 127, 0.14); color: var(--text-muted);
 }
 .pill.on { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
-.pill.warn { background: rgba(255, 159, 10, 0.16); color: #c77700; }
+.pill.warn { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
 
 kbd {
   font-family: var(--font-ui);
@@ -107,9 +121,9 @@ kbd {
   transition: transform var(--motion-fast) var(--ease-out), filter var(--motion-fast) var(--ease-out);
 }
 .btn:active { transform: scale(0.97); }
-.btn.primary { background: var(--accent); color: white; }
+.btn.primary { background: var(--accent); color: var(--on-accent); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
 .btn.ghost { background: rgba(127, 127, 127, 0.14); color: var(--text); }
-.btn.danger { background: rgba(255, 69, 58, 0.14); color: #d93a30; }
+.btn.danger { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
 .btn:hover { filter: brightness(1.05); }
 
 /* Switch */
@@ -161,8 +175,9 @@ kbd {
   border-radius: 999px;
   cursor: pointer;
 }
+.chip { transition: background var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out); }
 .chip:hover { background: rgba(127, 127, 127, 0.14); }
-.chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chip.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
 
 /* Look: wallpapers and schedule */
 .wall-card .row { padding: 0; }
@@ -204,3 +219,9 @@ kbd {
 .tour-spacer { flex: 1; }
 @media (prefers-reduced-motion: reduce) { .tour { animation: none; } }
 .tour-link + .sidebar-foot { margin-top: 0; }
+
+/* Keyboard focus: one clear ring everywhere, never on mouse clicks. */
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.switch input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
+.nav-item:focus-visible, .chip:focus-visible, .btn:focus-visible { outline-offset: 1px; }
