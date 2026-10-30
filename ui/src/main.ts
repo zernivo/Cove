@@ -37,6 +37,8 @@ const mock: Record<string, (a?: any) => unknown> = {
   clipboard_status: () => true,
   switcher_status: () => false,
   switcher_set: (a) => a.enabled,
+  snap_status: () => ({ enabled: false, animate: true, conflicts: [] }),
+  snap_set: (a) => ({ enabled: a.enabled, animate: a.animate, conflicts: [] }),
 };
 
 function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -185,6 +187,46 @@ $("sw-toggle").addEventListener("change", async (e) => {
   renderSwitcher(await invoke<boolean>("switcher_set", { enabled: (e.target as HTMLInputElement).checked }));
 });
 invoke<boolean>("switcher_status").then(renderSwitcher);
+
+interface SnapInfo { enabled: boolean; animate: boolean; conflicts: string[] }
+const SNAPS: [string, string][] = [
+  ["Ctrl+Alt+← / →", "Left or right half · press again for ⅔, then ⅓"],
+  ["Ctrl+Alt+↑ / ↓", "Top or bottom half · press again for ⅔, then ⅓"],
+  ["Ctrl+Alt+U / I / J / K", "Top-left, top-right, bottom-left, bottom-right quarter"],
+  ["Ctrl+Alt+D / F / G", "Left, centre, right third"],
+  ["Ctrl+Alt+E / T", "Left or right two-thirds"],
+  ["Ctrl+Alt+Enter", "Fill the screen"],
+  ["Ctrl+Alt+C", "Centre, same size"],
+  ["Ctrl+Alt+Backspace", "Back to where it was before snapping"],
+  ["Ctrl+Alt+Shift+← / →", "Move to the previous or next display"],
+];
+let snap: SnapInfo = { enabled: false, animate: true, conflicts: [] };
+function renderSnap(s: SnapInfo): void {
+  snap = s;
+  ($("snap-toggle") as HTMLInputElement).checked = s.enabled;
+  ($("snap-animate") as HTMLInputElement).checked = s.animate;
+  $("snap-anim-row").classList.toggle("dim", !s.enabled);
+  $("snap-note").textContent = s.enabled
+    ? s.conflicts.length
+      ? `On · ${s.conflicts.length} shortcut${s.conflicts.length > 1 ? "s are" : " is"} taken by another app`
+      : "On · works on the window in front. Windows' own Win+arrow snapping still works too"
+    : "Off · turn on for keyboard presets: halves, quarters, thirds, centre, fill";
+  $("snap-list").classList.toggle("dim", !s.enabled);
+  $("snap-list").innerHTML = SNAPS.map(
+    ([k, d]) => {
+      const prefix = k.slice(0, k.lastIndexOf("+") + 1);
+      const taken = k.slice(prefix.length).split(" / ").some((p) => s.conflicts.includes(prefix + p));
+      return `<div class="row item"><kbd>${k}</kbd><div class="grow">${d}</div>${taken ? '<span class="pill warn">In use</span>' : ""}</div>`;
+    },
+  ).join("");
+}
+$("snap-toggle").addEventListener("change", async (e) => {
+  renderSnap(await invoke<SnapInfo>("snap_set", { enabled: (e.target as HTMLInputElement).checked, animate: snap.animate }));
+});
+$("snap-animate").addEventListener("change", async (e) => {
+  renderSnap(await invoke<SnapInfo>("snap_set", { enabled: snap.enabled, animate: (e.target as HTMLInputElement).checked }));
+});
+invoke<SnapInfo>("snap_status").then(renderSnap);
 
 function renderTopbar(on: boolean): void {
   ($("topbar-toggle") as HTMLInputElement).checked = on;

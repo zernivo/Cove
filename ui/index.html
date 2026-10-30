@@ -68,6 +68,21 @@
             </div>
             <label class="switch"><input type="checkbox" id="sw-toggle" /><span></span></label>
           </div>
+          <div class="row card">
+            <div>
+              <h2>Window snapping (Ctrl+Alt)</h2>
+              <p class="muted small" id="snap-note">Off</p>
+            </div>
+            <label class="switch"><input type="checkbox" id="snap-toggle" /><span></span></label>
+          </div>
+          <div class="row card" id="snap-anim-row">
+            <div>
+              <h2>Glide into place</h2>
+              <p class="muted small">Snapped windows move smoothly over about 0.2 s. Follows Windows' "Animation effects" setting too</p>
+            </div>
+            <label class="switch"><input type="checkbox" id="snap-animate" /><span></span></label>
+          </div>
+          <div class="list" id="snap-list"></div>
         </section>
 
         <section class="view hidden" id="view-dock">

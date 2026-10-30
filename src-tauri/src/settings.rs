@@ -30,6 +30,12 @@ pub struct Settings {
     pub switcher: bool,
     /// Cove top bar on.
     pub topbar: bool,
+    /// Ctrl+Alt window snapping presets.
+    #[serde(default)]
+    pub snap: bool,
+    /// Snapped windows glide (~200 ms) instead of jumping.
+    #[serde(default = "yes")]
+    pub snap_animate: bool,
     /// Last version that ran (to refresh icons once after an update).
     pub last_version: String,
 }
@@ -39,6 +45,10 @@ pub struct Pin {
     pub name: String,
     /// Start-menu AppID (opened through shell:AppsFolder).
     pub target: String,
+}
+
+fn yes() -> bool {
+    true
 }
 
 pub fn default_pins() -> Vec<Pin> {
@@ -66,6 +76,8 @@ impl Default for Settings {
             taskbar_prev_autohide: None,
             topbar: false,
             switcher: false,
+            snap: false,
+            snap_animate: true,
             last_version: String::new(),
         }
     }

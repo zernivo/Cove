@@ -43,7 +43,7 @@ Legend: ✅ done · 🔨 in progress · ⬜ planned
 ## Phase 4: Window overview 🚧 (v0.4)
 - ✅ App-grouped switcher (Alt+Tab replacement, opt-in, WH_KEYBOARD_LL hook removed when off) (v0.4.0)
 - ✅ App Exposé: all windows of one app at a glance, live DWM thumbnails; Dock right-click or ↓ in the switcher (v0.4.1)
-- ⬜ Window snapping presets with smooth, interruptible motion (150–250 ms)
+- ✅ Window snapping presets with smooth, interruptible motion (200 ms glide, Ctrl+Alt presets, opt-in) (v0.4.2)
 
 ## Phase 5: Calm look ⬜ (v0.5)
 - ⬜ Cove Glass theme for Cove's own surfaces (light/dark, accent #3BA7FF)

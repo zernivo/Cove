@@ -16,6 +16,7 @@ mod shell;
 mod stacks;
 mod switcher;
 mod expose;
+mod snap;
 mod topbar;
 mod tweaks;
 mod updater;
@@ -139,6 +140,16 @@ fn restore_all(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<Rest
     }).unwrap_or(false);
     if had_switcher {
         switcher::set_enabled(false);
+        report.restored += 1;
+    }
+    let had_snap = state.settings.lock().map(|mut s| {
+        let was = s.data.snap;
+        s.data.snap = false;
+        let _ = s.save();
+        was
+    }).unwrap_or(false);
+    if had_snap {
+        snap::configure(false, true);
         report.restored += 1;
     }
     Ok(report)
@@ -341,6 +352,36 @@ fn switcher_set(enabled: bool, state: tauri::State<'_, AppState>) -> bool {
     }
     switcher::set_enabled(enabled);
     enabled
+}
+
+// ---- Window snapping (Ctrl+Alt, opt-in) ----
+
+#[derive(serde::Serialize)]
+struct SnapInfo {
+    enabled: bool,
+    animate: bool,
+    conflicts: Vec<&'static str>,
+}
+
+fn snap_info(state: &AppState) -> SnapInfo {
+    let (enabled, animate) = state.settings.lock().map(|s| (s.data.snap, s.data.snap_animate)).unwrap_or((false, true));
+    SnapInfo { enabled, animate, conflicts: snap::status().conflicts }
+}
+
+#[tauri::command]
+fn snap_status(state: tauri::State<'_, AppState>) -> SnapInfo {
+    snap_info(&state)
+}
+
+#[tauri::command]
+fn snap_set(enabled: bool, animate: bool, state: tauri::State<'_, AppState>) -> SnapInfo {
+    if let Ok(mut s) = state.settings.lock() {
+        s.data.snap = enabled;
+        s.data.snap_animate = animate;
+        let _ = s.save();
+    }
+    snap::configure(enabled, animate);
+    snap_info(&state)
 }
 
 #[tauri::command]
@@ -844,6 +885,7 @@ fn main() {
                 switcher::set_ui_handler(move |u| switcher_ui(&h, u));
             }
             switcher::set_enabled(store.data.switcher);
+            snap::configure(store.data.snap, store.data.snap_animate);
             search::warm();
             let dock_on = store.data.dock;
             let bar_on = store.data.topbar;
@@ -979,6 +1021,8 @@ fn main() {
             switcher_status,
             switcher_set,
             switcher_pick,
+            snap_status,
+            snap_set,
             expose_open,
             expose_pick,
             expose_close,
@@ -1007,6 +1051,7 @@ fn main() {
         if let RunEvent::Exit = event {
             hotkeys::stop();
             switcher::set_enabled(false);
+            snap::configure(false, true);
             if let Some(w) = handle.get_webview_window("topbar") {
                 if let Ok(h) = w.hwnd() {
                     topbar::unregister(h.0 as isize);
