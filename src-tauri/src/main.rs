@@ -15,6 +15,7 @@ mod settings;
 mod shell;
 mod stacks;
 mod switcher;
+mod expose;
 mod topbar;
 mod tweaks;
 mod updater;
@@ -402,6 +403,10 @@ fn switcher_ui(app: &AppHandle, u: switcher::Ui) {
                 }
             });
         }
+        switcher::Ui::Expose(sa) => {
+            let a2 = a.clone();
+            let _ = a.run_on_main_thread(move || open_expose(&a2, sa.name, sa.windows));
+        }
         switcher::Ui::Hide => {
             let a2 = a.clone();
             let _ = a.run_on_main_thread(move || {
@@ -410,6 +415,64 @@ fn switcher_ui(app: &AppHandle, u: switcher::Ui) {
                 }
             });
         }
+    }
+}
+
+// ---- App Exposé ----
+
+static EXPOSE_PREV: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+/// Cover the screen under the pointer and lay out live previews of `windows`.
+fn open_expose(app: &AppHandle, name: String, windows: Vec<isize>) {
+    let Some(w) = app.get_webview_window("expose") else { return };
+    let Some(m) = app
+        .cursor_position()
+        .ok()
+        .and_then(|p| app.monitor_from_point(p.x, p.y).ok().flatten())
+        .or_else(|| app.primary_monitor().ok().flatten())
+    else {
+        return;
+    };
+    let (mp, ms) = (*m.position(), *m.size());
+    EXPOSE_PREV.store(dock::foreground(), std::sync::atomic::Ordering::SeqCst);
+    let _ = w.set_position(mp);
+    let _ = w.set_size(ms);
+    let _ = w.set_position(mp);
+    switcher::unlock_foreground();
+    let _ = w.show();
+    let _ = w.set_focus();
+    let Ok(h) = w.hwnd() else { return };
+    let mut st = expose::open(h.0 as isize, &name, &windows, ms.width as i32, ms.height as i32);
+    st.scale = m.scale_factor();
+    let _ = w.emit("expose-state", &st);
+}
+
+fn close_expose(app: &AppHandle) {
+    expose::close();
+    if let Some(w) = app.get_webview_window("expose") {
+        let _ = w.hide();
+    }
+}
+
+#[tauri::command]
+fn expose_open(name: String, windows: Vec<isize>, app: AppHandle) {
+    open_expose(&app, name, windows);
+}
+
+#[tauri::command]
+fn expose_pick(hwnd: isize, app: AppHandle) {
+    close_expose(&app);
+    switcher::unlock_foreground();
+    dock::activate(hwnd);
+}
+
+#[tauri::command]
+fn expose_close(refocus: bool, app: AppHandle) {
+    close_expose(&app);
+    let prev = EXPOSE_PREV.swap(0, std::sync::atomic::Ordering::SeqCst);
+    if refocus && prev != 0 {
+        switcher::unlock_foreground();
+        dock::activate(prev);
     }
 }
 
@@ -878,6 +941,11 @@ fn main() {
             WindowEvent::Focused(false) if window.label() == "search" => {
                 let _ = window.hide();
             }
+            // Exposé closes if you switch away some other way.
+            WindowEvent::Focused(false) if window.label() == "expose" => {
+                expose::close();
+                let _ = window.hide();
+            }
             _ => {}
         })
         .invoke_handler(tauri::generate_handler![
@@ -911,6 +979,9 @@ fn main() {
             switcher_status,
             switcher_set,
             switcher_pick,
+            expose_open,
+            expose_pick,
+            expose_close,
             stack_list,
             stack_open,
             stack_folder,

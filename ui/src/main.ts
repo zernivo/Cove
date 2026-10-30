@@ -178,7 +178,7 @@ invoke<DockStatus>("dock_status").then(renderDock);
 function renderSwitcher(on: boolean): void {
   ($("sw-toggle") as HTMLInputElement).checked = on;
   $("sw-note").textContent = on
-    ? "On · hold Alt and tap Tab: one icon per app. Shift+Tab goes back, Esc cancels, release Alt to switch"
+    ? "On · hold Alt and tap Tab: one icon per app. Shift+Tab goes back, ↓ shows all that app's windows, Esc cancels, release Alt to switch"
     : "Off · Windows' own Alt+Tab. Turn on for Mac-style switching by app instead of by window";
 }
 $("sw-toggle").addEventListener("change", async (e) => {

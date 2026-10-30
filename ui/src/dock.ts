@@ -116,6 +116,7 @@ function showMenu(it: DockItem, x: number, y: number): void {
     }]);
   }
   if (it.kind === "trash") acts.push(["Open Recycle Bin", () => invoke("dock_open", { kind: "trash", target: it.target, windows: [], active: false })]);
+  if (it.windows.length) acts.push(["Show All Windows", () => invoke("expose_open", { name: it.name, windows: it.windows })]);
   if (it.windows.length) acts.push([it.windows.length > 1 ? `Close ${it.windows.length} windows` : "Close window", () => invoke("dock_close", { windows: it.windows })]);
   if (it.kind === "running") acts.push(["Keep in Dock", () => invoke("dock_pin", { name: it.name, target: it.target })]);
   menu.innerHTML = "";

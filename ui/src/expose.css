@@ -1,0 +1,85 @@
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  user-select: none;
+  background: rgba(12, 14, 20, 0.62);
+  color: #fff;
+  font-family: "Segoe UI Variable", "Segoe UI", Inter, system-ui, sans-serif;
+  animation: fade 140ms ease-out;
+}
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { html, body { animation: none; } }
+.title {
+  position: absolute;
+  top: 30px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
+}
+.tile {
+  position: absolute;
+  border-radius: 8px;
+  outline: 3px solid transparent;
+  outline-offset: 4px;
+  transition: outline-color 120ms;
+}
+.tile.sel, .tile:hover { outline-color: #3ba7ff; }
+.cap {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: -30px;
+  max-width: 100%;
+  padding: 3px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+}
+.mins {
+  position: absolute;
+  bottom: 28px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 0 40px;
+}
+.mins:not(:empty)::before {
+  content: "Minimized";
+  width: 100%;
+  text-align: center;
+  font-size: 11px;
+  opacity: 0.7;
+  margin-bottom: 2px;
+}
+.min {
+  max-width: 240px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.min.sel, .min:hover { background: rgba(59, 167, 255, 0.55); }
+.empty {
+  position: absolute;
+  top: 50%;
+  width: 100%;
+  text-align: center;
+  opacity: 0.75;
+}

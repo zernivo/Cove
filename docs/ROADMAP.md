@@ -42,7 +42,7 @@ Legend: ✅ done · 🔨 in progress · ⬜ planned
 
 ## Phase 4: Window overview 🚧 (v0.4)
 - ✅ App-grouped switcher (Alt+Tab replacement, opt-in, WH_KEYBOARD_LL hook removed when off) (v0.4.0)
-- ⬜ App Exposé: all windows of one app at a glance
+- ✅ App Exposé: all windows of one app at a glance, live DWM thumbnails; Dock right-click or ↓ in the switcher (v0.4.1)
 - ⬜ Window snapping presets with smooth, interruptible motion (150–250 ms)
 
 ## Phase 5: Calm look ⬜ (v0.5)

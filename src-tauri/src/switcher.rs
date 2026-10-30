@@ -4,6 +4,7 @@
 //! hook is removed the moment the switcher is turned off or Cove quits.
 //!
 //! Hold Alt, press Tab to move right (Shift+Tab or ← to move left, → right),
+//! ↓ to see all of that app's windows (App Exposé),
 //! release Alt to switch, Esc to cancel. Clicking an icon also switches.
 
 use serde::Serialize;
@@ -30,6 +31,8 @@ pub enum Ui {
     Open(SwitchState),
     Update(SwitchState),
     Hide,
+    /// Show every window of this app (↓ while switching).
+    Expose(SwitchApp),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -39,6 +42,7 @@ enum Ev {
     Prev,
     Commit,
     Cancel,
+    Expose,
 }
 
 static UI: OnceLock<Box<dyn Fn(Ui) + Send + Sync>> = OnceLock::new();
@@ -124,6 +128,14 @@ fn handle(ev: Ev) {
                 bring_forward(&a);
             }
         }
+        Ev::Expose => {
+            let s = g.take();
+            drop(g);
+            ui(Ui::Hide);
+            if let Some(a) = s.and_then(|s| s.apps.get(s.sel).cloned()) {
+                ui(Ui::Expose(a));
+            }
+        }
         Ev::Cancel => {
             let s = g.take();
             drop(g);
@@ -157,7 +169,7 @@ fn bring_forward(a: &SwitchApp) {
     }
 }
 
-pub use imp::{running, set_enabled};
+pub use imp::{running, set_enabled, unlock_foreground};
 
 #[cfg(windows)]
 mod imp {
@@ -170,7 +182,7 @@ mod imp {
     use windows_sys::Win32::System::Threading::GetCurrentThreadId;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
         GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYEVENTF_KEYUP,
-        MOUSEINPUT, VK_ESCAPE, VK_LEFT, VK_LMENU, VK_MENU, VK_RIGHT, VK_RMENU, VK_SHIFT, VK_TAB,
+        MOUSEINPUT, VK_DOWN, VK_ESCAPE, VK_LEFT, VK_LMENU, VK_MENU, VK_RIGHT, VK_RMENU, VK_SHIFT, VK_TAB,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CallNextHookEx, GetMessageW, PostThreadMessageW, SetWindowsHookExW, UnhookWindowsHookEx, KBDLLHOOKSTRUCT,
@@ -241,6 +253,13 @@ mod imp {
                         if down {
                             ACTIVE.store(false, Ordering::SeqCst);
                             send(Ev::Cancel);
+                        }
+                        return 1;
+                    }
+                    if vk == VK_DOWN {
+                        if down {
+                            ACTIVE.store(false, Ordering::SeqCst);
+                            send(Ev::Expose);
                         }
                         return 1;
                     }
