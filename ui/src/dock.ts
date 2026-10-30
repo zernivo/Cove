@@ -197,6 +197,10 @@ async function refresh(): Promise<void> {
   render();
 }
 
-if (inTauri) listen("dock-changed", refresh);
+if (inTauri) {
+  listen("dock-changed", refresh);
+  // Moved to another display, or the screen changed size or scale.
+  listen("dock-reflow", () => { lastWidth = 0; lastHeight = 0; place(); });
+}
 refresh();
 setInterval(refresh, 1200);

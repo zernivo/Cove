@@ -81,7 +81,7 @@ Try `blu` for Bluetooth, `vsc` for Visual Studio Code, or `128*4+7`. Turn it off
 ## Dock, top bar & Control Centre
 Turn them on in Cove → **Dock & top bar**.
 
-- **Dock:** click an app to open or switch to it, and click the app in front to minimise it. Right-click for **Keep in Dock**, **Remove from Dock** and **Close window**. Click a folder stack (Downloads by default) to see its newest files in a grid: click to open, Ctrl+click to show in its folder. Choose stacks under **Folder stacks**. Turning on *Auto-hide the Windows taskbar* uses Windows' own setting and is undone when the dock goes off or Cove quits.
+- **Dock:** click an app to open or switch to it, and click the app in front to minimise it. Right-click for **Keep in Dock**, **Remove from Dock** and **Close window**. Click a folder stack (Downloads by default) to see its newest files in a grid: click to open, Ctrl+click to show in its folder. Choose stacks under **Folder stacks**. With more than one screen, set **Dock appears on** to *Follows the pointer* and rest the pointer on any screen's bottom edge to move the dock there. The dock and top bar re-fit themselves when you plug in a screen or change its resolution or scaling. Turning on *Auto-hide the Windows taskbar* uses Windows' own setting and is undone when the dock goes off or Cove quits.
 - **Top bar:** registered as a standard Windows app bar, so maximised windows sit below it. Click the Cove mark for the menu, or the app name to open Cove.
 - **Control Centre:** click the sliders, Wi-Fi or sound icon in the top bar. Dark mode writes the same setting as Windows Settings → Personalization → Colors. The brightness slider shows only on screens Windows can dim (most laptops).
 
@@ -98,7 +98,7 @@ Calm settings stay applied after you close Cove (like changing them in Settings)
 |---|---|---|
 | v0.1 | Calm preset, Mac shortcuts, restore, installer, updater | ✅ |
 | v0.2 | Cove Search (Alt+Space) | ✅ |
-| v0.3 | Dock, top bar, Control Centre, folder stacks | ✅ (multi-monitor next) |
+| v0.3 | Dock, top bar, Control Centre, folder stacks, multi-display | ✅ |
 | v0.4 | App-grouped switcher, App Exposé | ⬜ |
 | v0.5 | Cove Glass theme, wallpaper gallery | ⬜ |
 | v0.6 | Cove Tour (interactive tutorial) | ⬜ |

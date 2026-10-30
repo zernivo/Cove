@@ -163,21 +163,92 @@ pub fn state(pins: &[crate::settings::Pin], stacks: &[String]) -> DockState {
     DockState { items }
 }
 
-pub use imp::{activate, close_windows, minimize, taskbar_autohide, work_area};
+pub use imp::{activate, close_windows, cursor, minimize, monitor_at, taskbar_autohide, work_area};
+
+/// One display: its full rectangle and its work area (physical px,
+/// left/top/right/bottom).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Mon {
+    pub monitor: (i32, i32, i32, i32),
+    pub work: (i32, i32, i32, i32),
+}
+
+impl Mon {
+    pub fn centre(&self) -> (i32, i32) {
+        ((self.monitor.0 + self.monitor.2) / 2, (self.monitor.1 + self.monitor.3) / 2)
+    }
+}
+
+/// The main display (the point 0,0 always lies on it).
+pub fn primary() -> Option<Mon> {
+    monitor_at(0, 0)
+}
+
+/// The display the dock sits on, and its scale (x100) when it was placed.
+static DOCK_MON: std::sync::Mutex<Option<(Mon, i32)>> = std::sync::Mutex::new(None);
+
+pub fn dock_monitor() -> Option<Mon> {
+    DOCK_MON.lock().ok().and_then(|g| g.map(|(m, _)| m))
+}
+
+/// Record where the dock should be; true when that changed (move or re-size it).
+pub fn set_dock_monitor(m: Mon, scale100: i32) -> bool {
+    let mut g = DOCK_MON.lock().unwrap();
+    let changed = *g != Some((m, scale100));
+    *g = Some((m, scale100));
+    changed
+}
+
+/// Pointer pushed against the bottom edge of a display for long enough.
+pub struct EdgeWatch {
+    ticks: u32,
+    mon: Option<Mon>,
+}
+
+impl EdgeWatch {
+    pub const fn new() -> Self {
+        EdgeWatch { ticks: 0, mon: None }
+    }
+    /// Feed one pointer sample; returns the display once the pointer has
+    /// rested at its bottom edge for `need` samples in a row.
+    pub fn feed(&mut self, y: i32, mon: Option<Mon>, need: u32) -> Option<Mon> {
+        match mon {
+            Some(m) if y >= m.monitor.3 - 3 => {
+                if self.mon.map(|p| p.monitor) == Some(m.monitor) {
+                    self.ticks += 1;
+                } else {
+                    self.ticks = 1;
+                    self.mon = Some(m);
+                }
+            }
+            _ => {
+                self.ticks = 0;
+                self.mon = None;
+            }
+        }
+        if self.ticks >= need {
+            self.mon
+        } else {
+            None
+        }
+    }
+}
 
 #[cfg(windows)]
 mod imp {
     use super::Win;
     use std::ffi::c_void;
     use windows_sys::Win32::Foundation::{CloseHandle, BOOL, HWND, LPARAM, RECT};
+    use windows_sys::Win32::Foundation::POINT;
     use windows_sys::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+    use windows_sys::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST};
     use windows_sys::Win32::System::Threading::{
         GetCurrentProcessId, OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
         PROCESS_QUERY_LIMITED_INFORMATION,
     };
     use windows_sys::Win32::UI::Shell::{SHAppBarMessage, APPBARDATA};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, FindWindowW, GetClassNameW, GetForegroundWindow, GetWindow, GetWindowLongW,
+        EnumWindows, FindWindowW, GetClassNameW, GetCursorPos, GetForegroundWindow, GetWindow, GetWindowLongW,
         GetWindowRect, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic,
         IsWindowVisible, PostMessageW, SetForegroundWindow, ShowWindow, SystemParametersInfoW,
         GWL_EXSTYLE, GW_OWNER, SPI_GETWORKAREA, SW_MINIMIZE, SW_RESTORE, WM_CLOSE, WS_EX_TOOLWINDOW,
@@ -287,6 +358,25 @@ mod imp {
         }
     }
 
+    pub fn cursor() -> Option<(i32, i32)> {
+        let mut p = POINT { x: 0, y: 0 };
+        (unsafe { GetCursorPos(&mut p) } != 0).then_some((p.x, p.y))
+    }
+
+    /// The display containing (or nearest to) a point.
+    pub fn monitor_at(x: i32, y: i32) -> Option<super::Mon> {
+        unsafe {
+            let hm = MonitorFromPoint(POINT { x, y }, MONITOR_DEFAULTTONEAREST);
+            let mut mi: MONITORINFO = std::mem::zeroed();
+            mi.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+            if GetMonitorInfoW(hm, &mut mi) == 0 {
+                return None;
+            }
+            let r = |r: RECT| (r.left, r.top, r.right, r.bottom);
+            Some(super::Mon { monitor: r(mi.rcMonitor), work: r(mi.rcWork) })
+        }
+    }
+
     /// Primary monitor work area (physical px): left, top, right, bottom.
     pub fn work_area() -> Option<(i32, i32, i32, i32)> {
         let mut r: RECT = unsafe { std::mem::zeroed() };
@@ -321,6 +411,12 @@ mod imp {
 #[cfg(not(windows))]
 mod imp {
     use super::Win;
+    pub fn cursor() -> Option<(i32, i32)> {
+        None
+    }
+    pub fn monitor_at(_x: i32, _y: i32) -> Option<super::Mon> {
+        None
+    }
     pub fn windows() -> Vec<Win> {
         Vec::new()
     }
@@ -341,6 +437,15 @@ mod imp {
 #[cfg(test)]
 mod tests {
     use super::matches;
+    #[test]
+    fn edge_watch_needs_a_rest() {
+        let m = super::Mon { monitor: (0, 0, 1920, 1080), work: (0, 0, 1920, 1040) };
+        let mut e = super::EdgeWatch::new();
+        assert!(e.feed(1079, Some(m), 2).is_none());
+        assert_eq!(e.feed(1079, Some(m), 2), Some(m));
+        assert!(e.feed(500, Some(m), 2).is_none());
+    }
+
     #[test]
     fn matches_pins_to_running_exes() {
         assert!(matches("Chrome", "Google Chrome", r"C:\Program Files\Google\Chrome\Application\chrome.exe"));

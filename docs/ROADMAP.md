@@ -37,7 +37,7 @@ Legend: ✅ done · 🔨 in progress · ⬜ planned
 - ✅ Top bar (AppBar API): active app name, Cove menu, quick settings, battery, clock (v0.3.1); Control Centre panel: sound/brightness sliders, mute, dark mode, Wi-Fi (v0.3.2)
 - ✅ Dock: pinned + running apps, running dots, gentle magnification, Recycle Bin (v0.3.0); folder stacks: Downloads/Documents/Desktop/Pictures grid (v0.3.3)
 - ✅ Taskbar auto-hide only through its own documented setting, restored when Cove quits (v0.3.0)
-- ⬜ Multi-monitor and per-DPI support
+- ✅ Multi-monitor and per-DPI support: dock on main display or follows the pointer (bottom-edge rest), dock + top bar re-fit on display plug/resize/scale changes (v0.3.4). Top bar stays on the main display.
 - Note: a true global menu bar can't work for Chrome, Electron or Store apps, so the top bar shows the active app and common actions instead
 
 ## Phase 4: Window overview ⬜ (v0.4)

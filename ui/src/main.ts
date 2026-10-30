@@ -29,10 +29,11 @@ const mock: Record<string, (a?: any) => unknown> = {
   clipboard_set: (a) => a.enabled,
   topbar_status: () => false,
   topbar_set: (a) => a.enabled,
-  dock_status: () => ({ enabled: false, hide_taskbar: false, stacks: ["downloads"] }),
-  dock_set: (a) => ({ enabled: a.enabled, hide_taskbar: false, stacks: ["downloads"] }),
-  dock_hide_taskbar_set: (a) => ({ enabled: true, hide_taskbar: a.enabled, stacks: ["downloads"] }),
-  dock_stacks_set: (a) => ({ enabled: true, hide_taskbar: false, stacks: a.keys }),
+  dock_status: () => ({ enabled: false, hide_taskbar: false, stacks: ["downloads"], display: "main" }),
+  dock_set: (a) => ({ enabled: a.enabled, hide_taskbar: false, stacks: ["downloads"], display: "main" }),
+  dock_hide_taskbar_set: (a) => ({ enabled: true, hide_taskbar: a.enabled, stacks: ["downloads"], display: "main" }),
+  dock_stacks_set: (a) => ({ enabled: true, hide_taskbar: false, stacks: a.keys, display: "main" }),
+  dock_display_set: (a) => ({ enabled: true, hide_taskbar: false, stacks: ["downloads"], display: a.display }),
   clipboard_status: () => true,
 };
 
@@ -135,11 +136,19 @@ $("search-toggle").addEventListener("change", async (e) => {
   renderHabits(await invoke<HotkeyStatus>("search_set", { enabled }));
 });
 
-interface DockStatus { enabled: boolean; hide_taskbar: boolean; stacks: string[] }
+interface DockStatus { enabled: boolean; hide_taskbar: boolean; stacks: string[]; display: string }
 const STACKS: [string, string][] = [["downloads", "Downloads"], ["documents", "Documents"], ["desktop", "Desktop"], ["pictures", "Pictures"]];
 let dockStacks: string[] = [];
 function renderDock(d: DockStatus): void {
   dockStacks = d.stacks;
+  $("dock-display").innerHTML = "";
+  for (const [k, label] of [["main", "Main display"], ["follow", "Follows the pointer"]]) {
+    const b = document.createElement("button");
+    b.className = `chip${d.display === k ? " on" : ""}`;
+    b.textContent = label;
+    b.addEventListener("click", async () => renderDock(await invoke<DockStatus>("dock_display_set", { display: k })));
+    $("dock-display").appendChild(b);
+  }
   $("dock-stacks").innerHTML = "";
   for (const [k, label] of STACKS) {
     const b = document.createElement("button");

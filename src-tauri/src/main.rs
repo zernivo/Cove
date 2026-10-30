@@ -141,7 +141,13 @@ fn topbar_apply(app: &AppHandle, on: bool) {
     let Ok(hwnd) = w.hwnd() else { return };
     let h = hwnd.0 as isize;
     if on {
-        let sf = w.scale_factor().unwrap_or(1.0);
+        // The bar lives on the main display, so use that display's scale.
+        let sf = app
+            .primary_monitor()
+            .ok()
+            .flatten()
+            .map(|m| m.scale_factor())
+            .unwrap_or_else(|| w.scale_factor().unwrap_or(1.0));
         let (l, t, r, b) = topbar::register(h, (TOPBAR_HEIGHT * sf).round() as i32);
         let _ = w.set_size(tauri::PhysicalSize::new((r - l).max(1) as u32, (b - t).max(1) as u32));
         let _ = w.set_position(PhysicalPosition::new(l, t));
@@ -230,6 +236,7 @@ struct DockStatus {
     enabled: bool,
     hide_taskbar: bool,
     stacks: Vec<String>,
+    display: String,
 }
 
 /// Make the taskbar's auto-hide match the settings, remembering (and later
@@ -250,12 +257,12 @@ fn sync_taskbar(s: &mut settings::Store) {
 }
 
 fn dock_apply(app: &AppHandle, state: &AppState) -> DockStatus {
-    let (enabled, hide, stacks) = match state.settings.lock() {
+    let (enabled, hide, stacks, display) = match state.settings.lock() {
         Ok(mut s) => {
             sync_taskbar(&mut s);
-            (s.data.dock, s.data.dock_hide_taskbar, s.data.dock_stacks.clone())
+            (s.data.dock, s.data.dock_hide_taskbar, s.data.dock_stacks.clone(), s.data.dock_display.clone())
         }
-        Err(_) => (false, false, Vec::new()),
+        Err(_) => (false, false, Vec::new(), "main".into()),
     };
     if let Some(w) = app.get_webview_window("dock") {
         if enabled {
@@ -265,13 +272,18 @@ fn dock_apply(app: &AppHandle, state: &AppState) -> DockStatus {
             let _ = w.hide();
         }
     }
-    DockStatus { enabled, hide_taskbar: hide, stacks }
+    DockStatus { enabled, hide_taskbar: hide, stacks, display }
 }
 
 #[tauri::command]
 fn dock_status(state: tauri::State<'_, AppState>) -> DockStatus {
     let s = state.settings.lock().unwrap();
-    DockStatus { enabled: s.data.dock, hide_taskbar: s.data.dock_hide_taskbar, stacks: s.data.dock_stacks.clone() }
+    DockStatus {
+        enabled: s.data.dock,
+        hide_taskbar: s.data.dock_hide_taskbar,
+        stacks: s.data.dock_stacks.clone(),
+        display: s.data.dock_display.clone(),
+    }
 }
 
 #[tauri::command]
@@ -302,12 +314,91 @@ fn dock_state(state: tauri::State<'_, AppState>) -> dock::DockState {
     dock::state(&pins, &stacks)
 }
 
+// ---- Displays: keep the dock and top bar right when screens change ----
+
+fn scale100(app: &AppHandle, m: &dock::Mon) -> i32 {
+    let (cx, cy) = m.centre();
+    app.monitor_from_point(cx as f64, cy as f64)
+        .ok()
+        .flatten()
+        .map(|mm| (mm.scale_factor() * 100.0).round() as i32)
+        .unwrap_or(100)
+}
+
+/// Every 300 ms: follow the pointer to another display (if asked), and
+/// re-place the dock / re-register the top bar when a display is plugged
+/// in, removed, re-sized or re-scaled. Cheap: a few Win32 queries.
+fn display_watch(app: AppHandle) {
+    let mut edge = dock::EdgeWatch::new();
+    let mut bar_key: Option<((i32, i32, i32, i32), i32)> = None;
+    let mut tick: u32 = 0;
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        tick = tick.wrapping_add(1);
+        let st = app.state::<AppState>();
+        let (dock_on, follow, bar_on) = match st.settings.lock() {
+            Ok(s) => (s.data.dock, s.data.dock_display == "follow", s.data.topbar),
+            Err(_) => continue,
+        };
+
+        // Top bar: main display geometry or scale changed (checked each second).
+        if bar_on && tick % 3 == 0 {
+            if let Some(p) = dock::primary() {
+                let key = (p.monitor, scale100(&app, &p));
+                if bar_key.is_some() && bar_key != Some(key) {
+                    let a = app.clone();
+                    let _ = app.run_on_main_thread(move || topbar_apply(&a, true));
+                }
+                bar_key = Some(key);
+            }
+        } else if !bar_on {
+            bar_key = None;
+        }
+
+        if !dock_on {
+            continue;
+        }
+        let pushed = if follow {
+            let c = dock::cursor();
+            c.and_then(|(x, y)| edge.feed(y, dock::monitor_at(x, y), 2))
+        } else {
+            None
+        };
+        // Keep the current display (refreshed) unless the pointer moved us.
+        let target = pushed.or_else(|| {
+            if follow {
+                dock::dock_monitor().and_then(|m| {
+                    let (cx, cy) = m.centre();
+                    dock::monitor_at(cx, cy)
+                })
+            } else {
+                None
+            }
+        });
+        let Some(target) = target.or_else(dock::primary) else { continue };
+        if (pushed.is_some() || tick % 3 == 0) && dock::set_dock_monitor(target, scale100(&app, &target)) {
+            if let Some(w) = app.get_webview_window("dock") {
+                let _ = w.emit("dock-reflow", ());
+            }
+        }
+    }
+}
+
 // ---- Dock folder stacks ----
 
 #[tauri::command]
 fn dock_stacks_set(keys: Vec<String>, app: AppHandle, state: tauri::State<'_, AppState>) -> DockStatus {
     if let Ok(mut s) = state.settings.lock() {
         s.data.dock_stacks = stacks::clean(&keys);
+        let _ = s.save();
+    }
+    dock_apply(&app, &state)
+}
+
+#[tauri::command]
+fn dock_display_set(display: String, app: AppHandle, state: tauri::State<'_, AppState>) -> DockStatus {
+    if let Ok(mut s) = state.settings.lock() {
+        s.data.dock_display = if display == "follow" { "follow".into() } else { "main".into() };
         let _ = s.save();
     }
     dock_apply(&app, &state)
@@ -388,11 +479,22 @@ fn dock_unpin(target: String, state: tauri::State<'_, AppState>) {
 #[tauri::command]
 fn dock_place(width: f64, height: f64, app: AppHandle) {
     let Some(w) = app.get_webview_window("dock") else { return };
-    let sf = w.scale_factor().unwrap_or(1.0);
+    let mon = dock::dock_monitor().or_else(dock::primary);
+    let (l, _t, r, b) = mon.map(|m| m.work).or_else(dock::work_area).unwrap_or((0, 0, 1920, 1080));
+    let sf = mon
+        .and_then(|m| {
+            let (cx, cy) = m.centre();
+            w.monitor_from_point(cx as f64, cy as f64).ok().flatten()
+        })
+        .map(|m| m.scale_factor())
+        .unwrap_or_else(|| w.scale_factor().unwrap_or(1.0));
     let (pw, ph) = ((width * sf).round() as i32, (height * sf).round() as i32);
-    let (l, _t, r, b) = dock::work_area().unwrap_or((0, 0, 1920, 1080));
+    let pos = PhysicalPosition::new(l + (r - l - pw) / 2, b - ph);
+    // Move first, so a display with a different scale doesn't resize us
+    // after we've set the size; then size, then settle the position.
+    let _ = w.set_position(pos);
     let _ = w.set_size(tauri::PhysicalSize::new(pw as u32, ph as u32));
-    let _ = w.set_position(PhysicalPosition::new(l + (r - l - pw) / 2, b - ph));
+    let _ = w.set_position(pos);
 }
 
 #[tauri::command]
@@ -598,10 +700,17 @@ fn main() {
             if bar_on {
                 topbar_apply(app.handle(), true);
             }
+            if let Some(p) = dock::primary() {
+                dock::set_dock_monitor(p, 0);
+            }
             if dock_on {
                 let h = app.handle().clone();
                 let st = app.state::<AppState>();
                 dock_apply(&h, &st);
+            }
+            {
+                let h = app.handle().clone();
+                std::thread::spawn(move || display_watch(h));
             }
             if updated {
                 use tauri_plugin_notification::NotificationExt;
@@ -694,6 +803,7 @@ fn main() {
             dock_hide_taskbar_set,
             dock_state,
             dock_stacks_set,
+            dock_display_set,
             stack_list,
             stack_open,
             stack_folder,

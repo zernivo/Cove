@@ -19,6 +19,9 @@ pub struct Settings {
     pub dock_hide_taskbar: bool,
     /// Apps pinned to the dock, in order.
     pub dock_pins: Vec<Pin>,
+    /// Which display the dock uses: "main", or "follow" (moves to the
+    /// display where you rest the pointer on the bottom edge).
+    pub dock_display: String,
     /// Folder stacks in the dock (keys from stacks::KINDS), in order.
     pub dock_stacks: Vec<String>,
     /// The taskbar's auto-hide state before Cove changed it.
@@ -57,6 +60,7 @@ impl Default for Settings {
             dock_hide_taskbar: false,
             dock_pins: default_pins(),
             dock_stacks: vec!["downloads".into()],
+            dock_display: "main".into(),
             taskbar_prev_autohide: None,
             topbar: false,
             last_version: String::new(),
