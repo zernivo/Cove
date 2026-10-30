@@ -408,6 +408,32 @@ fn theme_set(theme: String, mode: String, accent: String, app: AppHandle, state:
     st
 }
 
+// ---- Cove Tour ----
+
+static TOUR_APP: std::sync::OnceLock<AppHandle> = std::sync::OnceLock::new();
+
+/// Tell the tour that a feature was just used ("search", "habits", "snap",
+/// "switcher", "expose"). Costs nothing when the tour isn't open.
+pub fn tour_signal(what: &str) {
+    if let Some(a) = TOUR_APP.get() {
+        let _ = a.emit("tour-step", what.to_string());
+    }
+}
+
+#[tauri::command]
+fn tour_status(state: tauri::State<'_, AppState>) -> bool {
+    state.settings.lock().map(|s| s.data.tour_done).unwrap_or(true)
+}
+
+#[tauri::command]
+fn tour_done_set(done: bool, state: tauri::State<'_, AppState>) -> bool {
+    if let Ok(mut s) = state.settings.lock() {
+        s.data.tour_done = done;
+        let _ = s.save();
+    }
+    done
+}
+
 // ---- Wallpapers and the light/dark schedule ----
 
 /// The wallpaper file last handed to Windows, so the minute tick doesn't re-set it.
@@ -718,6 +744,7 @@ fn close_expose(app: &AppHandle) {
 
 #[tauri::command]
 fn expose_open(name: String, windows: Vec<isize>, app: AppHandle) {
+    tour_signal("expose");
     open_expose(&app, name, windows);
 }
 
@@ -1121,9 +1148,11 @@ fn main() {
             let dir = app.path().app_data_dir()?;
             let journal = journal::Journal::load(dir.join("journal.json"))?;
             let store = settings::Store::load(dir.join("settings.json"));
+            let _ = TOUR_APP.set(app.handle().clone());
             let handle = app.handle().clone();
             hotkeys::set_search_handler(move || {
                 search::mark_open();
+                tour_signal("search");
                 let h = handle.clone();
                 // Window work belongs on the main thread.
                 let _ = handle.run_on_main_thread(move || toggle_search(&h));
@@ -1289,6 +1318,8 @@ fn main() {
             snap_set,
             theme_get,
             theme_set,
+            tour_status,
+            tour_done_set,
             wallpaper_status,
             wallpaper_set,
             wallpaper_restore,

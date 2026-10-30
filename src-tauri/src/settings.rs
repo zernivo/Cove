@@ -39,6 +39,9 @@ pub struct Settings {
     /// "cove" (the theme's accent) or "windows" (follow the Windows accent).
     #[serde(default = "cove_accent")]
     pub accent: String,
+    /// The first-run Cove Tour was finished or skipped.
+    #[serde(default)]
+    pub tour_done: bool,
     /// Cove wallpaper scene in use, or "" for the user's own.
     #[serde(default)]
     pub wallpaper: String,
@@ -126,6 +129,7 @@ impl Default for Settings {
             theme: tidepool(),
             appearance: system_mode(),
             accent: cove_accent(),
+            tour_done: false,
             wallpaper: String::new(),
             wallpaper_prev: None,
             schedule: off(),

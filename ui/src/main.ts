@@ -46,6 +46,8 @@ const mock: Record<string, (a?: any) => unknown> = {
   wallpaper_set: (a) => ({ ...(mockWall = { ...mockWall, current: a.scene as string, has_prev: true }) }),
   wallpaper_restore: () => ({ ...(mockWall = { ...mockWall, current: "", has_prev: false }) }),
   schedule_set: (a) => ({ ...(mockWall = { ...mockWall, schedule: a.schedule as string, light_at: a.light_at as string, dark_at: a.dark_at as string }) }),
+  tour_status: () => false,
+  tour_done_set: (a) => a.done,
   snap_status: () => ({ enabled: false, animate: true, conflicts: [] }),
   snap_set: (a) => ({ enabled: a.enabled, animate: a.animate, conflicts: [] }),
 };
@@ -431,3 +433,171 @@ $("up-install").addEventListener("click", async () => {
 async function currentVersion(): Promise<string> {
   return (await invoke<UpdateInfo>("update_check").catch(() => null))?.current ?? "";
 }
+
+// ---- Cove Tour: first run, replayable from the sidebar ----
+interface TourStep {
+  id: string;
+  title: string;
+  body: string;
+  keys?: string[];
+  signal?: string; // backend "tour-step" that completes the step
+  on?: () => Promise<boolean>; // is the feature already on?
+  enable?: () => Promise<unknown>;
+  extra?: () => HTMLElement[];
+}
+type Preset = "light" | "mac" | "none";
+let tourPreset: Preset = "mac";
+const PRESETS: [Preset, string, string][] = [
+  ["mac", "Mac-like", "Calm taskbar, Search, Mac shortcuts, dock, top bar, app switcher and window snapping"],
+  ["light", "Light touch", "Calm taskbar and Search (Alt+Space). Everything else stays Windows"],
+  ["none", "Keep things as they are", "Change nothing now. You can switch any feature on later"],
+];
+async function applyPreset(p: Preset): Promise<void> {
+  if (p === "none") return;
+  const tweaks = await invoke<Tweak[]>("calm_list");
+  const ids = tweaks.filter((t) => t.applied === false).map((t) => t.id);
+  if (ids.length) await invoke("calm_apply", { ids });
+  await invoke("search_set", { enabled: true });
+  if (p === "mac") {
+    await invoke("hotkeys_set", { enabled: true });
+    await invoke("dock_set", { enabled: true });
+    await invoke("topbar_set", { enabled: true });
+    await invoke("switcher_set", { enabled: true });
+    await invoke("snap_set", { enabled: true, animate: true });
+  }
+}
+const kbd = (k: string[]) => k;
+const TOUR: TourStep[] = [
+  {
+    id: "hello", title: "Welcome to Cove",
+    body: "Cove makes Windows calmer and adds a few Mac habits. Everything is reversible from Restore. Pick a starting point; you can change any of it later.",
+    extra: () => PRESETS.map(([k, name, desc]) => {
+      const b = document.createElement("button");
+      b.className = `tour-preset${tourPreset === k ? " on" : ""}`;
+      b.innerHTML = `<b></b><span></span>`;
+      (b.querySelector("b") as HTMLElement).textContent = name;
+      (b.querySelector("span") as HTMLElement).textContent = desc;
+      b.addEventListener("click", () => { tourPreset = k; tourShow(); });
+      return b;
+    }),
+  },
+  {
+    id: "search", title: "Search anything", keys: kbd(["Alt", "Space"]), signal: "search",
+    body: "Press Alt+Space from anywhere, type a few letters of an app, file or setting, then Enter. Esc closes it.",
+    on: async () => (await invoke<HotkeyStatus>("hotkeys_status")).search,
+    enable: () => invoke("search_set", { enabled: true }),
+  },
+  {
+    id: "habits", title: "Mac shortcuts", keys: kbd(["Alt", "M"]), signal: "habits",
+    body: "Click any other window, then press Alt+M to minimise it. Alt+W closes a window, Alt+H hides an app, Alt+Q quits it, Alt+` cycles its windows.",
+    on: async () => (await invoke<HotkeyStatus>("hotkeys_status")).running,
+    enable: () => invoke("hotkeys_set", { enabled: true }),
+  },
+  {
+    id: "snap", title: "Snap windows", keys: kbd(["Ctrl", "Alt", "←"]), signal: "snap",
+    body: "Click a window and press Ctrl+Alt+← to glide it to the left half. Press it again for 2/3 and 1/3. Ctrl+Alt+Enter fills the screen, Ctrl+Alt+Backspace puts it back.",
+    on: async () => (await invoke<SnapInfo>("snap_status")).enabled,
+    enable: () => invoke("snap_set", { enabled: true, animate: true }),
+  },
+  {
+    id: "switcher", title: "Switch apps", keys: kbd(["Alt", "Tab"]), signal: "switcher",
+    body: "Hold Alt and tap Tab to move between apps, grouped by app like a Mac. Let go of Alt to switch.",
+    on: () => invoke<boolean>("switcher_status"),
+    enable: () => invoke("switcher_set", { enabled: true }),
+  },
+  {
+    id: "expose", title: "See an app's windows", keys: kbd(["Alt", "Tab", "↓"]), signal: "expose",
+    body: "In the switcher, press ↓ to see every window of that app side by side. You can also right-click a running app in the dock and choose Show All Windows.",
+    on: () => invoke<boolean>("switcher_status"),
+    enable: () => invoke("switcher_set", { enabled: true }),
+  },
+  {
+    id: "dock", title: "Dock and top bar",
+    body: "The dock sits at the bottom with your apps and folders; the top bar shows the app in front, the clock and Control Centre. Change them in Dock & top bar, and the look in Look.",
+    on: async () => (await invoke<DockStatus>("dock_status")).enabled && (await invoke<boolean>("topbar_status")),
+    enable: async () => { await invoke("dock_set", { enabled: true }); await invoke("topbar_set", { enabled: true }); },
+  },
+  {
+    id: "end", title: "You're set",
+    body: "That's Cove. Replay this tour any time from Take the tour in the sidebar, and undo everything from Restore.",
+  },
+];
+let tourIdx = 0;
+let tourDone = new Set<string>();
+let tourChanged = false;
+async function tourShow(): Promise<void> {
+  const st = TOUR[tourIdx];
+  $("tour-dots").innerHTML = "";
+  TOUR.forEach((t, i) => {
+    const d = document.createElement("i");
+    if (i === tourIdx) d.className = "on";
+    else if (tourDone.has(t.id) || i < tourIdx) d.className = "done";
+    $("tour-dots").appendChild(d);
+  });
+  $("tour-keys").innerHTML = "";
+  for (const k of st.keys ?? []) {
+    const e = document.createElement("kbd");
+    e.textContent = k;
+    $("tour-keys").appendChild(e);
+  }
+  $("tour-title").textContent = st.title;
+  $("tour-body").textContent = st.body;
+  $("tour-extra").innerHTML = "";
+  for (const e of st.extra?.() ?? []) $("tour-extra").appendChild(e);
+  $("tour-check").classList.toggle("hidden", !tourDone.has(st.id));
+  $("tour-back").classList.toggle("hidden", tourIdx === 0);
+  $("tour-skip").classList.toggle("hidden", tourIdx === TOUR.length - 1);
+  $("tour-next").textContent = tourIdx === 0 ? "Start" : tourIdx === TOUR.length - 1 ? "Finish" : tourDone.has(st.id) || !st.signal ? "Next" : "Skip this one";
+  $("tour-enable").classList.add("hidden");
+  if (st.on && st.enable) {
+    const on = await st.on().catch(() => true);
+    if (TOUR[tourIdx] === st) $("tour-enable").classList.toggle("hidden", on);
+  }
+}
+function tourOpen(): void {
+  tourIdx = 0;
+  tourDone = new Set();
+  $("tour").classList.remove("hidden");
+  tourShow();
+  ($("tour-next") as HTMLButtonElement).focus();
+}
+async function tourClose(): Promise<void> {
+  $("tour").classList.add("hidden");
+  await invoke("tour_done_set", { done: true });
+  if (tourChanged) location.reload();
+}
+$("tour-open").addEventListener("click", tourOpen);
+$("tour-skip").addEventListener("click", tourClose);
+$("tour-back").addEventListener("click", () => { tourIdx = Math.max(0, tourIdx - 1); tourShow(); });
+$("tour-next").addEventListener("click", async () => {
+  if (tourIdx === 0) {
+    ($("tour-next") as HTMLButtonElement).disabled = true;
+    try { await applyPreset(tourPreset); tourChanged ||= tourPreset !== "none"; }
+    finally { ($("tour-next") as HTMLButtonElement).disabled = false; }
+  }
+  if (tourIdx >= TOUR.length - 1) return tourClose();
+  tourIdx++;
+  tourShow();
+});
+$("tour-enable").addEventListener("click", async () => {
+  const st = TOUR[tourIdx];
+  await st.enable?.();
+  tourChanged = true;
+  tourShow();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("tour").classList.contains("hidden")) tourClose();
+});
+if (inTauri) {
+  listen<string>("tour-step", (e) => {
+    if ($("tour").classList.contains("hidden")) return;
+    tourDone.add(e.payload);
+    const st = TOUR[tourIdx];
+    if (st.signal === e.payload) {
+      tourShow();
+      // Give the check mark a moment, then move on.
+      setTimeout(() => { if (TOUR[tourIdx] === st) { tourIdx++; tourShow(); } }, 1200);
+    }
+  });
+}
+invoke<boolean>("tour_status").then((done) => { if (!done) tourOpen(); });

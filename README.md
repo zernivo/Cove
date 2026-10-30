@@ -88,6 +88,15 @@ Press **Alt+Space** anywhere.
 
 Try `blu` for Bluetooth, `vsc` for Visual Studio Code, or `128*4+7`. Results marked *Windows Search* come from the same read-only index as File Explorer's search box, so a word inside a document can find it; turn *Use the Windows Search index* off in **Mac habits** for name-only search of your personal folders. The same card shows how fast Search opens on your PC (Alt+Space to first frame). Turn it off in **Mac habits** if Alt+Space is taken (e.g. by PowerToys Run).
 
+## Cove Tour
+The first time Cove opens, a short tour starts. Pick a starting point:
+
+- **Mac-like:** calm taskbar, Search, Mac shortcuts, dock, top bar, app switcher and window snapping.
+- **Light touch:** calm taskbar and Search only.
+- **Keep things as they are:** change nothing.
+
+Then try each feature live (Alt+Space, Alt+M, Ctrl+Alt+←, Alt+Tab, ↓ in the switcher). Each step ticks itself off when you use it, and a feature that's off has a **Turn it on** button. Skip any step or the whole tour; replay it from **Take the tour** at the bottom of the sidebar. Everything it turns on is undone by Restore.
+
 ## Look (Cove Glass)
 Open Cove → **Look**.
 
@@ -123,7 +132,7 @@ Calm settings stay applied after you close Cove (like changing them in Settings)
 | v0.3 | Dock, top bar, Control Centre, folder stacks, multi-display | ✅ |
 | v0.4 | App-grouped switcher ✅, App Exposé ✅, window snapping ✅ | ✅ |
 | v0.5 | Cove Glass theme, wallpaper gallery, light/dark schedule | ✅ |
-| v0.6 | Cove Tour (interactive tutorial) | ⬜ |
+| v0.6 | Cove Tour (interactive first-run tutorial) | ✅ |
 | v0.7 | UI polish pass across every screen | ⬜ |
 | 1.0 | Safe mode, code signing, auto-update, performance gates | ⬜ |
 

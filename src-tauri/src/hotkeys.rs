@@ -158,6 +158,7 @@ mod imp {
         if fg.is_null() || is_shell(fg) {
             return;
         }
+        crate::tour_signal("habits");
         unsafe {
             match action {
                 Action::CloseWindow => {

@@ -124,6 +124,7 @@ fn handle(ev: Ev) {
             let s = g.take();
             drop(g);
             ui(Ui::Hide);
+            crate::tour_signal("switcher");
             if let Some(a) = s.and_then(|s| s.apps.get(s.sel).cloned()) {
                 bring_forward(&a);
             }
@@ -132,6 +133,7 @@ fn handle(ev: Ev) {
             let s = g.take();
             drop(g);
             ui(Ui::Hide);
+            crate::tour_signal("expose");
             if let Some(a) = s.and_then(|s| s.apps.get(s.sel).cloned()) {
                 ui(Ui::Expose(a));
             }
@@ -157,6 +159,7 @@ pub fn pick(i: usize) {
     imp::set_active(false);
     let s = STATE.lock().unwrap().take();
     ui(Ui::Hide);
+    crate::tour_signal("switcher");
     if let Some(a) = s.and_then(|s| s.apps.get(i).cloned()) {
         bring_forward(&a);
     }

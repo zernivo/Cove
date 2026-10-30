@@ -50,9 +50,9 @@ Legend: ✅ done · 🔨 in progress · ⬜ planned
 - ✅ Wallpaper gallery: four original 4K scenes (Tidepool, Lagoon, Dune, Slate), each in light and dark; previous wallpaper restorable (v0.5.1)
 - ✅ Light/dark schedule at set times; wallpaper follows Cove's appearance; Windows accent option (v0.5.0–v0.5.1)
 
-## Phase 6: Cove Tour ⬜ (v0.6)
-- ⬜ Interactive first-run tutorial: try each shortcut live, pick a preset
-- ⬜ Replayable anytime from settings
+## Phase 6: Cove Tour ✅ (v0.6)
+- ✅ Interactive first-run tour: pick a starting preset (Mac-like, Light touch, or change nothing), then try Search, Mac shortcuts, snapping, the switcher and App Exposé live; each step ticks itself off when you use it (v0.6.0)
+- ✅ Replayable anytime from Take the tour in the sidebar (v0.6.0)
 
 ## Phase 7: UI polish ⬜ (v0.7)
 - ⬜ One pass over every screen: spacing, type scale, colour, contrast, empty states

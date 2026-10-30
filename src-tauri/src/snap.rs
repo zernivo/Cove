@@ -309,6 +309,7 @@ mod imp {
         if h.is_null() || is_shell(h) {
             return;
         }
+        crate::tour_signal("snap");
         let key = h as isize;
         if unsafe { IsZoomed(h) } != 0 {
             // Un-maximize without a visible jump, then glide from the full-screen frame.
