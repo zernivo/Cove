@@ -622,3 +622,22 @@ if (inTauri) {
     invoke<HotkeyStatus>("hotkeys_status").then(renderHabits);
   });
 }
+
+// ---- Displays ----
+interface DisplayInfo { name: string; width: number; height: number; x: number; y: number; scale: number; main: boolean }
+async function renderDisplays(): Promise<void> {
+  const list = inTauri ? await invoke<DisplayInfo[]>("displays") : [{ name: "", width: 2560, height: 1440, x: 0, y: 0, scale: 150, main: true }];
+  const box = $("displays");
+  box.innerHTML = "";
+  list
+    .sort((a, b) => Number(b.main) - Number(a.main) || a.x - b.x)
+    .forEach((d, i) => {
+      const chip = document.createElement("span");
+      chip.className = "chip" + (d.main ? " on" : "");
+      chip.textContent = `${d.main ? "Main" : `Display ${i + 1}`} · ${d.width}×${d.height} · ${d.scale}%`;
+      chip.title = d.name;
+      box.appendChild(chip);
+    });
+}
+renderDisplays();
+if (inTauri) listen("displays-changed", () => { renderDisplays(); invoke<DockStatus>("dock_status").then(renderDock); });

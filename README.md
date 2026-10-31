@@ -88,6 +88,9 @@ Press **Alt+Space** anywhere.
 
 Try `blu` for Bluetooth, `vsc` for Visual Studio Code, or `128*4+7`. Results marked *Windows Search* come from the same read-only index as File Explorer's search box, so a word inside a document can find it; turn *Use the Windows Search index* off in **Mac habits** for name-only search of your personal folders. The same card shows how fast Search opens on your PC (Alt+Space to first frame). Turn it off in **Mac habits** if Alt+Space is taken (e.g. by PowerToys Run).
 
+## Displays and scaling
+Cove sizes the Dock, top bar, Search and the app switcher to each screen's own scaling, so they look the same at 100%, 150% or 200% and when they move between screens. If you unplug a screen, the Cove window comes back to your main display. **Dock & top bar → Your displays** lists each screen with its resolution and scaling, and updates live.
+
 ## Icon and installer
 <p><img src="brand/cove-icon-final.png" alt="Cove icon" width="96"></p>
 
@@ -141,7 +144,7 @@ Calm settings stay applied after you close Cove (like changing them in Settings)
 | v0.4 | App-grouped switcher ✅, App Exposé ✅, window snapping ✅ | ✅ |
 | v0.5 | Cove Glass theme, wallpaper gallery, light/dark schedule | ✅ |
 | v0.6 | Cove Tour (interactive first-run tutorial) | ✅ |
-| v0.7 | Polish: settings design ✅, tray menu ✅, final icon + installer art ✅, DPI check | 🚧 |
+| v0.7 | Polish: settings design, tray menu, final icon + installer art, DPI and multi-monitor pass | ✅ |
 | 1.0 | Safe mode, code signing, auto-update, performance gates | ⬜ |
 
 Details: [docs/ROADMAP.md](docs/ROADMAP.md)

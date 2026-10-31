@@ -44,6 +44,7 @@ fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
         let _ = w.unminimize();
+        keep_on_screen(app, &w);
         let _ = w.set_focus();
     }
 }
@@ -720,6 +721,7 @@ fn place_switcher(app: &AppHandle, w: &tauri::WebviewWindow, n: usize) {
     let (lw, lh) = (cols * 104.0 + 36.0, if n > 10 { 290.0 } else { 172.0 });
     let (pw, ph) = ((lw * sf).round() as i32, (lh * sf).round() as i32);
     let pw = pw.min(ms.width as i32 - 40);
+    let ph = ph.min(ms.height as i32 - 40);
     let pos = PhysicalPosition::new(mp.x + (ms.width as i32 - pw) / 2, mp.y + (ms.height as i32 - ph) / 2);
     let _ = w.set_position(pos);
     let _ = w.set_size(tauri::PhysicalSize::new(pw as u32, ph as u32));
@@ -835,6 +837,64 @@ fn expose_close(refocus: bool, app: AppHandle) {
 
 // ---- Displays: keep the dock and top bar right when screens change ----
 
+/// If a window's title bar is no longer on any display (a screen was
+/// unplugged), bring it back to the centre of the main display.
+fn keep_on_screen(app: &AppHandle, w: &tauri::WebviewWindow) {
+    // A minimised window sits at -32000; leave it, Windows restores it.
+    if w.is_minimized().unwrap_or(false) || w.is_maximized().unwrap_or(false) {
+        return;
+    }
+    let (Ok(p), Ok(sz)) = (w.outer_position(), w.outer_size()) else { return };
+    let mons = app.available_monitors().unwrap_or_default();
+    // A strip of the title bar must be visible somewhere.
+    let (tx, ty) = (p.x + (sz.width as i32) / 2, p.y + 12);
+    let visible = mons.iter().any(|m| {
+        let (mp, ms) = (m.position(), m.size());
+        tx >= mp.x && tx < mp.x + ms.width as i32 && ty >= mp.y && ty < mp.y + ms.height as i32
+    });
+    if visible || mons.is_empty() {
+        return;
+    }
+    if let Some(m) = app.primary_monitor().ok().flatten() {
+        let (mp, ms) = (m.position(), m.size());
+        let pw = (sz.width as i32).min(ms.width as i32 - 40);
+        let ph = (sz.height as i32).min(ms.height as i32 - 80);
+        let pos = PhysicalPosition::new(mp.x + (ms.width as i32 - pw) / 2, mp.y + (ms.height as i32 - ph) / 2);
+        let _ = w.set_position(pos);
+        let _ = w.set_size(tauri::PhysicalSize::new(pw.max(1) as u32, ph.max(1) as u32));
+        let _ = w.set_position(pos);
+    }
+}
+
+#[derive(Serialize, Clone, PartialEq)]
+struct DisplayInfo {
+    name: String,
+    width: u32,
+    height: u32,
+    x: i32,
+    y: i32,
+    scale: u32,
+    main: bool,
+}
+
+#[tauri::command]
+fn displays(app: AppHandle) -> Vec<DisplayInfo> {
+    let primary = app.primary_monitor().ok().flatten().map(|m| *m.position());
+    app.available_monitors()
+        .unwrap_or_default()
+        .iter()
+        .map(|m| DisplayInfo {
+            name: m.name().cloned().unwrap_or_default(),
+            width: m.size().width,
+            height: m.size().height,
+            x: m.position().x,
+            y: m.position().y,
+            scale: (m.scale_factor() * 100.0).round() as u32,
+            main: Some(*m.position()) == primary,
+        })
+        .collect()
+}
+
 fn scale100(app: &AppHandle, m: &dock::Mon) -> i32 {
     let (cx, cy) = m.centre();
     app.monitor_from_point(cx as f64, cy as f64)
@@ -851,9 +911,26 @@ fn display_watch(app: AppHandle) {
     let mut edge = dock::EdgeWatch::new();
     let mut bar_key: Option<((i32, i32, i32, i32), i32)> = None;
     let mut tick: u32 = 0;
+    let mut layout: Option<Vec<DisplayInfo>> = None;
     loop {
         std::thread::sleep(std::time::Duration::from_millis(300));
         tick = tick.wrapping_add(1);
+
+        // Any display added, removed, moved or re-scaled: tell Settings and
+        // rescue the main window if its screen went away.
+        if tick % 3 == 1 {
+            let now = displays(app.clone());
+            if layout.is_some() && layout.as_ref() != Some(&now) {
+                let _ = app.emit("displays-changed", ());
+                let a = app.clone();
+                let _ = app.run_on_main_thread(move || {
+                    if let Some(w) = a.get_webview_window("main") {
+                        keep_on_screen(&a, &w);
+                    }
+                });
+            }
+            layout = Some(now);
+        }
         let st = app.state::<AppState>();
         let (dock_on, follow, bar_on) = match st.settings.lock() {
             Ok(s) => (s.data.dock, s.data.dock_display == "follow", s.data.topbar),
@@ -1062,10 +1139,19 @@ fn toggle_search(app: &AppHandle) {
         .and_then(|p| app.monitor_from_point(p.x, p.y).ok().flatten())
         .or_else(|| w.current_monitor().ok().flatten());
     if let (Some(m), Ok(size)) = (monitor, w.outer_size()) {
+        // Size in the target display's own scale, so a panel moved from a
+        // 100% screen to a 150% one stays the same size and stays centred.
+        let cur = w.scale_factor().unwrap_or(1.0).max(0.5);
+        let sf = m.scale_factor();
         let (mp, ms) = (m.position(), m.size());
-        let x = mp.x + (ms.width as i32 - size.width as i32) / 2;
-        let y = mp.y + (ms.height as f64 * 0.2) as i32;
-        let _ = w.set_position(PhysicalPosition::new(x, y));
+        let pw = ((size.width as f64 / cur * sf).round() as i32).min(ms.width as i32 - 16);
+        let ph = ((size.height as f64 / cur * sf).round() as i32).min(ms.height as i32 - 16);
+        let x = mp.x + (ms.width as i32 - pw) / 2;
+        let y = mp.y + ((ms.height as f64 * 0.2) as i32).min(ms.height as i32 - ph);
+        let pos = PhysicalPosition::new(x, y);
+        let _ = w.set_position(pos);
+        let _ = w.set_size(tauri::PhysicalSize::new(pw.max(1) as u32, ph.max(1) as u32));
+        let _ = w.set_position(pos);
     }
     let _ = w.show();
     let _ = w.set_focus();
@@ -1427,6 +1513,7 @@ fn main() {
             dock_display_set,
             switcher_status,
             switcher_set,
+            displays,
             switcher_pick,
             snap_status,
             snap_set,

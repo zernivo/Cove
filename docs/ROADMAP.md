@@ -54,14 +54,14 @@ Legend: ✅ done · 🔨 in progress · ⬜ planned
 - ✅ Interactive first-run tour: pick a starting preset (Mac-like, Light touch, or change nothing), then try Search, Mac shortcuts, snapping, the switcher and App Exposé live; each step ticks itself off when you use it (v0.6.0)
 - ✅ Replayable anytime from Take the tour in the sidebar (v0.6.0)
 
-## Phase 7: UI polish 🚧 (v0.7)
+## Phase 7: UI polish ✅ (v0.7)
 - ✅ One pass over the settings screens: type scale, spacing, contrast-safe text on the accent (also with the Windows accent), keyboard focus rings, empty states (v0.7.0)
 - ✅ Window backgrounds: a soft Tidepool wash that sets off the logo, a quiet gradient for Slate, light and dark (v0.7.0)
 - ✅ Motion: page fade, sliding nav indicator, chip/card/toggle transitions, all off with reduced motion (v0.7.0); 60 fps still to confirm on hardware
 - ✅ Refined tray menu: left-click opens Cove; right-click toggles Dock, Top bar, Mac shortcuts, App switcher, Window snapping, Appearance, plus Tour, Updates and Restore (v0.7.1)
 - ✅ Onboarding visuals: Cove Tour in the Cove Glass style (v0.6.0–v0.7.0)
 - ✅ Final app icon (Deep tide) and installer artwork for NSIS and MSI (v0.7.2)
-- ⬜ Consistency check across DPI and multiple monitors
+- ✅ DPI and multi-monitor consistency pass: Search and switcher sized per display scale, main window rescued from unplugged screens, live "Your displays" list (v0.7.3; physical testing outstanding)
 
 ## Phase 8: Beta → 1.0 ⬜
 - ⬜ Safe mode (hold a key at start to skip every Cove change)
