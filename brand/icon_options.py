@@ -47,21 +47,22 @@ OPTS = [
   ("3  No tile", dict(tile=None, scale=0.96,
      mark=["#e9a58e","#7a4b5e","#3a2233","#9cefe4","#1fb5a8","#118077"])),
 ]
-W, H = 1500, 760
-sheet = Image.new("RGB",(W,H),(246,242,238)); d = ImageDraw.Draw(sheet)
-try: f = ImageFont.truetype("DejaVuSans-Bold.ttf", 26); fs = ImageFont.truetype("DejaVuSans.ttf", 18)
-except: f = fs = ImageFont.load_default()
-for i,(name,o) in enumerate(OPTS):
-    x0 = 40 + i*490
-    d.text((x0, 30), name, fill=(40,28,30), font=f)
-    big = icon(400, o); sheet.paste(big, (x0+10, 80), big)
-    # taskbar strips: light and dark, at 32 and 24 px
-    for j,(bg,fg) in enumerate([((243,243,243),(30,30,30)),((32,32,32),(230,230,230))]):
-        y = 510 + j*110
-        d.rounded_rectangle((x0, y, x0+420, y+90), 12, fill=bg)
-        for k,sz in enumerate((48,32,24,16)):
-            ic = icon(256,o).resize((sz,sz), Image.LANCZOS)
-            sheet.paste(ic, (x0+24+k*90, y+45-sz//2), ic)
-        d.text((x0+370, y+35), "dark" if j else "light", fill=fg, font=fs, anchor="mm") if False else None
-sheet.save("/workspace/work/mock/cove-icon-options.png")
-print("ok")
+if __name__ == '__main__':
+    W, H = 1500, 760
+    sheet = Image.new("RGB",(W,H),(246,242,238)); d = ImageDraw.Draw(sheet)
+    try: f = ImageFont.truetype("DejaVuSans-Bold.ttf", 26); fs = ImageFont.truetype("DejaVuSans.ttf", 18)
+    except: f = fs = ImageFont.load_default()
+    for i,(name,o) in enumerate(OPTS):
+        x0 = 40 + i*490
+        d.text((x0, 30), name, fill=(40,28,30), font=f)
+        big = icon(400, o); sheet.paste(big, (x0+10, 80), big)
+        # taskbar strips: light and dark, at 32 and 24 px
+        for j,(bg,fg) in enumerate([((243,243,243),(30,30,30)),((32,32,32),(230,230,230))]):
+            y = 510 + j*110
+            d.rounded_rectangle((x0, y, x0+420, y+90), 12, fill=bg)
+            for k,sz in enumerate((48,32,24,16)):
+                ic = icon(256,o).resize((sz,sz), Image.LANCZOS)
+                sheet.paste(ic, (x0+24+k*90, y+45-sz//2), ic)
+            d.text((x0+370, y+35), "dark" if j else "light", fill=fg, font=fs, anchor="mm") if False else None
+    sheet.save("/workspace/work/mock/cove-icon-options.png")
+    print("ok")

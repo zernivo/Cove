@@ -60,7 +60,8 @@ Legend: ✅ done · 🔨 in progress · ⬜ planned
 - ✅ Motion: page fade, sliding nav indicator, chip/card/toggle transitions, all off with reduced motion (v0.7.0); 60 fps still to confirm on hardware
 - ✅ Refined tray menu: left-click opens Cove; right-click toggles Dock, Top bar, Mac shortcuts, App switcher, Window snapping, Appearance, plus Tour, Updates and Restore (v0.7.1)
 - ✅ Onboarding visuals: Cove Tour in the Cove Glass style (v0.6.0–v0.7.0)
-- ⬜ Final app icon and installer artwork; consistency check across DPI and multiple monitors
+- ✅ Final app icon (Deep tide) and installer artwork for NSIS and MSI (v0.7.2)
+- ⬜ Consistency check across DPI and multiple monitors
 
 ## Phase 8: Beta → 1.0 ⬜
 - ⬜ Safe mode (hold a key at start to skip every Cove change)
