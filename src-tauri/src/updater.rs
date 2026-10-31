@@ -3,8 +3,11 @@
 //! update mode (no wizard, no uninstall step), then reopens Cove.
 //!
 //! Safety: only release assets of github.com/zernivo/Cove over HTTPS,
-//! size checked, and SHA-256 checked against the digest GitHub publishes
-//! for each asset. Before 1.0 this moves to the signed Tauri updater.
+//! size checked, SHA-256 checked against the digest GitHub publishes, and
+//! (since v0.8.1) a minisign signature (Tauri updater format) that must
+//! match the public key built into Cove. An installer without a valid
+//! signature is deleted and never run, even if GitHub itself were tampered
+//! with, because the private key never touches GitHub.
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -12,6 +15,8 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 
 const REPO: &str = "zernivo/Cove";
+/// Cove's update-signing public key (base64 of a minisign public key file).
+const UPDATE_PUBKEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM4NzY1RDgzRTlBMDk2NkEKUldScWxxRHBnMTEyT0lkYTdWZGFHOHEvUmpWMitNNzBQenFuY3NkblZ5K09kM2F2RTBBSjRlSHgK";
 /// Cove is relaunched with this after a silent update.
 pub const UPDATED_FLAG: &str = "--updated";
 
@@ -124,7 +129,42 @@ pub fn download(mut progress: impl FnMut(u64, u64)) -> Result<PathBuf, String> {
             return fail("Installer failed its integrity check, so it was deleted.");
         }
     }
+    // Signatures are published in the repo (signatures/), signed offline;
+    // the private key is never on GitHub.
+    let sig_url = format!("https://raw.githubusercontent.com/{REPO}/main/signatures/{}.sig", asset.name);
+    let sig_text = match ureq::get(&sig_url)
+        .set("User-Agent", "Cove-updater")
+        .timeout(std::time::Duration::from_secs(30))
+        .call()
+        .ok()
+        .and_then(|r| r.into_string().ok())
+    {
+        Some(t) if t.len() < 4096 => t,
+        _ => return fail("This release isn't signed yet, so Cove won't install it. Try again in a few minutes."),
+    };
+    let bytes = match std::fs::read(&path) {
+        Ok(b) => b,
+        Err(e) => return fail(&e.to_string()),
+    };
+    if let Err(e) = verify_signature(&bytes, &sig_text) {
+        return fail(&format!("Installer failed its signature check, so it was deleted ({e})."));
+    }
     Ok(path)
+}
+
+fn b64_text(s: &str) -> Result<String, String> {
+    use base64::Engine;
+    let raw = base64::engine::general_purpose::STANDARD
+        .decode(s.trim())
+        .map_err(|e| format!("bad base64: {e}"))?;
+    String::from_utf8(raw).map_err(|e| format!("bad text: {e}"))
+}
+
+/// Check a Tauri-format signature (base64 of a minisign .sig file).
+pub fn verify_signature(data: &[u8], sig_b64: &str) -> Result<(), String> {
+    let pk = minisign_verify::PublicKey::decode(&b64_text(UPDATE_PUBKEY)?).map_err(|e| e.to_string())?;
+    let sig = minisign_verify::Signature::decode(&b64_text(sig_b64)?).map_err(|e| e.to_string())?;
+    pk.verify(data, &sig, true).map_err(|e| e.to_string())
 }
 
 /// Start the installer. The caller quits Cove right after so files aren't locked.
@@ -148,7 +188,20 @@ pub fn launch(path: &PathBuf) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_version;
+    use super::{parse_version, verify_signature};
+
+    #[test]
+    fn accepts_a_real_signature_and_rejects_tampering() {
+        let sig = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVScWxxRHBnMTEyT0pzYkRhZVpiMkJNNCsyeFRGUzRmYmJwYUxVMGt4M0oxZVNyMG5WZlpRTCtLckRhODdrTVg5NCtpY2FUWGZjU3Y1Sm9sajQzYzdYRDBQUkljalY5UVFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNDQzNTE3CWZpbGU6Zml4dHVyZS5iaW4KejVhRlpWRXMzVk9UNEMvUmFnNXM3WUE0Mm12UllTNEJrTmVkaU05dldnOVFVUVptUnc2U2VGTDE5ckNkdytYbWFhYkl5VnJ2amFjKzhNME4vV01CQ1E9PQo=";
+        assert!(verify_signature(b"cove signed update test", sig).is_ok());
+        assert!(verify_signature(b"cove signed update test!", sig).is_err());
+    }
+
+    #[test]
+    fn rejects_garbage_signatures() {
+        assert!(verify_signature(b"hello", "bm90IGEgc2lnbmF0dXJl").is_err());
+        assert!(verify_signature(b"hello", "!!!").is_err());
+    }
 
     #[test]
     fn compares_versions() {

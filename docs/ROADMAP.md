@@ -66,7 +66,7 @@ Legend: ✅ done · 🔨 in progress · ⬜ planned
 ## Phase 8: Beta → 1.0 🚧
 - ✅ Safe mode: hold Shift at start, `--safe`, tray or Restore page, or automatic after two launches that didn't last 30 s; pauses every feature without touching settings (v0.8.0)
 - ⬜ Code signing (e.g. SignPath Foundation for open source) so SmartScreen stops warning
-- ⬜ Auto-update (Tauri updater, signed)
+- ✅ Signed updates: every installer must match a minisign signature (Tauri updater format) made offline with Cove's key; unsigned or tampered installers are deleted, never run (v0.8.1)
 - ⬜ Performance gates in CI: ~0% idle CPU, ≤150 MB idle memory (fall back to WinUI 3 if exceeded)
 - ⬜ Accessibility pass (keyboard-only, screen reader, reduced motion)
 - ⬜ Licence, contributor guide, winget package

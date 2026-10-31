@@ -52,7 +52,7 @@ Requires Windows 11 (x64). No admin rights needed to use Cove's features.
 | **Top bar** | A thin bar across the top: the app in front, a Cove menu, Wi-Fi, sound, battery and the clock. Windows make room for it. |
 | **Control Centre** | From the top bar: sound and brightness sliders, mute, dark mode, Wi-Fi name, shortcuts to Bluetooth, Night light and Focus. |
 | **Back to stock** | One click restores every setting Cove changed, exactly as it was. |
-| **Updates** | One click: Cove downloads the update with a progress bar, checks its SHA-256, installs silently (no wizard), reopens and tells you it updated. |
+| **Updates** | One click: Cove downloads the update with a progress bar, checks its SHA-256 and its signature (Cove's own update key, kept off GitHub), installs silently (no wizard), reopens and tells you it updated. |
 
 ## Mac shortcuts
 Alt sits where Cmd does on a Mac keyboard.
@@ -148,7 +148,7 @@ Calm settings stay applied after you close Cove (like changing them in Settings)
 | v0.5 | Cove Glass theme, wallpaper gallery, light/dark schedule | ✅ |
 | v0.6 | Cove Tour (interactive first-run tutorial) | ✅ |
 | v0.7 | Polish: settings design, tray menu, final icon + installer art, DPI and multi-monitor pass | ✅ |
-| v0.8 | Beta: safe mode ✅, code signing, signed auto-update, performance gates | 🚧 |
+| v0.8 | Beta: safe mode ✅, signed updates ✅, code signing, performance gates | 🚧 |
 | 1.0 | Stable release | ⬜ |
 
 Details: [docs/ROADMAP.md](docs/ROADMAP.md)
