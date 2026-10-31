@@ -63,8 +63,8 @@ Legend: ✅ done · 🔨 in progress · ⬜ planned
 - ✅ Final app icon (Deep tide) and installer artwork for NSIS and MSI (v0.7.2)
 - ✅ DPI and multi-monitor consistency pass: Search and switcher sized per display scale, main window rescued from unplugged screens, live "Your displays" list (v0.7.3; physical testing outstanding)
 
-## Phase 8: Beta → 1.0 ⬜
-- ⬜ Safe mode (hold a key at start to skip every Cove change)
+## Phase 8: Beta → 1.0 🚧
+- ✅ Safe mode: hold Shift at start, `--safe`, tray or Restore page, or automatic after two launches that didn't last 30 s; pauses every feature without touching settings (v0.8.0)
 - ⬜ Code signing (e.g. SignPath Foundation for open source) so SmartScreen stops warning
 - ⬜ Auto-update (Tauri updater, signed)
 - ⬜ Performance gates in CI: ~0% idle CPU, ≤150 MB idle memory (fall back to WinUI 3 if exceeded)

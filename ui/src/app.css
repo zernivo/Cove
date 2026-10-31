@@ -225,3 +225,13 @@ kbd {
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .switch input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
 .nav-item:focus-visible, .chip:focus-visible, .btn:focus-visible { outline-offset: 1px; }
+
+/* Safe mode banner */
+.safe-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  margin: 0 0 var(--space-4, 16px); padding: 12px 16px; border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.safe-banner > div { display: flex; flex-direction: column; gap: 2px; }
+.safe-banner.hidden { display: none; }

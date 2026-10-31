@@ -88,6 +88,9 @@ Press **Alt+Space** anywhere.
 
 Try `blu` for Bluetooth, `vsc` for Visual Studio Code, or `128*4+7`. Results marked *Windows Search* come from the same read-only index as File Explorer's search box, so a word inside a document can find it; turn *Use the Windows Search index* off in **Mac habits** for name-only search of your personal folders. The same card shows how fast Search opens on your PC (Alt+Space to first frame). Turn it off in **Mac habits** if Alt+Space is taken (e.g. by PowerToys Run).
 
+## Safe mode
+If something ever feels off, Cove can pause itself without forgetting your setup. **Hold Shift while Cove starts**, turn on **Safe mode** from the tray or **Restore**, or run `Cove.exe --safe`. The dock, top bar, Mac shortcuts, switcher, snapping, clipboard history and wallpaper schedule all pause, and the Windows taskbar goes back to how it was. Your settings stay as they are. If Cove fails to start cleanly twice in a row, it opens in safe mode on its own. Leave it with one click from the banner.
+
 ## Displays and scaling
 Cove sizes the Dock, top bar, Search and the app switcher to each screen's own scaling, so they look the same at 100%, 150% or 200% and when they move between screens. If you unplug a screen, the Cove window comes back to your main display. **Dock & top bar → Your displays** lists each screen with its resolution and scaling, and updates live.
 
@@ -145,7 +148,8 @@ Calm settings stay applied after you close Cove (like changing them in Settings)
 | v0.5 | Cove Glass theme, wallpaper gallery, light/dark schedule | ✅ |
 | v0.6 | Cove Tour (interactive first-run tutorial) | ✅ |
 | v0.7 | Polish: settings design, tray menu, final icon + installer art, DPI and multi-monitor pass | ✅ |
-| 1.0 | Safe mode, code signing, auto-update, performance gates | ⬜ |
+| v0.8 | Beta: safe mode ✅, code signing, signed auto-update, performance gates | 🚧 |
+| 1.0 | Stable release | ⬜ |
 
 Details: [docs/ROADMAP.md](docs/ROADMAP.md)
 

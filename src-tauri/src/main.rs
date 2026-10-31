@@ -40,6 +40,95 @@ struct AppState {
     just_updated: std::sync::atomic::AtomicBool,
 }
 
+// ---- Safe mode ----
+// Cove starts with every system-touching feature paused (dock, top bar,
+// shortcuts, switcher, snapping, clipboard history, wallpaper schedule).
+// Saved settings are untouched; leaving safe mode puts everything back.
+// Enter it by holding Shift while Cove starts, with `--safe`, from the tray,
+// or automatically after two launches in a row that didn't last 30 seconds.
+
+static SAFE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static SAFE_REASON: Mutex<String> = Mutex::new(String::new());
+
+fn safe() -> bool {
+    SAFE.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+#[cfg(target_os = "windows")]
+fn shift_held() -> bool {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
+    (unsafe { GetAsyncKeyState(0x10) } as u16 & 0x8000) != 0
+}
+
+#[cfg(not(target_os = "windows"))]
+fn shift_held() -> bool {
+    false
+}
+
+/// Decide at startup. The marker counts launches that haven't yet lasted
+/// 30 seconds; it's cleared once Cove has run that long or quits cleanly.
+fn safe_decide(dir: &std::path::Path) -> Option<&'static str> {
+    let marker = dir.join("launch.marker");
+    let quick: u32 = std::fs::read_to_string(&marker).ok().and_then(|t| t.trim().parse().ok()).unwrap_or(0);
+    let _ = std::fs::create_dir_all(dir);
+    let _ = std::fs::write(&marker, (quick + 1).to_string());
+    if std::env::args().any(|a| a == "--safe") {
+        Some("flag")
+    } else if shift_held() {
+        Some("shift")
+    } else if quick >= 2 {
+        Some("crash")
+    } else {
+        None
+    }
+}
+
+fn safe_marker_clear(app: &AppHandle) {
+    if let Ok(dir) = app.path().app_data_dir() {
+        let _ = std::fs::remove_file(dir.join("launch.marker"));
+    }
+}
+
+/// Apply every feature from Settings, honouring safe mode.
+fn apply_features(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let d = match state.settings.lock() {
+        Ok(s) => s.data.clone(),
+        Err(_) => return,
+    };
+    let on = !safe();
+    hotkeys::configure(on && d.hotkeys, on && d.search);
+    clipboard::set_enabled(on && d.clipboard);
+    switcher::set_enabled(on && d.switcher);
+    snap::configure(on && d.snap, d.snap_animate);
+    topbar_apply(app, d.topbar);
+    dock_apply(app, &state);
+    tray_sync(app);
+    let _ = app.emit("safe-changed", safe());
+    let _ = app.emit("settings-changed", ());
+}
+
+#[derive(Serialize)]
+struct SafeStatus {
+    safe: bool,
+    reason: String,
+}
+
+#[tauri::command]
+fn safe_status() -> SafeStatus {
+    SafeStatus { safe: safe(), reason: SAFE_REASON.lock().map(|r| r.clone()).unwrap_or_default() }
+}
+
+#[tauri::command]
+fn safe_set(on: bool, app: AppHandle) -> SafeStatus {
+    SAFE.store(on, std::sync::atomic::Ordering::SeqCst);
+    if let Ok(mut r) = SAFE_REASON.lock() {
+        *r = if on { "manual".into() } else { String::new() };
+    }
+    apply_features(&app);
+    safe_status()
+}
+
 fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
@@ -173,6 +262,7 @@ fn restore_all(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<Rest
 const TOPBAR_HEIGHT: f64 = 30.0;
 
 fn topbar_apply(app: &AppHandle, on: bool) {
+    let on = on && !safe();
     let Some(w) = app.get_webview_window("topbar") else { return };
     let Ok(hwnd) = w.hwnd() else { return };
     let h = hwnd.0 as isize;
@@ -279,7 +369,7 @@ struct DockStatus {
 /// Make the taskbar's auto-hide match the settings, remembering (and later
 /// restoring) what it was before Cove touched it.
 fn sync_taskbar(s: &mut settings::Store) {
-    let want = s.data.dock && s.data.dock_hide_taskbar;
+    let want = s.data.dock && s.data.dock_hide_taskbar && !safe();
     match (want, s.data.taskbar_prev_autohide) {
         (true, None) => {
             s.data.taskbar_prev_autohide = Some(dock::taskbar_autohide(Some(true)));
@@ -302,7 +392,7 @@ fn dock_apply(app: &AppHandle, state: &AppState) -> DockStatus {
         Err(_) => (false, false, Vec::new(), "main".into()),
     };
     if let Some(w) = app.get_webview_window("dock") {
-        if enabled {
+        if enabled && !safe() {
             let _ = w.show();
             let _ = w.emit("dock-changed", ());
         } else {
@@ -366,7 +456,7 @@ fn switcher_set(enabled: bool, app: AppHandle, state: tauri::State<'_, AppState>
         s.data.switcher = enabled;
         let _ = s.save();
     }
-    switcher::set_enabled(enabled);
+    switcher::set_enabled(enabled && !safe());
     tray_sync(&app);
     enabled
 }
@@ -426,6 +516,7 @@ struct TrayChecks {
     system: CheckMenuItem<tauri::Wry>,
     light: CheckMenuItem<tauri::Wry>,
     dark: CheckMenuItem<tauri::Wry>,
+    safe: CheckMenuItem<tauri::Wry>,
 }
 
 fn tray_sync(app: &AppHandle) {
@@ -441,6 +532,7 @@ fn tray_sync(app: &AppHandle) {
     let _ = t.system.set_checked(d.appearance == "system");
     let _ = t.light.set_checked(d.appearance == "light");
     let _ = t.dark.set_checked(d.appearance == "dark");
+    let _ = t.safe.set_checked(safe());
 }
 
 fn tray_action(app: &AppHandle, id: &str) {
@@ -467,6 +559,12 @@ fn tray_action(app: &AppHandle, id: &str) {
         "updates" | "restore" => {
             show_main(app);
             let _ = app.emit("nav", id.to_string());
+        }
+        "safe" => {
+            safe_set(!safe(), app.clone());
+            if safe() {
+                show_main(app);
+            }
         }
         "quit" => app.exit(0),
         _ => {}
@@ -579,6 +677,9 @@ fn wallpaper_put_back(state: &AppState) -> Result<bool, String> {
 /// Once a minute: follow the schedule, and keep the wallpaper's light/dark
 /// version in step (also when Cove follows Windows' mode).
 fn schedule_tick(app: &AppHandle) {
+    if safe() {
+        return;
+    }
     let state = app.state::<AppState>();
     let decided = state.settings.lock().ok().and_then(|s| {
         if s.data.schedule != "times" {
@@ -695,7 +796,7 @@ fn snap_set(enabled: bool, animate: bool, app: AppHandle, state: tauri::State<'_
         s.data.snap_animate = animate;
         let _ = s.save();
     }
-    snap::configure(enabled, animate);
+    snap::configure(enabled && !safe(), animate);
     tray_sync(&app);
     snap_info(&state)
 }
@@ -932,6 +1033,9 @@ fn display_watch(app: AppHandle) {
             layout = Some(now);
         }
         let st = app.state::<AppState>();
+        if safe() {
+            continue;
+        }
         let (dock_on, follow, bar_on) = match st.settings.lock() {
             Ok(s) => (s.data.dock, s.data.dock_display == "follow", s.data.topbar),
             Err(_) => continue,
@@ -1108,6 +1212,9 @@ fn reconfigure(state: &AppState, f: impl FnOnce(&mut settings::Settings)) -> hot
         }
         Err(_) => (false, true),
     };
+    if safe() {
+        return hotkeys::configure(false, false);
+    }
     hotkeys::configure(habits, search)
 }
 
@@ -1238,7 +1345,7 @@ fn clipboard_set(enabled: bool, state: tauri::State<'_, AppState>) -> bool {
         s.data.clipboard = enabled;
         let _ = s.save();
     }
-    clipboard::set_enabled(enabled);
+    clipboard::set_enabled(enabled && !safe());
     enabled
 }
 
@@ -1304,6 +1411,21 @@ fn main() {
             let dir = app.path().app_data_dir()?;
             let journal = journal::Journal::load(dir.join("journal.json"))?;
             let store = settings::Store::load(dir.join("settings.json"));
+            let safe_why = safe_decide(&dir);
+            if let Some(why) = safe_why {
+                SAFE.store(true, std::sync::atomic::Ordering::SeqCst);
+                if let Ok(mut r) = SAFE_REASON.lock() {
+                    *r = why.into();
+                }
+            }
+            {
+                // 30 healthy seconds: this launch didn't crash.
+                let h = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(30));
+                    safe_marker_clear(&h);
+                });
+            }
             let _ = TOUR_APP.set(app.handle().clone());
             let handle = app.handle().clone();
             hotkeys::set_search_handler(move || {
@@ -1313,15 +1435,16 @@ fn main() {
                 // Window work belongs on the main thread.
                 let _ = handle.run_on_main_thread(move || toggle_search(&h));
             });
-            hotkeys::configure(store.data.hotkeys, store.data.search);
-            clipboard::set_enabled(store.data.clipboard);
+            let on = safe_why.is_none();
+            hotkeys::configure(on && store.data.hotkeys, on && store.data.search);
+            clipboard::set_enabled(on && store.data.clipboard);
             winindex::set_enabled(store.data.search_winindex);
             {
                 let h = app.handle().clone();
                 switcher::set_ui_handler(move |u| switcher_ui(&h, u));
             }
-            switcher::set_enabled(store.data.switcher);
-            snap::configure(store.data.snap, store.data.snap_animate);
+            switcher::set_enabled(on && store.data.switcher);
+            snap::configure(on && store.data.snap, store.data.snap_animate);
             theme_apply(app.handle(), &theme::state(&store.data.theme, &store.data.appearance, &store.data.accent));
             {
                 let h = app.handle().clone();
@@ -1394,6 +1517,7 @@ fn main() {
                     system: CheckMenuItem::with_id(app, "m-system", "Follow Windows", true, d.appearance == "system", None::<&str>)?,
                     light: CheckMenuItem::with_id(app, "m-light", "Light", true, d.appearance == "light", None::<&str>)?,
                     dark: CheckMenuItem::with_id(app, "m-dark", "Dark", true, d.appearance == "dark", None::<&str>)?,
+                    safe: CheckMenuItem::with_id(app, "safe", "Safe mode", true, safe(), None::<&str>)?,
                 }
             };
             let appearance = Submenu::with_items(app, "Appearance", true, &[&checks.system, &checks.light, &checks.dark])?;
@@ -1417,6 +1541,7 @@ fn main() {
                     &tour,
                     &updates,
                     &restore,
+                    &checks.safe,
                     &PredefinedMenuItem::separator(app)?,
                     &quit,
                 ],
@@ -1513,6 +1638,8 @@ fn main() {
             dock_display_set,
             switcher_status,
             switcher_set,
+            safe_status,
+            safe_set,
             displays,
             switcher_pick,
             snap_status,
@@ -1551,6 +1678,7 @@ fn main() {
         // Hotkeys live only while Cove runs; the taskbar goes back to how
         // it was (Cove hides it again next launch if the dock is on).
         if let RunEvent::Exit = event {
+            safe_marker_clear(handle);
             hotkeys::stop();
             switcher::set_enabled(false);
             snap::configure(false, true);

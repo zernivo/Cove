@@ -24,6 +24,13 @@
       </aside>
 
       <main class="content">
+        <div class="safe-banner hidden" id="safe-banner" role="status">
+          <div>
+            <strong>Safe mode</strong>
+            <span class="small" id="safe-why">Cove's features are paused for now.</span>
+          </div>
+          <button class="btn primary" id="safe-leave">Leave safe mode</button>
+        </div>
         <section class="view" id="view-calm">
           <header class="view-head">
             <h1>Calm</h1>
@@ -200,6 +207,13 @@
             <h1>Back to stock</h1>
             <p class="muted">Put every setting Cove changed back exactly as it was.</p>
           </header>
+          <div class="row card">
+            <div>
+              <h2>Safe mode</h2>
+              <p class="muted small">Pauses the dock, top bar, shortcuts, switcher, snapping, clipboard history and wallpaper schedule without changing your settings. Hold Shift while Cove starts to open in safe mode.</p>
+            </div>
+            <label class="switch"><input type="checkbox" id="safe-toggle" /><span></span></label>
+          </div>
           <div class="row card">
             <div>
               <h2>Recorded changes</h2>

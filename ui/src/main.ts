@@ -641,3 +641,28 @@ async function renderDisplays(): Promise<void> {
 }
 renderDisplays();
 if (inTauri) listen("displays-changed", () => { renderDisplays(); invoke<DockStatus>("dock_status").then(renderDock); });
+
+// ---- Safe mode ----
+interface SafeStatus { safe: boolean; reason: string }
+const SAFE_WHY: Record<string, string> = {
+  shift: "You held Shift as Cove started, so its features are paused. Your settings are kept.",
+  crash: "Cove didn't start cleanly twice in a row, so it opened with its features paused. Your settings are kept.",
+  flag: "Cove was started with --safe, so its features are paused. Your settings are kept.",
+  manual: "Cove's features are paused. Your settings are kept.",
+};
+function renderSafe(s: SafeStatus): void {
+  $("safe-banner").classList.toggle("hidden", !s.safe);
+  $("safe-why").textContent = SAFE_WHY[s.reason] ?? SAFE_WHY.manual;
+  ($("safe-toggle") as HTMLInputElement).checked = s.safe;
+}
+async function setSafe(on: boolean): Promise<void> {
+  if (!inTauri) return renderSafe({ safe: on, reason: on ? "manual" : "" });
+  renderSafe(await invoke<SafeStatus>("safe_set", { on }));
+  toast(on ? "Safe mode on. Features paused." : "Safe mode off. Everything's back.");
+}
+if (inTauri) {
+  invoke<SafeStatus>("safe_status").then(renderSafe);
+  listen("safe-changed", () => invoke<SafeStatus>("safe_status").then(renderSafe));
+}
+$("safe-leave").addEventListener("click", () => setSafe(false));
+$("safe-toggle").addEventListener("change", (e) => setSafe((e.target as HTMLInputElement).checked));
