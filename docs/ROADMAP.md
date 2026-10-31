@@ -71,6 +71,15 @@ Legend: ✅ done · 🔨 in progress · ⬜ planned
 - ⬜ Accessibility pass (keyboard-only, screen reader, reduced motion)
 - ⬜ Licence, contributor guide, winget package
 
+## Phase 9: Feel & delight ⬜ (proposed, from community research, before 1.0)
+What the most-watched Windows customization reels ask for (Nov 2026), adapted to Cove's safety rules. Order not set yet.
+- ⬜ Dock motion: launch bounce, hover lift, attention bounce when an app wants you, smooth add/remove; all off with reduced motion
+- ⬜ Deeper glass: real Mica/Acrylic backdrops (documented DWM APIs) on Cove's own dock, top bar, Search and panels, with a battery-friendly toggle
+- ⬜ Calm widgets: optional small widget area (clock, calendar, now playing, battery; weather opt-in), in Cove's own windows
+- ⬜ Dynamic wallpapers: original scenes that shift gently through the day (still frames, near-zero CPU), paused on battery or full-screen apps
+- Already covered: disappearing taskbar (documented auto-hide, v0.3.0), Spotlight-style search (Phase 2), Mac-like window motion (v0.4.2)
+- Out of scope: restyling Start or the real taskbar (tools like Windhawk do it by injecting into Explorer), video wallpapers behind desktop icons
+
 ---
 
 ### Never on the roadmap
