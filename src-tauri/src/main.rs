@@ -154,7 +154,10 @@ struct ApplyReport {
 
 #[derive(Serialize)]
 struct RestoreReport {
+    /// Windows settings put back from the journal.
     restored: usize,
+    /// Cove features switched off (dock, top bar, switcher, ...).
+    features: usize,
     failed: Vec<(String, String)>,
 }
 
@@ -195,7 +198,7 @@ fn calm_apply(ids: Vec<String>, state: tauri::State<'_, AppState>) -> ApplyRepor
 fn restore_all(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<RestoreReport, String> {
     let mut journal = state.journal.lock().map_err(|e| e.to_string())?;
     let changes = journal.take_for_restore().map_err(|e| e.to_string())?;
-    let mut report = RestoreReport { restored: 0, failed: Vec::new() };
+    let mut report = RestoreReport { restored: 0, features: 0, failed: Vec::new() };
     for c in changes {
         match registry::write(&c.target, &c.previous) {
             Ok(()) => report.restored += 1,
@@ -209,7 +212,7 @@ fn restore_all(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<Rest
         if s.data.dock || s.data.taskbar_prev_autohide.is_some() {
             s.data.dock = false;
             sync_taskbar(&mut s);
-            report.restored += 1;
+            report.features += 1;
         }
     }
     if let Some(w) = app.get_webview_window("dock") {
@@ -222,7 +225,7 @@ fn restore_all(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<Rest
         was
     }).unwrap_or(false);
     if had_bar {
-        report.restored += 1;
+        report.features += 1;
     }
     topbar_apply(&app, false);
     let had_switcher = state.settings.lock().map(|mut s| {
@@ -233,7 +236,7 @@ fn restore_all(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<Rest
     }).unwrap_or(false);
     if had_switcher {
         switcher::set_enabled(false);
-        report.restored += 1;
+        report.features += 1;
     }
     let had_snap = state.settings.lock().map(|mut s| {
         let was = s.data.snap;
@@ -243,10 +246,10 @@ fn restore_all(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<Rest
     }).unwrap_or(false);
     if had_snap {
         snap::configure(false, true);
-        report.restored += 1;
+        report.features += 1;
     }
     match wallpaper_put_back(&state) {
-        Ok(true) => report.restored += 1,
+        Ok(true) => report.features += 1,
         Ok(false) => {}
         Err(e) => report.failed.push(("Wallpaper".into(), e)),
     }
@@ -1562,6 +1565,22 @@ fn main() {
                 })
                 .build(app)?;
 
+            // The main window starts hidden and the page shows it once painted.
+            // Safety net: if the page never does, show it anyway.
+            {
+                let h = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(4));
+                    let h2 = h.clone();
+                    let _ = h.run_on_main_thread(move || {
+                        if let Some(w) = h2.get_webview_window("main") {
+                            if !w.is_visible().unwrap_or(true) {
+                                let _ = w.show();
+                            }
+                        }
+                    });
+                });
+            }
             // Mica: Windows' own cheap backdrop for the main window.
             #[cfg(target_os = "windows")]
             if let Some(window) = app.get_webview_window("main") {

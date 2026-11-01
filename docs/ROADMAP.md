@@ -74,6 +74,8 @@ Legend: ✅ done · 🔨 in progress · ⬜ planned
 ## Phase 9: Feel & delight 🚧 (v0.9, from community research, before 1.0)
 What the most-watched Windows customization reels ask for (Nov 2026), adapted to Cove's safety rules. Order not set yet.
 - ✅ Dock motion: launch bounce until the first window appears, hover label rise and press feedback, attention hops when an app flashes (documented shell hook, read-only), icons grow in and shrink away; all off with reduced motion (v0.9.0)
+- ✅ Launch intro: first launch builds the C from voxels on flat Ink, then the name; every later launch is a quick mark; click or any key skips; Reduce motion shows it still (v0.9.0)
+- ⬜ Settings window redesign on Ink (from the v0.8.1 screen-recording review)
 - ⬜ Deeper glass: real Mica/Acrylic backdrops (documented DWM APIs) on Cove's own dock, top bar, Search and panels, with a battery-friendly toggle
 - ⬜ Calm widgets: optional small widget area (clock, calendar, now playing, battery; weather opt-in), in Cove's own windows
 - ⬜ Dynamic wallpapers: original scenes that shift gently through the day (still frames, near-zero CPU), paused on battery or full-screen apps

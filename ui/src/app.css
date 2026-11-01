@@ -153,7 +153,7 @@ kbd {
 
 .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-left: 6px; vertical-align: middle; }
 .notes {
-  white-space: pre-wrap; font: 12px/1.5 var(--font-ui); color: var(--text-muted);
+  white-space: normal; font: 12px/1.5 var(--font-ui); color: var(--text-muted);
   background: var(--surface-content); border-radius: var(--radius-card); box-shadow: var(--elev-1);
   padding: var(--space-4); margin: 0;
 }
@@ -228,6 +228,7 @@ kbd {
 
 /* Safe mode banner */
 .safe-banner {
+  max-width: 700px; margin-left: auto !important; margin-right: auto !important; box-sizing: border-box;
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
   margin: 0 0 var(--space-4, 16px); padding: 12px 16px; border-radius: 12px;
   background: color-mix(in srgb, var(--accent) 14%, transparent);
@@ -235,3 +236,16 @@ kbd {
 }
 .safe-banner > div { display: flex; flex-direction: column; gap: 2px; }
 .safe-banner.hidden { display: none; }
+
+/* Release notes rendered from markdown */
+#up-notes h3 { font-size: var(--text-base); margin: 12px 0 4px; }
+#up-notes p { margin: 0 0 8px; }
+#up-notes ul { margin: 0 0 8px; padding-left: 18px; }
+#up-notes li { margin: 2px 0; }
+#up-notes code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 0.92em; padding: 1px 5px; border-radius: 5px; background: rgba(127,127,127,0.18); }
+.btn:disabled { opacity: 0.45; cursor: default; }
+
+/* Launch intro (intro.ts): flat Ink, fades out over the app */
+.intro { position: fixed; inset: 0; z-index: 100; background: #111215; transition: opacity 0.3s ease; cursor: default; }
+.intro canvas { width: 100%; height: 100%; display: block; }
+.intro.out { opacity: 0; pointer-events: none; }

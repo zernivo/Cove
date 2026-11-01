@@ -1,11 +1,13 @@
 import { applyTheme, type ThemeState } from "./theme";
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { playIntro } from "./intro";
 
 interface Status { version: string; journal_entries: number; windows: boolean }
 interface Tweak { id: string; title: string; description: string; settings_uri: string; applied: boolean | null }
 interface ApplyReport { applied: string[]; failed: [string, string][] }
-interface RestoreReport { restored: number; failed: [string, string][] }
+interface RestoreReport { restored: number; features?: number; failed: [string, string][] }
 interface HotkeyStatus { running: boolean; search: boolean; conflicts: string[] }
 interface UpdateInfo { current: string; latest: string; available: boolean; notes: string; page: string }
 
@@ -19,7 +21,7 @@ const mock: Record<string, (a?: any) => unknown> = {
     { id: "calm.taskbar-search", title: "Hide the taskbar search box", description: "Cove Search takes over (Alt+Space).", settings_uri: "", applied: true },
   ],
   calm_apply: (a) => ({ applied: a.ids, failed: [] }),
-  restore_all: () => ({ restored: 0, failed: [] }),
+  restore_all: () => ({ restored: 0, features: 0, failed: [] }),
   hotkeys_set: (a) => ({ running: a.enabled, search: true, conflicts: [] }),
   search_set: (a) => ({ running: false, search: a.enabled, conflicts: [] }),
   hotkeys_status: () => ({ running: false, search: true, conflicts: [] }),
@@ -74,6 +76,7 @@ document.querySelectorAll<HTMLAnchorElement>(".nav-item").forEach((a) =>
     a.classList.add("active");
     document.querySelectorAll(".view").forEach((v) => v.classList.add("hidden"));
     $(`view-${a.dataset.view}`).classList.remove("hidden");
+    if (a.dataset.view === "look") loadLook();
   }),
 );
 
@@ -106,6 +109,8 @@ async function renderCalm(): Promise<void> {
     });
     list.appendChild(row);
   }
+  list.querySelectorAll<HTMLInputElement>("input").forEach((i) => i.addEventListener("change", calmButtons));
+  calmButtons();
   if (!tweaks.length) list.innerHTML = `<p class="empty-state">Calm tweaks are available on Windows 11.</p>`;
   else if (tweaks.every((t) => t.applied)) {
     const p = document.createElement("p");
@@ -115,13 +120,24 @@ async function renderCalm(): Promise<void> {
   }
 }
 
-$("calm-all").addEventListener("click", () =>
-  document.querySelectorAll<HTMLInputElement>("#calm-list input:not(:disabled)").forEach((i) => (i.checked = true)),
-);
+function calmButtons(): void {
+  const open = document.querySelectorAll<HTMLInputElement>("#calm-list input:not(:disabled)");
+  const picked = [...open].filter((i) => i.checked).length;
+  ($("calm-apply") as HTMLButtonElement).disabled = picked === 0;
+  ($("calm-apply") as HTMLButtonElement).textContent = picked ? `Apply ${picked}` : "Apply";
+  ($("calm-all") as HTMLButtonElement).disabled = open.length === 0 || picked === open.length;
+}
+$("calm-all").addEventListener("click", () => {
+  document.querySelectorAll<HTMLInputElement>("#calm-list input:not(:disabled)").forEach((i) => (i.checked = true));
+  calmButtons();
+});
 
 $("calm-apply").addEventListener("click", async () => {
   const ids = [...document.querySelectorAll<HTMLInputElement>("#calm-list input:checked:not(:disabled)")].map((i) => i.value);
-  if (ids.length === 0) return toast("Pick something to tidy first.");
+  if (ids.length === 0) return;
+  const btn = $("calm-apply") as HTMLButtonElement;
+  btn.disabled = true;
+  btn.textContent = "Applying…";
   const r = await invoke<ApplyReport>("calm_apply", { ids });
   toast(r.failed.length
     ? `${r.applied.length} applied. Windows blocked ${r.failed.length}: use its Settings button.`
@@ -216,7 +232,6 @@ async function saveSched(mode?: string): Promise<void> {
 $("sched-light").addEventListener("change", () => saveSched());
 $("sched-dark").addEventListener("change", () => saveSched());
 $("wall-restore").addEventListener("click", async () => renderWall(await invoke<WallStatus>("wallpaper_restore")));
-invoke<WallStatus>("wallpaper_status").then(renderWall);
 if (inTauri) {
   listen("wallpaper-changed", () => {
     invoke<WallStatus>("wallpaper_status").then(renderWall);
@@ -255,7 +270,12 @@ function renderLook(t: ThemeState): void {
     ? t.accent ? `Following Windows (${t.accent}). Change it in Settings → Personalization → Colors` : "Couldn't read the Windows accent, so the theme's own is used"
     : "The theme's own, or the accent you chose in Windows Settings";
 }
-invoke<ThemeState>("theme_get").then(renderLook);
+function loadLook(): void {
+  invoke<ThemeState>("theme_get").then(renderLook).catch(() => renderLook(look));
+  invoke<WallStatus>("wallpaper_status").then(renderWall).catch(() => renderWall(wall));
+}
+renderLook(look); // never show an empty Look page, even before the backend answers
+loadLook();
 window.addEventListener("focus", () => { if (look.accent_source === "windows") invoke<ThemeState>("theme_get").then(renderLook); });
 
 interface DockStatus { enabled: boolean; hide_taskbar: boolean; stacks: string[]; display: string }
@@ -376,7 +396,13 @@ $("hk-toggle").addEventListener("change", async (e) => {
 // ---- restore ----
 $("restore-btn").addEventListener("click", async () => {
   const r = await invoke<RestoreReport>("restore_all");
-  toast(r.failed.length ? `Restored ${r.restored}, ${r.failed.length} failed` : r.restored ? `Restored ${r.restored} settings.` : "Already stock.");
+  const f = r.features ?? 0;
+  const parts = [
+    r.restored ? `Restored ${r.restored} Windows setting${r.restored === 1 ? "" : "s"}` : "",
+    f ? `turned off ${f} Cove feature${f === 1 ? "" : "s"}` : "",
+  ].filter(Boolean);
+  const msg = parts.length ? parts.join(" and ").replace(/^t/, "T") + "." : "Already stock.";
+  toast(r.failed.length ? `${msg} ${r.failed.length} couldn't be restored.` : msg);
   await Promise.all([renderCalm(), refreshStatus()]);
 });
 
@@ -387,16 +413,45 @@ async function checkUpdates(quiet = false): Promise<void> {
   if (!quiet) note.textContent = "Checking…";
   try {
     const u = await invoke<UpdateInfo>("update_check");
-    $("up-title").textContent = `Cove ${u.current}`;
+    $("up-title").textContent = u.available ? `Cove ${u.latest}` : `Cove ${u.current}`;
     btn.classList.toggle("hidden", !u.available);
     $("update-dot").classList.toggle("hidden", !u.available);
     const notes = $("up-notes");
-    notes.textContent = u.notes;
+    renderNotes(notes, u.notes);
     notes.classList.toggle("hidden", !u.available || !u.notes);
-    note.textContent = u.available ? `Version ${u.latest} is available.` : "You're on the latest version.";
+    note.textContent = u.available ? `Ready to install. You have ${u.current}.` : "You're on the latest version.";
     btn.textContent = `Update to ${u.latest}`;
   } catch (e) {
     note.textContent = String(e);
+  }
+}
+
+/** Release notes are a little markdown: headings, bullets, **bold** and `code`.
+ *  Built with DOM nodes only, never innerHTML. */
+function renderNotes(box: HTMLElement, md: string): void {
+  box.innerHTML = "";
+  let ul: HTMLUListElement | null = null;
+  const inline = (el: HTMLElement, text: string) => {
+    for (const part of text.split(/(\*\*[^*]+\*\*|`[^`]+`)/)) {
+      if (!part) continue;
+      if (part.startsWith("**")) el.appendChild(Object.assign(document.createElement("strong"), { textContent: part.slice(2, -2) }));
+      else if (part.startsWith("`")) el.appendChild(Object.assign(document.createElement("code"), { textContent: part.slice(1, -1) }));
+      else el.appendChild(document.createTextNode(part.replace(/\*/g, "")));
+    }
+  };
+  for (const raw of md.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) { ul = null; continue; }
+    if (/^[-*] /.test(line)) {
+      if (!ul) ul = box.appendChild(document.createElement("ul"));
+      inline(ul.appendChild(document.createElement("li")), line.slice(2));
+      continue;
+    }
+    ul = null;
+    const h = line.match(/^#+\s*(.*)/);
+    const el = document.createElement(h ? "h3" : "p");
+    inline(el, h ? h[1] : line);
+    box.appendChild(el);
   }
 }
 
@@ -432,7 +487,12 @@ $("up-install").addEventListener("click", async () => {
 
 // ---- boot ----
 (async () => {
-  await Promise.all([refreshStatus(), renderCalm(), invoke<HotkeyStatus>("hotkeys_status").then(renderHabits)]);
+  await Promise.all([refreshStatus(), renderCalm(), invoke<HotkeyStatus>("hotkeys_status").then(renderHabits)]).catch(() => {});
+  // The window starts hidden so it never flashes white or see-through; show it painted.
+  const intro = playIntro();
+  if (inTauri) requestAnimationFrame(() => getCurrentWindow().show().catch(() => {}));
+  await intro;
+  if (!(await invoke<boolean>("tour_status").catch(() => true))) tourOpen();
   checkUpdates(true);
   if (await invoke<boolean>("just_updated")) toast(`Updated to Cove ${await currentVersion()} ✓`);
 })();
@@ -607,7 +667,7 @@ if (inTauri) {
     }
   });
 }
-invoke<boolean>("tour_status").then((done) => { if (!done) tourOpen(); });
+
 
 // ---- Tray menu hooks ----
 if (inTauri) {

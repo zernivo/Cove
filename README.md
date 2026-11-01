@@ -149,7 +149,7 @@ Calm settings stay applied after you close Cove (like changing them in Settings)
 | v0.6 | Cove Tour (interactive first-run tutorial) | ✅ |
 | v0.7 | Polish: settings design, tray menu, final icon + installer art, DPI and multi-monitor pass | ✅ |
 | v0.8 | Beta: safe mode ✅, signed updates ✅, code signing, performance gates | 🚧 |
-| v0.9 | Feel & delight: dock motion ✅, deeper glass, calm widgets, dynamic wallpapers | 🚧 |
+| v0.9 | Feel & delight: dock motion ✅, launch intro ✅, settings redesign, deeper glass, calm widgets, dynamic wallpapers | 🚧 |
 | 1.0 | Stable release | ⬜ |
 
 Details: [docs/ROADMAP.md](docs/ROADMAP.md)

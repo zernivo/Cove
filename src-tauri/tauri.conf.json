@@ -21,8 +21,8 @@
         "resizable": true,
         "transparent": true,
         "decorations": true,
-        "maximized": true,
-        "center": true
+        "center": true,
+        "visible": false
       },
       {
         "label": "search",

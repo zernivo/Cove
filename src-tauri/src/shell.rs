@@ -3,6 +3,12 @@
 
 #[cfg(windows)]
 pub fn notify_settings_changed() {
+    // A broadcast waits on every top-level window; never make the UI wait for it.
+    std::thread::spawn(broadcast_settings_changed);
+}
+
+#[cfg(windows)]
+fn broadcast_settings_changed() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         SendMessageTimeoutW, HWND_BROADCAST, SMTO_ABORTIFHUNG, WM_SETTINGCHANGE,
     };
@@ -16,7 +22,7 @@ pub fn notify_settings_changed() {
                 0,
                 wide.as_ptr() as isize,
                 SMTO_ABORTIFHUNG,
-                1000,
+                300,
                 &mut result,
             );
         }
