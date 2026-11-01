@@ -72,10 +72,38 @@ html[data-mode="dark"], html[data-mode="dark"] body {
   font-weight: 600;
   font-size: 20px;
 }
-.item.bounce { animation: bounce 0.6s ease 2; }
-@keyframes bounce {
+/* ---- Dock motion (v0.9.0). Uses `translate`, so it stacks with the
+   magnification `transform` instead of fighting it. ---- */
+.item:hover img, .item:hover .letter { filter: drop-shadow(0 5px 7px rgba(0, 0, 0, 0.24)); }
+.item img, .item .letter { transition: scale 0.12s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.15s ease, opacity 0.12s ease; }
+.item.pressed img, .item.pressed .letter { scale: 0.9; opacity: 0.82; }
+/* Launch: soft bounces until the app's first window appears (max 6 s). */
+.item.launching { animation: launch 0.72s cubic-bezier(0.33, 0, 0.3, 1) infinite; }
+@keyframes launch {
   0%, 100% { translate: 0 0; }
-  40% { translate: 0 -14px; }
+  45% { translate: 0 -16px; }
+  70% { translate: 0 0; }
+  82% { translate: 0 -3px; }
+}
+/* Attention: an app flashed its window. Two tall hops, a pause, repeat. */
+.item.attention { animation: attention 2.4s cubic-bezier(0.33, 0, 0.3, 1) infinite; }
+.item.attention .dot { background: var(--accent); }
+@keyframes attention {
+  0%, 30%, 60%, 100% { translate: 0 0; }
+  12% { translate: 0 -22px; }
+  42% { translate: 0 -12px; }
+}
+/* Arrive: grow in from nothing; leave: shrink and close the gap. */
+.item.arriving { animation: arrive 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
+@keyframes arrive {
+  from { width: 0; opacity: 0; scale: 0.4; }
+  to { width: var(--size); opacity: 1; scale: 1; }
+}
+.item.leaving { pointer-events: none; animation: leave 0.22s cubic-bezier(0.4, 0, 1, 1) forwards; }
+.item.leaving .label, .item.leaving .dot { display: none; }
+@keyframes leave {
+  from { width: var(--size); opacity: 1; scale: 1; }
+  to { width: 0; opacity: 0; scale: 0.4; margin: 0 -3px; }
 }
 .item .dot {
   position: absolute;
@@ -90,7 +118,7 @@ html[data-mode="dark"], html[data-mode="dark"] body {
   position: absolute;
   bottom: calc(100% + 10px);
   left: 50%;
-  translate: -50% 0;
+  translate: -50% 4px;
   padding: 4px 10px;
   border-radius: 7px;
   background: var(--label-bg);
@@ -99,9 +127,9 @@ html[data-mode="dark"], html[data-mode="dark"] body {
   white-space: nowrap;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.1s;
+  transition: opacity 0.12s ease, translate 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.item:hover .label { opacity: 1; }
+.item:hover .label { opacity: 1; translate: -50% 0; }
 .sep {
   width: 1px;
   align-self: stretch;
@@ -170,6 +198,17 @@ html[data-mode="dark"], html[data-mode="dark"] body {
 .stack-empty { grid-column: 1 / -1; text-align: center; opacity: 0.6; font-size: 12px; }
 .hidden { display: none; }
 @media (prefers-reduced-motion: reduce) {
-  .item, .dock { transition: none; }
-  .item.bounce { animation: none; }
+  .item, .dock, .label, .item img, .item .letter { transition: none; }
+  .item.launching, .item.attention, .item.arriving, .item.leaving { animation: none; }
+  .item.launching img, .item.launching .letter { opacity: 0.6; }
+  .item.attention::before {
+    content: "";
+    position: absolute;
+    top: -3px;
+    right: -3px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
 }

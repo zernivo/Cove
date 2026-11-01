@@ -14,6 +14,9 @@ pub struct DockItem {
     /// Window handles (front to back) when running.
     pub windows: Vec<isize>,
     pub active: bool,
+    /// One of its windows asked for attention (FlashWindow) and hasn't
+    /// been brought to the front yet.
+    pub attention: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
 }
@@ -82,9 +85,47 @@ pub fn launch(target: &str) -> Result<(), String> {
     }
 }
 
+/// Windows that asked for attention, learned from the documented shell
+/// hook (HSHELL_FLASH). Read-only: Cove never flashes or changes them.
+static ATTN: std::sync::Mutex<Vec<isize>> = std::sync::Mutex::new(Vec::new());
+static ATTN_WATCH: std::sync::Once = std::sync::Once::new();
+
+pub const HSHELL_WINDOWDESTROYED: usize = 2;
+pub const HSHELL_WINDOWACTIVATED: usize = 4;
+pub const HSHELL_RUDEAPPACTIVATED: usize = 0x8004;
+pub const HSHELL_FLASH: usize = 0x8006;
+
+/// Apply one shell-hook event to the attention list.
+pub fn shell_event(list: &mut Vec<isize>, code: usize, hwnd: isize) {
+    match code {
+        HSHELL_FLASH => {
+            if !list.contains(&hwnd) {
+                list.push(hwnd);
+            }
+        }
+        HSHELL_WINDOWACTIVATED | HSHELL_RUDEAPPACTIVATED | HSHELL_WINDOWDESTROYED => list.retain(|&h| h != hwnd),
+        _ => {}
+    }
+}
+
+/// Keep only windows that still exist and aren't in front.
+fn prune_attention(list: &mut Vec<isize>, alive: &[isize], fg: isize) {
+    list.retain(|h| *h != fg && alive.contains(h));
+}
+
 pub fn state(pins: &[crate::settings::Pin], stacks: &[String]) -> DockState {
+    ATTN_WATCH.call_once(imp::attention_watch);
     let wins = imp::windows();
     let fg = imp::foreground();
+    let attn: Vec<isize> = match ATTN.lock() {
+        Ok(mut a) => {
+            let alive: Vec<isize> = wins.iter().map(|w| w.hwnd).collect();
+            prune_attention(&mut a, &alive, fg);
+            a.clone()
+        }
+        Err(_) => Vec::new(),
+    };
+    let wants = |hw: &[isize]| hw.iter().any(|h| attn.contains(h)) && !hw.contains(&fg);
     let mut used = vec![false; wins.len()];
     let mut items = Vec::new();
     let mut icon_jobs = Vec::new();
@@ -107,6 +148,7 @@ pub fn state(pins: &[crate::settings::Pin], stacks: &[String]) -> DockState {
             name: p.name.clone(),
             target: p.target.clone(),
             active: hw.contains(&fg),
+            attention: wants(&hw),
             windows: hw,
             icon,
         });
@@ -134,8 +176,12 @@ pub fn state(pins: &[crate::settings::Pin], stacks: &[String]) -> DockState {
             target: w.exe.clone(),
             windows: vec![w.hwnd],
             active: w.hwnd == fg,
+            attention: false,
             icon,
         });
+    }
+    for g in groups.iter_mut() {
+        g.attention = wants(&g.windows);
     }
     items.extend(groups);
 
@@ -147,7 +193,7 @@ pub fn state(pins: &[crate::settings::Pin], stacks: &[String]) -> DockState {
         if icon.is_none() {
             icon_jobs.push(path);
         }
-        items.push(DockItem { kind: "stack", name: label.into(), target: key.clone(), windows: vec![], active: false, icon });
+        items.push(DockItem { kind: "stack", name: label.into(), target: key.clone(), windows: vec![], active: false, attention: false, icon });
     }
 
     let trash = "::{645FF040-5081-101B-9F08-08002B2CF60E}".to_string();
@@ -155,7 +201,7 @@ pub fn state(pins: &[crate::settings::Pin], stacks: &[String]) -> DockState {
     if icon.is_none() {
         icon_jobs.push(trash.clone());
     }
-    items.push(DockItem { kind: "trash", name: "Recycle Bin".into(), target: trash, windows: vec![], active: false, icon });
+    items.push(DockItem { kind: "trash", name: "Recycle Bin".into(), target: trash, windows: vec![], active: false, attention: false, icon });
 
     if !icon_jobs.is_empty() {
         std::thread::spawn(move || crate::icons::fill(icon_jobs));
@@ -253,6 +299,68 @@ mod imp {
         IsWindowVisible, PostMessageW, SetForegroundWindow, ShowWindow, SystemParametersInfoW,
         GWL_EXSTYLE, GW_OWNER, SPI_GETWORKAREA, SW_MINIMIZE, SW_RESTORE, WM_CLOSE, WS_EX_TOOLWINDOW,
     };
+    use windows_sys::Win32::Foundation::{LRESULT, WPARAM};
+    use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, RegisterClassW,
+        RegisterShellHookWindow, RegisterWindowMessageW, TranslateMessage, MSG, WNDCLASSW,
+    };
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    static SHELLHOOK: AtomicU32 = AtomicU32::new(0);
+
+    unsafe extern "system" fn shell_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+        let id = SHELLHOOK.load(Ordering::Relaxed);
+        if id != 0 && msg == id {
+            if let Ok(mut a) = super::ATTN.lock() {
+                super::shell_event(&mut a, wp, lp);
+            }
+            return 0;
+        }
+        DefWindowProcW(hwnd, msg, wp, lp)
+    }
+
+    /// A hidden window registered for shell-hook messages (documented
+    /// RegisterShellHookWindow), so the dock can see FlashWindow requests.
+    pub fn attention_watch() {
+        std::thread::spawn(|| unsafe {
+            let name: Vec<u16> = "CoveShellHook\0".encode_utf16().collect();
+            let inst = GetModuleHandleW(std::ptr::null());
+            let mut wc: WNDCLASSW = std::mem::zeroed();
+            wc.lpfnWndProc = Some(shell_proc);
+            wc.hInstance = inst;
+            wc.lpszClassName = name.as_ptr();
+            RegisterClassW(&wc);
+            let hwnd = CreateWindowExW(
+                WS_EX_TOOLWINDOW,
+                name.as_ptr(),
+                name.as_ptr(),
+                0,
+                0,
+                0,
+                0,
+                0,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                inst,
+                std::ptr::null(),
+            );
+            if hwnd.is_null() {
+                return;
+            }
+            let hook: Vec<u16> = "SHELLHOOK\0".encode_utf16().collect();
+            SHELLHOOK.store(RegisterWindowMessageW(hook.as_ptr()), Ordering::Relaxed);
+            if RegisterShellHookWindow(hwnd) == 0 {
+                DestroyWindow(hwnd);
+                return;
+            }
+            let mut msg: MSG = std::mem::zeroed();
+            while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+        });
+    }
 
     fn class(hwnd: HWND) -> String {
         let mut buf = [0u16; 64];
@@ -411,6 +519,7 @@ mod imp {
 #[cfg(not(windows))]
 mod imp {
     use super::Win;
+    pub fn attention_watch() {}
     pub fn cursor() -> Option<(i32, i32)> {
         None
     }
@@ -437,6 +546,23 @@ mod imp {
 #[cfg(test)]
 mod tests {
     use super::matches;
+    #[test]
+    fn attention_follows_shell_events() {
+        use super::*;
+        let mut a = Vec::new();
+        shell_event(&mut a, HSHELL_FLASH, 7);
+        shell_event(&mut a, HSHELL_FLASH, 7);
+        shell_event(&mut a, HSHELL_FLASH, 9);
+        assert_eq!(a, vec![7, 9]);
+        shell_event(&mut a, HSHELL_WINDOWACTIVATED, 7);
+        assert_eq!(a, vec![9]);
+        shell_event(&mut a, HSHELL_RUDEAPPACTIVATED, 9);
+        assert!(a.is_empty());
+        let mut b = vec![1, 2, 3];
+        prune_attention(&mut b, &[1, 2], 2);
+        assert_eq!(b, vec![1]);
+    }
+
     #[test]
     fn edge_watch_needs_a_rest() {
         let m = super::Mon { monitor: (0, 0, 1920, 1080), work: (0, 0, 1920, 1040) };

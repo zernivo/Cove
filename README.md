@@ -48,7 +48,7 @@ Requires Windows 11 (x64). No admin rights needed to use Cove's features.
 | **Window snapping** | Opt-in Ctrl+Alt presets: halves (press again for ⅔ and ⅓), quarters, thirds, two-thirds, fill, centre, restore, and move to the next display. Windows glide into place in about 0.2 s. |
 | **App Exposé** | Every window of one app as live previews: right-click a Dock icon → *Show All Windows*, or press ↓ in the app switcher. |
 | **App switcher** | Opt-in Alt+Tab that shows one icon per app, Mac style, with a window count badge. Release Alt to switch. |
-| **Cove Dock** | A floating dock with pinned and running apps, hover magnification, running dots, folder stacks (Downloads, Documents, Desktop, Pictures), Recycle Bin, and an optional auto-hiding Windows taskbar. |
+| **Cove Dock** | A floating dock with pinned and running apps, hover magnification, Mac-style motion (launch and attention bounces, icons that grow in and shrink away), running dots, folder stacks (Downloads, Documents, Desktop, Pictures), Recycle Bin, and an optional auto-hiding Windows taskbar. |
 | **Top bar** | A thin bar across the top: the app in front, a Cove menu, Wi-Fi, sound, battery and the clock. Windows make room for it. |
 | **Control Centre** | From the top bar: sound and brightness sliders, mute, dark mode, Wi-Fi name, shortcuts to Bluetooth, Night light and Focus. |
 | **Back to stock** | One click restores every setting Cove changed, exactly as it was. |
@@ -126,7 +126,7 @@ Changes apply instantly to the dock, top bar, Control Centre, Search, the app sw
 ## Dock, top bar & Control Centre
 Turn them on in Cove → **Dock & top bar**.
 
-- **Dock:** click an app to open or switch to it, and click the app in front to minimise it. Right-click for **Keep in Dock**, **Remove from Dock** and **Close window**. Click a folder stack (Downloads by default) to see its newest files in a grid: click to open, Ctrl+click to show in its folder. Choose stacks under **Folder stacks**. With more than one screen, set **Dock appears on** to *Follows the pointer* and rest the pointer on any screen's bottom edge to move the dock there. The dock and top bar re-fit themselves when you plug in a screen or change its resolution or scaling. Turning on *Auto-hide the Windows taskbar* uses Windows' own setting and is undone when the dock goes off or Cove quits.
+- **Dock:** click an app to open or switch to it, and click the app in front to minimise it. Right-click for **Keep in Dock**, **Remove from Dock** and **Close window**. Click a folder stack (Downloads by default) to see its newest files in a grid: click to open, Ctrl+click to show in its folder. Choose stacks under **Folder stacks**. An app you open from the dock bounces until its window appears, and an app that needs you (a flashing taskbar button) hops until you switch to it. With *Reduce motion* on in Windows, the dock stays still and shows a small dot instead. With more than one screen, set **Dock appears on** to *Follows the pointer* and rest the pointer on any screen's bottom edge to move the dock there. The dock and top bar re-fit themselves when you plug in a screen or change its resolution or scaling. Turning on *Auto-hide the Windows taskbar* uses Windows' own setting and is undone when the dock goes off or Cove quits.
 - **Top bar:** registered as a standard Windows app bar, so maximised windows sit below it. Click the Cove mark for the menu, or the app name to open Cove.
 - **Control Centre:** click the sliders, Wi-Fi or sound icon in the top bar. Dark mode writes the same setting as Windows Settings → Personalization → Colors. The brightness slider shows only on screens Windows can dim (most laptops).
 
@@ -149,6 +149,7 @@ Calm settings stay applied after you close Cove (like changing them in Settings)
 | v0.6 | Cove Tour (interactive first-run tutorial) | ✅ |
 | v0.7 | Polish: settings design, tray menu, final icon + installer art, DPI and multi-monitor pass | ✅ |
 | v0.8 | Beta: safe mode ✅, signed updates ✅, code signing, performance gates | 🚧 |
+| v0.9 | Feel & delight: dock motion ✅, deeper glass, calm widgets, dynamic wallpapers | 🚧 |
 | 1.0 | Stable release | ⬜ |
 
 Details: [docs/ROADMAP.md](docs/ROADMAP.md)

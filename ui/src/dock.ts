@@ -3,7 +3,7 @@ import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-interface DockItem { kind: "pin" | "running" | "stack" | "trash"; name: string; target: string; windows: number[]; active: boolean; icon?: string }
+interface DockItem { kind: "pin" | "running" | "stack" | "trash"; name: string; target: string; windows: number[]; active: boolean; attention?: boolean; icon?: string }
 
 const inTauri = "__TAURI_INTERNALS__" in window;
 const MOCK: DockItem[] = [
@@ -33,6 +33,14 @@ let sig = "";
 let lastWidth = 0;
 
 let lastHeight = 0;
+// Motion state: apps we just launched (bounce until a window shows up, at
+// most 6 s), and which items were on the dock last render.
+const launching = new Map<string, number>();
+let shown = new Set<string>();
+let firstRender = true;
+const keyOf = (it: DockItem) => `${it.kind}:${it.target}`;
+const calm = matchMedia("(prefers-reduced-motion: reduce)");
+
 function place(): void {
   let width = Math.ceil(dock.getBoundingClientRect().width) + 160; // room for magnified neighbours
   let height = SIZE + 7 + 9 + 8 + HEAD + 30;
@@ -45,6 +53,11 @@ function place(): void {
 }
 
 function render(): void {
+  // Remember where the old icons were so leaving ones can shrink away in place.
+  const before = new Map<string, { el: HTMLElement; idx: number }>();
+  dock.querySelectorAll<HTMLElement>(".item:not(.leaving)").forEach((el, idx) => { if (el.dataset.k) before.set(el.dataset.k, { el, idx }); });
+  const now = Date.now();
+  for (const [k, until] of launching) if (until < now) launching.delete(k);
   dock.innerHTML = "";
   let sepDone = false;
   items.forEach((it, i) => {
@@ -55,8 +68,16 @@ function render(): void {
       if (it.kind === "running") sepDone = true;
     }
     const el = document.createElement("div");
-    el.className = `item${it.active ? " active" : ""}${it.kind === "stack" && it.target === openStack ? " open" : ""}`;
+    const k = keyOf(it);
+    if (it.windows.length) launching.delete(k);
+    const motion = [
+      launching.has(k) ? " launching" : "",
+      it.attention ? " attention" : "",
+      !firstRender && !shown.has(k) ? " arriving" : "",
+    ].join("");
+    el.className = `item${it.active ? " active" : ""}${it.kind === "stack" && it.target === openStack ? " open" : ""}${motion}`;
     el.dataset.i = String(i);
+    el.dataset.k = k;
     if (it.icon) {
       const img = document.createElement("img");
       img.src = it.icon;
@@ -72,8 +93,29 @@ function render(): void {
     el.appendChild(Object.assign(document.createElement("span"), { className: "label", textContent: it.name }));
     el.addEventListener("click", (e) => open(it, el, e.shiftKey));
     el.addEventListener("contextmenu", (e) => { e.preventDefault(); showMenu(it, e.clientX, e.clientY); });
+    el.addEventListener("pointerdown", (e) => { if (e.button === 0) el.classList.add("pressed"); });
+    el.addEventListener("pointerup", () => el.classList.remove("pressed"));
+    el.addEventListener("pointerleave", () => el.classList.remove("pressed"));
+    el.addEventListener("animationend", (e) => { if (e.animationName === "arrive") el.classList.remove("arriving"); });
     dock.appendChild(el);
   });
+  // Icons that left the dock shrink and close the gap instead of vanishing.
+  const keep = new Set(items.map(keyOf));
+  if (!calm.matches) {
+    for (const [k, { el, idx }] of before) {
+      if (keep.has(k)) continue;
+      const ghost = el.cloneNode(true) as HTMLElement;
+      ghost.className = "item leaving";
+      ghost.style.transform = "";
+      ghost.style.margin = "";
+      const at = dock.querySelectorAll(".item")[idx] ?? null;
+      dock.insertBefore(ghost, at);
+      ghost.addEventListener("animationend", () => { ghost.remove(); place(); });
+      setTimeout(() => ghost.remove(), 600);
+    }
+  }
+  shown = keep;
+  firstRender = false;
   place();
 }
 
@@ -98,7 +140,11 @@ async function open(it: DockItem, el: HTMLElement, fresh: boolean): Promise<void
   try {
     if (fresh && it.kind === "pin") await invoke("dock_launch", { target: it.target });
     else await invoke("dock_open", { kind: it.kind, target: it.target, windows: it.windows, active: it.active });
-    if (!it.windows.length && it.kind === "pin") { el.classList.add("bounce"); setTimeout(() => el.classList.remove("bounce"), 1300); }
+    if (!it.windows.length && it.kind === "pin") {
+      launching.set(keyOf(it), Date.now() + 6000);
+      el.classList.add("launching");
+      setTimeout(() => { launching.delete(keyOf(it)); el.classList.remove("launching"); }, 6000);
+    }
   } catch (e) { console.error(e); }
   setTimeout(refresh, 400);
 }
@@ -192,7 +238,7 @@ async function toggleStack(it: DockItem, el: HTMLElement): Promise<void> {
 async function refresh(): Promise<void> {
   const s = await invoke<{ items: DockItem[] }>("dock_state");
   if (!s) return;
-  const next = JSON.stringify(s.items.map((i) => [i.kind, i.target, i.windows, i.active, !!i.icon]));
+  const next = JSON.stringify(s.items.map((i) => [i.kind, i.target, i.windows, i.active, !!i.attention, !!i.icon]));
   if (next === sig || openStack) return; // don't reshuffle under an open stack
   sig = next;
   items = s.items;
