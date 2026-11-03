@@ -1,0 +1,7 @@
+<html><body style="margin:0;background:#111215"><canvas id=c></canvas><script src="core.js"></script><script>
+const q=new URLSearchParams(location.search), W=+q.get('w')||960,H=+q.get('h')||600;
+const c=document.getElementById('c'); c.width=W*2;c.height=H*2;c.style.width=W+'px';c.style.height=H+'px';
+const g=c.getContext('2d'); g.scale(2,2);
+window.draw=(t,full)=>CI.drawIntro(g,t,W,H,{full,calm:false,font:'Inter, "Segoe UI", sans-serif'});
+draw(+q.get('t')||5, q.get('full')!=='0');
+</script></body></html>
