@@ -68,16 +68,23 @@ function toast(text: string): void {
   (t as any)._timer = setTimeout(() => t.classList.add("hidden"), 2600);
 }
 
-// ---- navigation ----
-document.querySelectorAll<HTMLAnchorElement>(".nav-item").forEach((a) =>
-  a.addEventListener("click", (e) => {
-    e.preventDefault();
-    document.querySelectorAll(".nav-item").forEach((n) => n.classList.remove("active"));
-    a.classList.add("active");
-    document.querySelectorAll(".view").forEach((v) => v.classList.add("hidden"));
-    $(`view-${a.dataset.view}`).classList.remove("hidden");
-    if (a.dataset.view === "look") loadLook();
-  }),
+// ---- scenes: your desktop is the settings ----
+const SCENES = ["desktop", "dock", "menubar", "windows", "keys", "quiet"];
+// Older names (tray menu, tour) still land on the right scene.
+const SCENE_ALIAS: Record<string, string> = { calm: "quiet", habits: "keys", look: "desktop", restore: "quiet", topbar: "menubar" };
+function showScene(name: string): void {
+  const sc = SCENE_ALIAS[name] ?? name;
+  if (name === "updates") return openAbout();
+  if (!SCENES.includes(sc)) return;
+  document.querySelectorAll<HTMLElement>(".scene").forEach((el) => el.classList.toggle("hidden", el.id !== `scene-${sc}`));
+  document.querySelectorAll<HTMLElement>("#scenes button").forEach((b) => b.classList.toggle("on", b.dataset.scene === sc));
+  $("stage").dataset.scene = sc;
+  localStorage.setItem("cove.scene", sc);
+  if (sc === "desktop") loadLook();
+  if (sc === "dock") renderPins();
+}
+document.querySelectorAll<HTMLElement>("[data-scene]").forEach((el) =>
+  el.addEventListener("click", () => showScene(el.dataset.scene!)),
 );
 
 // ---- status ----
@@ -85,65 +92,42 @@ async function refreshStatus(): Promise<void> {
   const s = await invoke<Status>("cove_status");
   $("status").textContent = `v${s.version}${s.windows ? "" : " · preview"}`;
   $("journal-count").textContent =
-    s.journal_entries === 0 ? "Nothing changed yet." : `${s.journal_entries} recorded change${s.journal_entries === 1 ? "" : "s"}`;
+    s.journal_entries === 0 ? "Nothing to put back." : `${s.journal_entries} change${s.journal_entries === 1 ? "" : "s"} recorded.`;
 }
 
-// ---- calm ----
+// ---- Quiet (calm tweaks): one switch each, applied at once ----
 async function renderCalm(): Promise<void> {
   const tweaks = await invoke<Tweak[]>("calm_list");
   const list = $("calm-list");
   list.innerHTML = "";
+  if (!tweaks.length) {
+    list.innerHTML = `<div class="row"><p class="note">These need Windows 11.</p></div>`;
+    return;
+  }
   for (const t of tweaks) {
-    const row = document.createElement("label");
-    row.className = "row item";
-    row.innerHTML = `
-      <input type="checkbox" value="${t.id}" ${t.applied ? "checked disabled" : ""} />
-      <div class="grow"><h2></h2><p class="muted small"></p></div>
-      <span class="pill ${t.applied ? "on" : ""}">${t.applied ? "On" : t.applied === null ? "—" : "Off"}</span>
-      ${t.applied || !t.settings_uri ? "" : `<button class="btn link" data-uri="${t.settings_uri}" title="Change it in Windows Settings">Settings ›</button>`}`;
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `<div class="label"><h2></h2><p class="note"></p></div>`;
     row.querySelector("h2")!.textContent = t.title;
-    row.querySelector("p")!.textContent = t.description;
-    row.querySelector<HTMLButtonElement>("button.link")?.addEventListener("click", (e) => {
-      e.preventDefault();
-      invoke("open_settings", { uri: t.settings_uri });
+    row.querySelector("p")!.textContent = t.applied ? "Done. Restore everything puts it back." : t.description;
+    const sw = document.createElement("label");
+    sw.className = "switch";
+    sw.innerHTML = `<input type="checkbox" ${t.applied ? "checked disabled" : ""} /><span></span>`;
+    const input = sw.querySelector("input")!;
+    input.addEventListener("change", async () => {
+      input.disabled = true;
+      row.classList.add("busy");
+      const r = await invoke<ApplyReport>("calm_apply", { ids: [t.id] });
+      if (r.failed.length) {
+        toast("Windows didn't allow that one. Its Settings page can change it.");
+        if (t.settings_uri) invoke("open_settings", { uri: t.settings_uri });
+      }
+      await Promise.all([renderCalm(), refreshStatus()]);
     });
+    row.appendChild(sw);
     list.appendChild(row);
   }
-  list.querySelectorAll<HTMLInputElement>("input").forEach((i) => i.addEventListener("change", calmButtons));
-  calmButtons();
-  if (!tweaks.length) list.innerHTML = `<p class="empty-state">Calm tweaks are available on Windows 11.</p>`;
-  else if (tweaks.every((t) => t.applied)) {
-    const p = document.createElement("p");
-    p.className = "empty-state";
-    p.textContent = "All calm. Restore puts everything back.";
-    list.appendChild(p);
-  }
 }
-
-function calmButtons(): void {
-  const open = document.querySelectorAll<HTMLInputElement>("#calm-list input:not(:disabled)");
-  const picked = [...open].filter((i) => i.checked).length;
-  ($("calm-apply") as HTMLButtonElement).disabled = picked === 0;
-  ($("calm-apply") as HTMLButtonElement).textContent = picked ? `Apply ${picked}` : "Apply";
-  ($("calm-all") as HTMLButtonElement).disabled = open.length === 0 || picked === open.length;
-}
-$("calm-all").addEventListener("click", () => {
-  document.querySelectorAll<HTMLInputElement>("#calm-list input:not(:disabled)").forEach((i) => (i.checked = true));
-  calmButtons();
-});
-
-$("calm-apply").addEventListener("click", async () => {
-  const ids = [...document.querySelectorAll<HTMLInputElement>("#calm-list input:checked:not(:disabled)")].map((i) => i.value);
-  if (ids.length === 0) return;
-  const btn = $("calm-apply") as HTMLButtonElement;
-  btn.disabled = true;
-  btn.textContent = "Applying…";
-  const r = await invoke<ApplyReport>("calm_apply", { ids });
-  toast(r.failed.length
-    ? `${r.applied.length} applied. Windows blocked ${r.failed.length}: use its Settings button.`
-    : `${r.applied.length} applied. Restore anytime.`);
-  await Promise.all([renderCalm(), refreshStatus()]);
-});
 
 // ---- habits ----
 const SHORTCUTS: [string, string][] = [
@@ -156,16 +140,14 @@ const SHORTCUTS: [string, string][] = [
 
 function renderHabits(s: HotkeyStatus): void {
   ($("search-toggle") as HTMLInputElement).checked = s.search;
-  $("search-note").textContent = s.search
-    ? s.conflicts.includes("Alt+Space") ? "Alt+Space is taken by another app (PowerToys Run?)" : "On · press Alt+Space anywhere"
-    : "Off";
+  $("search-note").textContent = s.search && s.conflicts.includes("Alt+Space")
+    ? "Alt+Space is taken by another app (PowerToys Run?)"
+    : "Apps, files and settings. Press Alt+Space anywhere.";
   ($("hk-toggle") as HTMLInputElement).checked = s.running;
-  $("hk-note").textContent = s.running
-    ? s.conflicts.length ? `On · taken by another app: ${s.conflicts.join(", ")}` : "On"
-    : "Off · Cove remembers this, and keeps running in the tray when you close the window";
+  $("hk-note").textContent = s.running && s.conflicts.length ? `In use by another app: ${s.conflicts.join(", ")}` : "Close, minimise, hide and quit, Mac style.";
   $("hk-list").classList.toggle("dim", !s.running);
   $("hk-list").innerHTML = SHORTCUTS.map(
-    ([k, d]) => `<div class="row item"><kbd>${k}</kbd><div class="grow">${d}</div>${s.conflicts.includes(k) ? '<span class="pill warn">In use</span>' : ""}</div>`,
+    ([k, d]) => `<div class="key"><span>${d}</span>${s.conflicts.includes(k) ? '<em>In use</em>' : ""}${keycaps(k)}</div>`,
   ).join("");
 }
 
@@ -178,10 +160,7 @@ interface SearchInfo { winindex: boolean; timing: { last: number | null; median:
 function renderSearchInfo(i: SearchInfo): void {
   ($("wi-toggle") as HTMLInputElement).checked = i.winindex;
   const t = i.timing;
-  const speed = t.median != null ? ` · Search opens in about ${t.median} ms (last ${t.last} ms, ${t.count} open${t.count > 1 ? "s" : ""})` : "";
-  $("wi-note").textContent = (i.winindex
-    ? "On · also finds files by their contents, from the same index as File Explorer's search box. Read-only"
-    : "Off · Cove searches your personal folders by name only") + speed;
+  $("wi-note").textContent = "Uses File Explorer's own index. Read-only." + (t.median != null ? ` Opens in about ${t.median} ms.` : "");
 }
 $("wi-toggle").addEventListener("change", async (e) => {
   renderSearchInfo(await invoke<SearchInfo>("search_winindex_set", { enabled: (e.target as HTMLInputElement).checked }));
@@ -214,7 +193,7 @@ function renderWall(w: WallStatus): void {
     $("walls").appendChild(b);
   }
   $("wall-restore").classList.toggle("hidden", !w.has_prev);
-  chipGroup("sched-mode", [["off", "Off"], ["times", "On a schedule"]], w.schedule, (k) => saveSched(k));
+  chipGroup("sched-mode", [["off", "Off"], ["times", "On"]], w.schedule, (k) => saveSched(k));
   ($("sched-light") as HTMLInputElement).value = w.light_at;
   ($("sched-dark") as HTMLInputElement).value = w.dark_at;
   $("sched-times").classList.toggle("off", w.schedule !== "times");
@@ -241,8 +220,8 @@ if (inTauri) {
 
 let look: ThemeState = { theme: "tidepool", mode: "system", accent_source: "cove", accent: null };
 const LOOK_NOTES: Record<string, string> = {
-  tidepool: "Tidepool: warm glass that lets your wallpaper's colour through, with a soft glow on the app in front",
-  slate: "Slate: quiet and mostly solid, graphite with one blue focus colour. Good for work",
+  tidepool: "Clear, lets your wallpaper's colour through.",
+  slate: "Mostly solid graphite. Quieter.",
 };
 function chipGroup(id: string, opts: [string, string][], on: string, pick: (k: string) => void): void {
   $(id).innerHTML = "";
@@ -262,13 +241,11 @@ function renderLook(t: ThemeState): void {
   look = t;
   applyTheme(t);
   if (wall) renderWall(wall);
-  chipGroup("look-theme", [["tidepool", "Tidepool"], ["slate", "Slate"]], t.theme, (k) => setLook({ theme: k }));
-  chipGroup("look-mode", [["system", "Follow Windows"], ["light", "Light"], ["dark", "Dark"]], t.mode, (k) => setLook({ mode: k }));
-  chipGroup("look-accent", [["cove", "Theme's own"], ["windows", "Windows accent"]], t.accent_source, (k) => setLook({ accent: k }));
+  chipGroup("look-theme", [["tidepool", "Clear"], ["slate", "Solid"]], t.theme, (k) => setLook({ theme: k }));
+  chipGroup("look-mode", [["system", "Auto"], ["light", "Light"], ["dark", "Dark"]], t.mode, (k) => setLook({ mode: k }));
+  chipGroup("look-accent", [["cove", "Cove teal"], ["windows", "Windows'"]], t.accent_source, (k) => setLook({ accent: k }));
   $("look-theme-note").textContent = LOOK_NOTES[t.theme] ?? "";
-  $("look-accent-note").textContent = t.accent_source === "windows"
-    ? t.accent ? `Following Windows (${t.accent}). Change it in Settings → Personalization → Colors` : "Couldn't read the Windows accent, so the theme's own is used"
-    : "The theme's own, or the accent you chose in Windows Settings";
+  $("look-accent-note").textContent = t.accent_source === "windows" && !t.accent ? "Couldn't read Windows' accent, so Cove's teal is used." : "";
 }
 function loadLook(): void {
   invoke<ThemeState>("theme_get").then(renderLook).catch(() => renderLook(look));
@@ -284,7 +261,7 @@ let dockStacks: string[] = [];
 function renderDock(d: DockStatus): void {
   dockStacks = d.stacks;
   $("dock-display").innerHTML = "";
-  for (const [k, label] of [["main", "Main display"], ["follow", "Follows the pointer"]]) {
+  for (const [k, label] of [["main", "Main screen"], ["follow", "Follows the pointer"]]) {
     const b = document.createElement("button");
     b.className = `chip${d.display === k ? " on" : ""}`;
     b.textContent = label;
@@ -305,7 +282,9 @@ function renderDock(d: DockStatus): void {
   ($("dock-toggle") as HTMLInputElement).checked = d.enabled;
   ($("dock-taskbar") as HTMLInputElement).checked = d.hide_taskbar;
   ($("dock-taskbar") as HTMLInputElement).disabled = !d.enabled;
-  $("dock-note").textContent = d.enabled ? (d.hide_taskbar ? "On · taskbar auto-hidden" : "On") : "Off";
+  $("dock-note").textContent = d.enabled ? "" : "The Windows taskbar is in charge.";
+  ($("desk-toggle") as HTMLInputElement).checked = d.enabled;
+  renderPins();
 }
 $("dock-toggle").addEventListener("change", async (e) => {
   renderDock(await invoke<DockStatus>("dock_set", { enabled: (e.target as HTMLInputElement).checked }));
@@ -317,9 +296,7 @@ invoke<DockStatus>("dock_status").then(renderDock);
 
 function renderSwitcher(on: boolean): void {
   ($("sw-toggle") as HTMLInputElement).checked = on;
-  $("sw-note").textContent = on
-    ? "On · hold Alt and tap Tab: one icon per app. Shift+Tab goes back, ↓ shows all that app's windows, Esc cancels, release Alt to switch"
-    : "Off · Windows' own Alt+Tab. Turn on for Mac-style switching by app instead of by window";
+  $("sw-note").textContent = on ? "Alt+Tab shows one icon per app. ↓ shows that app's windows." : "Alt+Tab by app instead of by window.";
 }
 $("sw-toggle").addEventListener("change", async (e) => {
   renderSwitcher(await invoke<boolean>("switcher_set", { enabled: (e.target as HTMLInputElement).checked }));
@@ -344,17 +321,15 @@ function renderSnap(s: SnapInfo): void {
   ($("snap-toggle") as HTMLInputElement).checked = s.enabled;
   ($("snap-animate") as HTMLInputElement).checked = s.animate;
   $("snap-anim-row").classList.toggle("dim", !s.enabled);
-  $("snap-note").textContent = s.enabled
-    ? s.conflicts.length
-      ? `On · ${s.conflicts.length} shortcut${s.conflicts.length > 1 ? "s are" : " is"} taken by another app`
-      : "On · works on the window in front. Windows' own Win+arrow snapping still works too"
-    : "Off · turn on for keyboard presets: halves, quarters, thirds, centre, fill";
+  $("snap-note").textContent = s.enabled && s.conflicts.length
+    ? `${s.conflicts.length} shortcut${s.conflicts.length > 1 ? "s are" : " is"} in use by another app.`
+    : "Halves, thirds, quarters, centre and fill, from the keyboard.";
   $("snap-list").classList.toggle("dim", !s.enabled);
   $("snap-list").innerHTML = SNAPS.map(
     ([k, d]) => {
       const prefix = k.slice(0, k.lastIndexOf("+") + 1);
       const taken = k.slice(prefix.length).split(" / ").some((p) => s.conflicts.includes(prefix + p));
-      return `<div class="row item"><kbd>${k}</kbd><div class="grow">${d}</div>${taken ? '<span class="pill warn">In use</span>' : ""}</div>`;
+      return `<div class="key"><span>${d}</span>${taken ? "<em>In use</em>" : ""}${keycaps(k)}</div>`;
     },
   ).join("");
 }
@@ -368,9 +343,7 @@ invoke<SnapInfo>("snap_status").then(renderSnap);
 
 function renderTopbar(on: boolean): void {
   ($("topbar-toggle") as HTMLInputElement).checked = on;
-  $("topbar-note").textContent = on
-    ? "On · the app in front, quick settings, battery and clock; windows make room for it"
-    : "Off · a thin bar across the top with the app in front, quick settings, battery and clock";
+  $("topbar-note").textContent = on ? "" : "Windows' clock and icons stay on the taskbar.";
 }
 $("topbar-toggle").addEventListener("change", async (e) => {
   renderTopbar(await invoke<boolean>("topbar_set", { enabled: (e.target as HTMLInputElement).checked }));
@@ -379,9 +352,7 @@ invoke<boolean>("topbar_status").then(renderTopbar);
 
 function renderClip(on: boolean): void {
   ($("clip-toggle") as HTMLInputElement).checked = on;
-  $("clip-note").textContent = on
-    ? "On · text only, kept in memory until Cove quits, skips password managers"
-    : "Off";
+  $("clip-note").textContent = "Text you copy, in Search. Kept in memory only; skips password managers.";
 }
 $("clip-toggle").addEventListener("change", async (e) => {
   renderClip(await invoke<boolean>("clipboard_set", { enabled: (e.target as HTMLInputElement).checked }));
@@ -487,11 +458,13 @@ $("up-install").addEventListener("click", async () => {
 
 // ---- boot ----
 (async () => {
-  await Promise.all([refreshStatus(), renderCalm(), invoke<HotkeyStatus>("hotkeys_status").then(renderHabits)]).catch(() => {});
-  // The window starts hidden so it never flashes white or see-through; show it painted.
-  const intro = playIntro();
-  if (inTauri) requestAnimationFrame(() => getCurrentWindow().show().catch(() => {}));
-  await intro;
+  // The window starts hidden; the page's first paint is the Ink intro cover,
+  // so show it at once and let the intro run while the settings load.
+  if (inTauri) await getCurrentWindow().show().catch(() => {});
+  const first = inTauri ? await invoke<boolean>("intro_first").catch(() => undefined) : undefined;
+  const loading = Promise.all([refreshStatus(), renderCalm(), invoke<HotkeyStatus>("hotkeys_status").then(renderHabits)]).catch(() => {});
+  await playIntro(first);
+  await loading;
   if (!(await invoke<boolean>("tour_status").catch(() => true))) tourOpen();
   checkUpdates(true);
   if (await invoke<boolean>("just_updated")) toast(`Updated to Cove ${await currentVersion()} ✓`);
@@ -672,7 +645,7 @@ if (inTauri) {
 // ---- Tray menu hooks ----
 if (inTauri) {
   listen("tour-open", () => tourOpen());
-  listen<string>("nav", (e) => document.querySelector<HTMLAnchorElement>(`.nav-item[data-view="${e.payload}"]`)?.click());
+  listen<string>("nav", (e) => showScene(e.payload));
   listen("settings-changed", () => {
     invoke<DockStatus>("dock_status").then(renderDock);
     invoke<boolean>("switcher_status").then(renderSwitcher);
@@ -694,7 +667,7 @@ async function renderDisplays(): Promise<void> {
     .forEach((d, i) => {
       const chip = document.createElement("span");
       chip.className = "chip" + (d.main ? " on" : "");
-      chip.textContent = `${d.main ? "Main" : `Display ${i + 1}`} · ${d.width}×${d.height} · ${d.scale}%`;
+      chip.textContent = `${d.main ? "Main" : `Screen ${i + 1}`}  ${d.width}×${d.height}  ${d.scale}%`;
       chip.title = d.name;
       box.appendChild(chip);
     });
@@ -726,3 +699,88 @@ if (inTauri) {
 }
 $("safe-leave").addEventListener("click", () => setSafe(false));
 $("safe-toggle").addEventListener("change", (e) => setSafe((e.target as HTMLInputElement).checked));
+
+
+// ---- Keys drawn as keycaps ----
+function keycaps(combo: string): string {
+  const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  return `<span class="caps">${combo.split(" / ").map((alt) => alt.split("+").map((k) => `<kbd>${esc(k)}</kbd>`).join("")).join('<i>or</i>')}</span>`;
+}
+
+// ---- Title bar ----
+if (inTauri) {
+  const w = getCurrentWindow();
+  $("cap-min").addEventListener("click", () => w.minimize());
+  $("cap-max").addEventListener("click", () => w.toggleMaximize());
+  $("cap-close").addEventListener("click", () => w.close());
+  document.querySelector(".titlebar")!.addEventListener("dblclick", (e) => {
+    if ((e.target as HTMLElement).closest("button, label")) return;
+    w.toggleMaximize();
+  });
+}
+// Cove desktop: the dock and menu bar together replace the Windows taskbar.
+$("desk-toggle").addEventListener("change", async (e) => {
+  const on = (e.target as HTMLInputElement).checked;
+  const [d, bar] = await Promise.all([invoke<DockStatus>("dock_set", { enabled: on }), invoke<boolean>("topbar_set", { enabled: on })]);
+  renderDock(d);
+  renderTopbar(bar);
+  toast(on ? "Cove desktop is on." : "Back to the Windows taskbar.");
+});
+
+// ---- About sheet ----
+function openAbout(): void {
+  $("about").classList.remove("hidden");
+  checkUpdates(true);
+}
+$("about-open").addEventListener("click", openAbout);
+$("about-close").addEventListener("click", () => $("about").classList.add("hidden"));
+$("about").addEventListener("click", (e) => { if (e.target === $("about")) $("about").classList.add("hidden"); });
+addEventListener("keydown", (e) => { if (e.key === "Escape") $("about").classList.add("hidden"); });
+$("intro-replay").addEventListener("click", () => {
+  $("about").classList.add("hidden");
+  let host = document.getElementById("intro");
+  if (!host) { host = document.createElement("div"); host.id = "intro"; document.body.prepend(host); }
+  host.innerHTML = "";
+  host.classList.remove("out");
+  playIntro(true);
+});
+$("tour-open").addEventListener("click", () => $("about").classList.add("hidden"));
+
+// ---- The miniature desktop ----
+interface DockItemLite { kind: string; name: string; icon?: string; windows: number[] }
+async function renderPins(): Promise<void> {
+  const st = inTauri
+    ? await invoke<{ items: DockItemLite[] }>("dock_state").catch(() => ({ items: [] as DockItemLite[] }))
+    : { items: ((window as any).__mockItems ?? []) as DockItemLite[] }; // browser preview only
+  const apps = st.items.filter((i) => i.kind === "pin" || i.kind === "running");
+  const fill = (box: HTMLElement, items: DockItemLite[], size: string) => {
+    box.innerHTML = "";
+    for (const it of items) {
+      const el = document.createElement("span");
+      el.className = `pi ${size}${it.windows.length ? " open" : ""}`;
+      el.title = it.name;
+      if (it.icon) el.appendChild(Object.assign(document.createElement("img"), { src: it.icon, alt: "" }));
+      else el.classList.add("pending");
+      box.appendChild(el);
+    }
+  };
+  fill($("mini-dock"), apps.slice(0, 14), "s");
+  fill($("dock-pins"), st.items.filter((i) => i.kind === "pin"), "m");
+}
+function miniClock(): void {
+  const d = new Date();
+  $("mini-clock").textContent = d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }) + "  " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+function miniWall(): void {
+  // The real desktop picture, served by Cove itself (falls back to Ink).
+  const url = inTauri ? `${navigator.userAgent.includes("Windows") ? "http://coveicon.localhost" : "coveicon://localhost"}/wallpaper?t=${Date.now()}` : "/wallpapers/tidepool-dark.jpg";
+  const img = new Image();
+  img.onload = () => { $("mini-wall").style.backgroundImage = `url("${url}")`; $("mini-wall").classList.add("ready"); };
+  img.src = url;
+}
+miniClock();
+setInterval(miniClock, 30000);
+miniWall();
+if (inTauri) listen("wallpaper-changed", () => setTimeout(miniWall, 400));
+addEventListener("focus", () => { renderPins(); miniWall(); });
+showScene(localStorage.getItem("cove.scene") ?? "desktop");

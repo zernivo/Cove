@@ -67,9 +67,14 @@ pub fn fill(paths: Vec<String>) {
             if known(&p) {
                 continue;
             }
-            let px = match p.strip_prefix("hwnd:") {
-                Some(h) => h.parse::<isize>().ok().and_then(imp::window_icon),
-                None => imp::render(&p, SIZE),
+            let px = if let Some(h) = p.strip_prefix("hwnd:") {
+                h.parse::<isize>().ok().and_then(imp::window_icon)
+            } else if let Some(r) = p.strip_prefix("res:") {
+                // "file,index": the file itself renders as its first icon.
+                let file = r.rsplit_once(',').map(|(f, _)| f).unwrap_or(r).trim_matches('"');
+                imp::render(&std::path::PathBuf::from(file).to_string_lossy(), SIZE)
+            } else {
+                imp::render(&p, SIZE)
             };
             store(p, px.and_then(|(w, h, rgba)| encode(w, h, &rgba)));
         }
