@@ -28,8 +28,53 @@ pub struct DockState {
 
 pub struct Win {
     pub hwnd: isize,
+    /// Full exe path, or "" when Windows won't say (an app running as admin).
     pub exe: String,
     pub title: String,
+    /// The window's AppUserModelID when it has one (Store apps, Chrome,
+    /// Teams...): the same ID the taskbar groups and draws icons by.
+    pub aumid: Option<String>,
+}
+
+impl Win {
+    pub fn is_uwp_frame(&self) -> bool {
+        stem(&self.exe) == "applicationframehost"
+    }
+    /// What windows of the same app share.
+    pub fn app_key(&self) -> String {
+        match (&self.aumid, self.exe.is_empty() || self.is_uwp_frame()) {
+            (Some(a), _) => a.to_lowercase(),
+            (None, false) => self.exe.to_lowercase(),
+            (None, true) => format!("hwnd:{}", self.hwnd),
+        }
+    }
+    /// Icon sources, best first: the app's Start entry, its exe, the
+    /// window's own icon. Never a letter.
+    pub fn icon_keys(&self) -> Vec<String> {
+        let mut k = Vec::new();
+        if let Some(a) = &self.aumid {
+            k.push(format!("shell:AppsFolder\\{a}"));
+        }
+        if !self.exe.is_empty() && !self.is_uwp_frame() {
+            k.push(self.exe.clone());
+        }
+        k.push(format!("hwnd:{}", self.hwnd));
+        k
+    }
+}
+
+/// The first ready icon among `keys`; queues the first untried one.
+pub fn icon_from(keys: &[String], jobs: &mut Vec<String>) -> Option<String> {
+    for k in keys {
+        if let Some(u) = crate::icons::get(k) {
+            return Some(u);
+        }
+        if !crate::icons::known(k) {
+            jobs.push(k.clone());
+            return None;
+        }
+    }
+    None
 }
 
 pub fn stem(exe: &str) -> String {
@@ -42,6 +87,20 @@ pub fn stem(exe: &str) -> String {
 /// Does a running exe belong to a pinned AppID / name? A heuristic: Start
 /// AppIDs usually carry the exe or product name ("Chrome", "MSEdge",
 /// "...\\Code.exe", "Microsoft.Windows.Explorer").
+pub fn matches_win(pin: &crate::settings::Pin, w: &Win) -> bool {
+    if let Some(a) = &w.aumid {
+        if a.eq_ignore_ascii_case(&pin.target) {
+            return true;
+        }
+    }
+    if let Some(e) = &pin.exe {
+        if !w.exe.is_empty() && e.eq_ignore_ascii_case(&w.exe) {
+            return true;
+        }
+    }
+    matches(&pin.target, &pin.name, &w.exe)
+}
+
 pub fn matches(pin_target: &str, pin_name: &str, exe: &str) -> bool {
     let s = stem(exe);
     if s.len() < 3 || s == "applicationframehost" {
@@ -64,9 +123,11 @@ fn pretty(exe: &str, title: &str) -> String {
     }
 }
 
-/// Pins are Start AppIDs, or an exe path for apps kept from the running list.
+/// Pins are Start AppIDs, or a path (an exe kept from the running list, or
+/// a shortcut brought over from the taskbar).
 pub fn is_exe_pin(target: &str) -> bool {
-    target.to_lowercase().ends_with(".exe") && std::path::Path::new(target).is_absolute()
+    let t = target.to_lowercase();
+    (t.ends_with(".exe") || t.ends_with(".lnk")) && std::path::Path::new(target).is_absolute()
 }
 
 fn pin_icon_path(target: &str) -> String {
@@ -133,16 +194,19 @@ pub fn state(pins: &[crate::settings::Pin], stacks: &[String]) -> DockState {
     for p in pins {
         let mut hw = Vec::new();
         for (i, w) in wins.iter().enumerate() {
-            if !used[i] && matches(&p.target, &p.name, &w.exe) {
+            if !used[i] && matches_win(p, w) {
                 used[i] = true;
                 hw.push(w.hwnd);
             }
         }
-        let path = pin_icon_path(&p.target);
-        let icon = crate::icons::get(&path);
-        if icon.is_none() {
-            icon_jobs.push(path);
+        let mut keys = vec![pin_icon_path(&p.target)];
+        if let Some(e) = &p.exe {
+            keys.push(e.clone());
         }
+        if let Some(&h) = hw.first() {
+            keys.push(format!("hwnd:{h}"));
+        }
+        let icon = icon_from(&keys, &mut icon_jobs);
         items.push(DockItem {
             kind: "pin",
             name: p.name.clone(),
@@ -156,24 +220,28 @@ pub fn state(pins: &[crate::settings::Pin], stacks: &[String]) -> DockState {
 
     // Running apps that aren't pinned, grouped by exe (Store apps by window).
     let mut groups: Vec<DockItem> = Vec::new();
+    let mut keys: Vec<String> = Vec::new();
     for (i, w) in wins.iter().enumerate() {
         if used[i] {
             continue;
         }
-        let uwp = stem(&w.exe) == "applicationframehost";
-        if let Some(g) = groups.iter_mut().find(|g| !uwp && g.target.eq_ignore_ascii_case(&w.exe)) {
+        let key = w.app_key();
+        if let Some(gi) = keys.iter().position(|k| *k == key) {
+            let g = &mut groups[gi];
             g.windows.push(w.hwnd);
             g.active |= w.hwnd == fg;
             continue;
         }
-        let icon = crate::icons::get(&w.exe);
-        if icon.is_none() && !uwp {
-            icon_jobs.push(w.exe.clone());
-        }
+        keys.push(key);
+        let icon = icon_from(&w.icon_keys(), &mut icon_jobs);
         groups.push(DockItem {
             kind: "running",
             name: pretty(&w.exe, &w.title),
-            target: w.exe.clone(),
+            // Store apps relaunch through their AppID; others through the exe.
+            target: match (&w.aumid, w.is_uwp_frame()) {
+                (Some(a), true) => a.clone(),
+                _ => w.exe.clone(),
+            },
             windows: vec![w.hwnd],
             active: w.hwnd == fg,
             attention: false,
@@ -209,7 +277,27 @@ pub fn state(pins: &[crate::settings::Pin], stacks: &[String]) -> DockState {
     DockState { items }
 }
 
-pub use imp::{activate, close_windows, cursor, foreground, minimize, monitor_at, taskbar_autohide, windows, work_area};
+pub use imp::{
+    activate, close_windows, cursor, foreground, minimize, monitor_at, taskbar_autohide, taskbar_is_visible, taskbar_visible,
+    windows, work_area,
+};
+
+/// While Cove desktop is on, the Windows taskbar stays hidden (the dock
+/// replaces it). Checked by the main loop so a restarted Explorer, or a
+/// Win key press that brings it back, is hidden again.
+pub static TASKBAR_GONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Watchdog side of the takeover: after Cove's process `pid` ends, for any
+/// reason, the taskbar comes back. Runs as `cove --watchdog <pid> <settings>`.
+pub fn watchdog(pid: u32, settings: &std::path::Path) {
+    imp::wait_for_exit(pid);
+    taskbar_visible(true);
+    let mut s = crate::settings::Store::load(settings.to_path_buf());
+    if let Some(prev) = s.data.taskbar_prev_autohide.take() {
+        taskbar_autohide(Some(prev));
+        let _ = s.save();
+    }
+}
 
 /// One display: its full rectangle and its work area (physical px,
 /// left/top/right/bottom).
@@ -297,7 +385,7 @@ mod imp {
         EnumWindows, FindWindowW, GetClassNameW, GetCursorPos, GetForegroundWindow, GetWindow, GetWindowLongW,
         GetWindowRect, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic,
         IsWindowVisible, PostMessageW, SetForegroundWindow, ShowWindow, SystemParametersInfoW,
-        GWL_EXSTYLE, GW_OWNER, SPI_GETWORKAREA, SW_MINIMIZE, SW_RESTORE, WM_CLOSE, WS_EX_TOOLWINDOW,
+        GWL_EXSTYLE, GW_OWNER, SPI_GETWORKAREA, SW_HIDE, SW_MINIMIZE, SW_RESTORE, SW_SHOWNOACTIVATE, WM_CLOSE, WS_EX_TOOLWINDOW,
     };
     use windows_sys::Win32::Foundation::{LRESULT, WPARAM};
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -423,11 +511,12 @@ mod imp {
                 if pid == me {
                     return None;
                 }
-                let exe = exe_of(pid)?;
+                let exe = exe_of(pid).unwrap_or_default();
                 let n = unsafe { GetWindowTextLengthW(h) };
                 let mut buf = vec![0u16; n as usize + 1];
                 let got = unsafe { GetWindowTextW(h, buf.as_mut_ptr(), buf.len() as i32) };
-                Some(Win { hwnd: h as isize, exe, title: String::from_utf16_lossy(&buf[..got.max(0) as usize]) })
+                let aumid = crate::shellprops::window_aumid(h as isize);
+                Some(Win { hwnd: h as isize, exe, title: String::from_utf16_lossy(&buf[..got.max(0) as usize]), aumid })
             })
             .collect()
     }
@@ -497,6 +586,42 @@ mod imp {
     const ABS_AUTOHIDE: isize = 1;
     const ABS_ALWAYSONTOP: isize = 2;
 
+    fn trays() -> Vec<HWND> {
+        unsafe extern "system" fn each(hwnd: HWND, lparam: LPARAM) -> BOOL {
+            let out = &mut *(lparam as *mut Vec<HWND>);
+            if matches!(class(hwnd).as_str(), "Shell_TrayWnd" | "Shell_SecondaryTrayWnd") {
+                out.push(hwnd);
+            }
+            1
+        }
+        let mut v: Vec<HWND> = Vec::new();
+        unsafe { EnumWindows(Some(each), &mut v as *mut Vec<HWND> as LPARAM) };
+        v
+    }
+
+    /// Show or hide the taskbar on every display. Plain window visibility:
+    /// nothing in Explorer is patched, and showing it again undoes it.
+    pub fn taskbar_visible(show: bool) {
+        for h in trays() {
+            unsafe { ShowWindow(h, if show { SW_SHOWNOACTIVATE } else { SW_HIDE }) };
+        }
+    }
+
+    pub fn taskbar_is_visible() -> bool {
+        trays().into_iter().any(|h| unsafe { IsWindowVisible(h) } != 0)
+    }
+
+    pub fn wait_for_exit(pid: u32) {
+        use windows_sys::Win32::System::Threading::{WaitForSingleObject, INFINITE, PROCESS_SYNCHRONIZE};
+        unsafe {
+            let h = OpenProcess(PROCESS_SYNCHRONIZE, 0, pid);
+            if !h.is_null() {
+                WaitForSingleObject(h, INFINITE);
+                CloseHandle(h);
+            }
+        }
+    }
+
     /// Read (None) or set the taskbar's own "Automatically hide" switch.
     /// Returns the state before the call.
     pub fn taskbar_autohide(set: Option<bool>) -> bool {
@@ -520,6 +645,11 @@ mod imp {
 mod imp {
     use super::Win;
     pub fn attention_watch() {}
+    pub fn taskbar_visible(_show: bool) {}
+    pub fn taskbar_is_visible() -> bool {
+        false
+    }
+    pub fn wait_for_exit(_pid: u32) {}
     pub fn cursor() -> Option<(i32, i32)> {
         None
     }
