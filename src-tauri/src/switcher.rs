@@ -169,7 +169,7 @@ fn bring_forward(a: &SwitchApp) {
     }
 }
 
-pub use imp::{running, set_enabled, unlock_foreground};
+pub use imp::{set_enabled, unlock_foreground};
 
 #[cfg(windows)]
 mod imp {
