@@ -56,9 +56,9 @@ pub use imp::{link_target, window_aumid};
 #[cfg(windows)]
 mod imp {
     use windows::core::{GUID, HSTRING};
-    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Foundation::{HWND, PROPERTYKEY};
     use windows::Win32::System::Com::{CoInitializeEx, CoTaskMemFree, CoUninitialize, COINIT_APARTMENTTHREADED};
-    use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, SHGetPropertyStoreForWindow, PROPERTYKEY};
+    use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, SHGetPropertyStoreForWindow};
     use windows::Win32::UI::Shell::{IShellItem2, SHCreateItemFromParsingName};
 
     const PKEY_APPUSERMODEL_ID: PROPERTYKEY =
