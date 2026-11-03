@@ -34,6 +34,9 @@ pub struct Win {
     /// The window's AppUserModelID when it has one (Store apps, Chrome,
     /// Teams...): the same ID the taskbar groups and draws icons by.
     pub aumid: Option<String>,
+    /// The icon the app asked the taskbar to show ("file,index"), e.g. a
+    /// Chrome profile's icon with its picture.
+    pub icon_res: Option<String>,
 }
 
 impl Win {
@@ -52,6 +55,9 @@ impl Win {
     /// window's own icon. Never a letter.
     pub fn icon_keys(&self) -> Vec<String> {
         let mut k = Vec::new();
+        if let Some(r) = &self.icon_res {
+            k.push(format!("res:{r}"));
+        }
         if let Some(a) = &self.aumid {
             k.push(format!("shell:AppsFolder\\{a}"));
         }
@@ -87,16 +93,21 @@ pub fn stem(exe: &str) -> String {
 /// Does a running exe belong to a pinned AppID / name? A heuristic: Start
 /// AppIDs usually carry the exe or product name ("Chrome", "MSEdge",
 /// "...\\Code.exe", "Microsoft.Windows.Explorer").
+/// Does this window belong to this pin? The taskbar's rule: same
+/// AppUserModelID when either side has one (so two Chrome profiles stay two
+/// icons), otherwise the same program.
 pub fn matches_win(pin: &crate::settings::Pin, w: &Win) -> bool {
-    if let Some(a) = &w.aumid {
-        if a.eq_ignore_ascii_case(&pin.target) {
+    let pin_id = pin.aumid.as_deref().or((!is_exe_pin(&pin.target)).then_some(pin.target.as_str()));
+    if let (Some(p), Some(a)) = (pin_id, &w.aumid) {
+        if p.eq_ignore_ascii_case(a) {
             return true;
         }
     }
+    if pin.aumid.is_some() || w.aumid.is_some() && is_exe_pin(&pin.target) {
+        return false;
+    }
     if let Some(e) = &pin.exe {
-        if !w.exe.is_empty() && e.eq_ignore_ascii_case(&w.exe) {
-            return true;
-        }
+        return !w.exe.is_empty() && e.eq_ignore_ascii_case(&w.exe);
     }
     matches(&pin.target, &pin.name, &w.exe)
 }
@@ -516,7 +527,8 @@ mod imp {
                 let mut buf = vec![0u16; n as usize + 1];
                 let got = unsafe { GetWindowTextW(h, buf.as_mut_ptr(), buf.len() as i32) };
                 let aumid = crate::shellprops::window_aumid(h as isize);
-                Some(Win { hwnd: h as isize, exe, title: String::from_utf16_lossy(&buf[..got.max(0) as usize]), aumid })
+                let icon_res = crate::shellprops::window_icon_resource(h as isize);
+                Some(Win { hwnd: h as isize, exe, title: String::from_utf16_lossy(&buf[..got.max(0) as usize]), aumid, icon_res })
             })
             .collect()
     }

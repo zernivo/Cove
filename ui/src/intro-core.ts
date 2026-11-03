@@ -87,14 +87,16 @@ export interface IntroOpts { full: boolean; calm: boolean; font: string }
 
 /** Length of each intro in seconds. */
 export function introLength(o: IntroOpts): number {
-  return o.calm ? 0.9 : o.full ? 5.6 : 1.25;
+  return o.full ? (o.calm ? 4.8 : 5.6) : o.calm ? 0.9 : 1.25;
 }
 
 /** Draw the intro at time t (seconds) into a W x H (CSS px) context. */
 export function drawIntro(g: CanvasRenderingContext2D, t: number, W: number, H: number, o: IntroOpts): void {
   g.fillStyle = INK;
   g.fillRect(0, 0, W, H);
-  const full = o.full && !o.calm;
+  // First launch always gets the full build; with Reduce motion the blocks
+  // settle in place instead of falling.
+  const full = o.full;
   const s = full ? Math.min(W, H) / 46 : Math.min(W, H) / 70; // voxel size
   const lift = full ? s * 2.6 * eout((t - 3.55) / 0.7) : 0; // logo rises to make room for the name
   const cx = W / 2, cy = H / 2 - lift;
@@ -116,19 +118,20 @@ export function drawIntro(g: CanvasRenderingContext2D, t: number, W: number, H: 
   const BUILD0 = 0.25, BUILD = 2.15, FALL = 0.42, DROP = 9 * s;
   const seam = 1 - eout((t - 3.4) / 0.55);
   const ct = 2.85, cl = 3.25; // teal cube: starts falling, lands
-  const thud = -bounce(t - cl, s * 0.18); // the C gives a little as the cube lands
+  const thud = o.calm ? 0 : -bounce(t - cl, s * 0.18); // the C gives a little as the cube lands
   for (const v of RING) {
     const tl = BUILD0 + v.land * BUILD + FALL; // landing time
     const t0 = tl - FALL;
     if (t < t0) continue;
     let dy: number, squash = 1;
-    if (t < tl) { const u = (t - t0) / FALL; dy = -DROP * (1 - u * u); } // gravity
+    if (o.calm) dy = 0;
+    else if (t < tl) { const u = (t - t0) / FALL; dy = -DROP * (1 - u * u); } // gravity
     else {
       dy = -bounce(t - tl, s * 0.55);
       const k = t - tl;
       if (k < 0.08) squash = 1 - 0.18 * Math.sin((k / 0.08) * Math.PI);
     }
-    const a = clamp((t - t0) / 0.12);
+    const a = clamp((t - t0) / (o.calm ? 0.3 : 0.12));
     const [x, y] = P(v.x - centre, v.y - centre, v.z - centre);
     g.globalAlpha = a;
     cube(g, x, y + dy + thud, s, FACE, seam, squash);
@@ -137,8 +140,14 @@ export function drawIntro(g: CanvasRenderingContext2D, t: number, W: number, H: 
   // 2. The teal cube falls from the top of the screen and bounces into place (2.3s to 3.0s).
   if (t >= ct) {
     const u = clamp((t - ct) / (cl - ct));
-    const dy = t < cl ? -(cy + 4 * s) * (1 - u * u) : -bounce(t - cl, s * 1.6);
-    drawTeal(g, P, s, dy, seam);
+    if (o.calm) {
+      g.globalAlpha = u;
+      drawTeal(g, P, s, 0, seam);
+      g.globalAlpha = 1;
+    } else {
+      const dy = t < cl ? -(cy + 4 * s) * (1 - u * u) : -bounce(t - cl, s * 1.6);
+      drawTeal(g, P, s, dy, seam);
+    }
   }
   // 3. Name and tagline.
   const word = "Cove";

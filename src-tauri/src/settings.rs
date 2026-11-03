@@ -17,6 +17,9 @@ pub struct Settings {
     pub dock: bool,
     /// Auto-hide the Windows taskbar while the dock is on.
     pub dock_hide_taskbar: bool,
+    /// Version whose first launch played the full intro ("0.9").
+    #[serde(default)]
+    pub intro_seen: Option<String>,
     /// Cove desktop: while the dock is on, the Windows taskbar is hidden
     /// completely and the dock + menu bar replace it.
     #[serde(default = "yes")]
@@ -24,6 +27,9 @@ pub struct Settings {
     /// The dock's pins were brought over from the Windows taskbar once.
     #[serde(default)]
     pub pins_imported: bool,
+    /// Version of the taskbar import; 2 adds AppIDs (Chrome profiles, Store apps).
+    #[serde(default)]
+    pub pins_v: u8,
     /// Apps pinned to the dock, in order.
     pub dock_pins: Vec<Pin>,
     /// Which display the dock uses: "main", or "follow" (moves to the
@@ -83,6 +89,10 @@ pub struct Pin {
     /// The program a shortcut pin opens, so its windows group under it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exe: Option<String>,
+    /// The AppUserModelID a shortcut pin carries (a Chrome profile, a PWA):
+    /// windows with the same ID belong to this pin, as on the taskbar.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aumid: Option<String>,
 }
 
 fn off() -> String {
@@ -111,12 +121,13 @@ fn yes() -> bool {
 
 pub fn default_pins() -> Vec<Pin> {
     vec![
-        Pin { name: "File Explorer".into(), target: "Microsoft.Windows.Explorer".into(), exe: None },
-        Pin { name: "Microsoft Edge".into(), target: "MSEdge".into(), exe: None },
+        Pin { name: "File Explorer".into(), target: "Microsoft.Windows.Explorer".into(), exe: None, aumid: None },
+        Pin { name: "Microsoft Edge".into(), target: "MSEdge".into(), exe: None, aumid: None },
         Pin {
             name: "Settings".into(),
             target: "windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel".into(),
             exe: None,
+            aumid: None,
         },
     ]
 }
@@ -129,8 +140,10 @@ impl Default for Settings {
             clipboard: true,
             dock: false,
             dock_hide_taskbar: false,
+            intro_seen: None,
             takeover: true,
             pins_imported: false,
+            pins_v: 0,
             dock_pins: default_pins(),
             dock_stacks: vec!["downloads".into()],
             dock_display: "main".into(),

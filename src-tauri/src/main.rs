@@ -395,15 +395,17 @@ fn dock_apply(app: &AppHandle, state: &AppState) -> DockStatus {
     let (enabled, hide, stacks, display) = match state.settings.lock() {
         Ok(mut s) => {
             // First time on: the dock starts with exactly the taskbar's pins.
-            if s.data.dock && !s.data.pins_imported && !safe() {
+            // (Preview builds imported without AppIDs; v2 imports again once.)
+            if s.data.dock && (!s.data.pins_imported || s.data.pins_v < 2) && !safe() {
                 let pins = shellprops::taskbar_pins();
                 if !pins.is_empty() {
                     s.data.dock_pins = pins;
                 }
                 s.data.pins_imported = true;
+                s.data.pins_v = 2;
             }
             sync_taskbar(&mut s);
-            (s.data.dock, s.data.dock_hide_taskbar, s.data.dock_stacks.clone(), s.data.dock_display.clone())
+            (s.data.dock, s.data.takeover || s.data.dock_hide_taskbar, s.data.dock_stacks.clone(), s.data.dock_display.clone())
         }
         Err(_) => (false, false, Vec::new(), "main".into()),
     };
@@ -423,7 +425,7 @@ fn dock_status(state: tauri::State<'_, AppState>) -> DockStatus {
     let s = state.settings.lock().unwrap();
     DockStatus {
         enabled: s.data.dock,
-        hide_taskbar: s.data.dock_hide_taskbar,
+        hide_taskbar: s.data.takeover || s.data.dock_hide_taskbar,
         stacks: s.data.dock_stacks.clone(),
         display: s.data.dock_display.clone(),
     }
@@ -443,7 +445,9 @@ fn dock_set(enabled: bool, app: AppHandle, state: tauri::State<'_, AppState>) ->
 #[tauri::command]
 fn dock_hide_taskbar_set(enabled: bool, app: AppHandle, state: tauri::State<'_, AppState>) -> DockStatus {
     if let Ok(mut s) = state.settings.lock() {
+        // One switch: hide the Windows taskbar while the dock is on.
         s.data.dock_hide_taskbar = enabled;
+        s.data.takeover = enabled;
         let _ = s.save();
     }
     dock_apply(&app, &state)
@@ -1164,6 +1168,19 @@ fn dock_launch(target: String) -> Result<(), String> {
     dock::launch(&target)
 }
 
+/// True once per install (and once per minor version): play the full intro.
+#[tauri::command]
+fn intro_first(state: tauri::State<'_, AppState>) -> bool {
+    let v = env!("CARGO_PKG_VERSION").splitn(3, '.').take(2).collect::<Vec<_>>().join(".");
+    let Ok(mut s) = state.settings.lock() else { return false };
+    if s.data.intro_seen.as_deref() == Some(v.as_str()) {
+        return false;
+    }
+    s.data.intro_seen = Some(v);
+    let _ = s.save();
+    true
+}
+
 #[tauri::command]
 fn dock_close(windows: Vec<isize>) {
     dock::close_windows(&windows);
@@ -1176,7 +1193,7 @@ fn dock_pin(name: String, target: String, app: AppHandle, state: tauri::State<'_
     }
     if let Ok(mut s) = state.settings.lock() {
         if !s.data.dock_pins.iter().any(|p| p.target == target) {
-            s.data.dock_pins.push(settings::Pin { name, target, exe: None });
+            s.data.dock_pins.push(settings::Pin { name, target, exe: None, aumid: None });
             let _ = s.save();
         }
     }
@@ -1438,7 +1455,14 @@ fn main() {
         // Full-resolution app icons, served from memory (see icons.rs).
         .register_uri_scheme_protocol("coveicon", |_ctx, req| {
             let res = tauri::http::Response::builder().header("Access-Control-Allow-Origin", "*");
-            match icons::serve(req.uri().path()) {
+            // "/wallpaper": the desktop picture itself, for Settings' miniature desktop.
+            let path = req.uri().path();
+            if path.starts_with("/wallpaper") {
+                if let Some(bytes) = wallpaper::current().and_then(|p| std::fs::read(p).ok()) {
+                    return res.header("Content-Type", "image/jpeg").header("Cache-Control", "no-cache").body(bytes).unwrap_or_default();
+                }
+            }
+            match icons::serve(path) {
                 Some(png) => res.header("Content-Type", "image/png").header("Cache-Control", "max-age=31536000, immutable").body(png),
                 None => res.status(404).body(Vec::new()),
             }
@@ -1629,7 +1653,9 @@ fn main() {
             // Mica: Windows' own cheap backdrop for the main window.
             #[cfg(target_os = "windows")]
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window_vibrancy::apply_mica(&window, None);
+                // Solid Ink window, no title bar of Windows' own: keep the
+                // system shadow and rounded corners.
+                let _ = window.set_shadow(true);
             }
             // Search panel: acrylic blur of the desktop behind it.
             #[cfg(target_os = "windows")]
@@ -1733,7 +1759,8 @@ fn main() {
             clip_clear,
             clipboard_set,
             clipboard_status,
-            just_updated
+            just_updated,
+            intro_first
         ])
         .build(tauri::generate_context!())
         .expect("error while building Cove");

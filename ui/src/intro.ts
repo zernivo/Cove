@@ -4,18 +4,22 @@ import { drawIntro, introLength } from "./intro-core";
 
 const SEEN = "cove.introSeen";
 
-export async function playIntro(): Promise<void> {
-  const full = !localStorage.getItem(SEEN);
+/** `first`: the full build (first launch after installing). Decided by the
+ *  app, so a reinstall plays it again; the browser preview falls back to
+ *  localStorage. */
+export async function playIntro(first?: boolean): Promise<void> {
+  const full = first ?? !localStorage.getItem(SEEN);
   localStorage.setItem(SEEN, "1");
   const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const font = getComputedStyle(document.documentElement).getPropertyValue("--font-brand").trim() || "Segoe UI";
   const opts = { full, calm, font };
-  const host = document.createElement("div");
+  // index.html paints a plain Ink cover first, so the app never flashes in
+  // before the intro starts.
+  const host = document.getElementById("intro") ?? document.body.appendChild(document.createElement("div"));
   host.className = "intro";
   host.setAttribute("aria-hidden", "true");
   const cv = document.createElement("canvas");
   host.appendChild(cv);
-  document.body.appendChild(host);
   const g = cv.getContext("2d");
   if (!g) { host.remove(); return; }
 
