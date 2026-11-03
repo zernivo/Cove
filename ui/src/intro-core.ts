@@ -62,21 +62,35 @@ function bounce(tau: number, h: number): number {
   return 0;
 }
 
+/**
+ * One voxel, drawn crisp to match the sharp-edged logo (option B): corners sit
+ * on the device-pixel grid, faces are closed polygons with mitred (never
+ * rounded) joins, and each face is outlined in its own colour by a single
+ * device pixel so anti-aliasing can't open soft, see-through cracks between
+ * neighbouring faces and blocks.
+ */
 function cube(g: CanvasRenderingContext2D, sx: number, sy: number, s: number, c: typeof FACE, seam: number, squash = 1) {
-  const w = s * 0.866, hh = s * 0.5, hgt = s * squash;
+  const k = g.getTransform().a || 1; // CSS px -> device px
+  const px = (v: number) => Math.round(v * k) / k;
+  sx = px(sx); sy = px(sy);
+  const w = px(s * 0.866), hh = px(s * 0.5), hgt = px(s * squash);
   const top = sy - hgt; // y of the top face's centre
-  // top
-  g.fillStyle = c.top;
-  g.beginPath(); g.moveTo(sx, top - hh); g.lineTo(sx + w, top); g.lineTo(sx, top + hh); g.lineTo(sx - w, top); g.closePath(); g.fill();
-  // left
-  g.fillStyle = c.left;
-  g.beginPath(); g.moveTo(sx - w, top); g.lineTo(sx, top + hh); g.lineTo(sx, sy + hh); g.lineTo(sx - w, sy); g.closePath(); g.fill();
-  // right
-  g.fillStyle = c.right;
-  g.beginPath(); g.moveTo(sx + w, top); g.lineTo(sx, top + hh); g.lineTo(sx, sy + hh); g.lineTo(sx + w, sy); g.closePath(); g.fill();
+  g.lineJoin = "miter";
+  g.miterLimit = 10;
+  g.lineCap = "butt";
+  g.lineWidth = 1 / k;
+  const face = (col: string, pts: [number, number][]) => {
+    g.fillStyle = col; g.strokeStyle = col;
+    g.beginPath(); g.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]);
+    g.closePath(); g.fill(); g.stroke();
+  };
+  face(c.top, [[sx, top - hh], [sx + w, top], [sx, top + hh], [sx - w, top]]);
+  face(c.left, [[sx - w, top], [sx, top + hh], [sx, sy + hh], [sx - w, sy]]);
+  face(c.right, [[sx + w, top], [sx, top + hh], [sx, sy + hh], [sx + w, sy]]);
   if (seam > 0.01) {
     g.strokeStyle = `rgba(17,18,21,${0.55 * seam})`;
-    g.lineWidth = Math.max(0.6, s * 0.06);
+    g.lineWidth = Math.max(1 / k, px(s * 0.06));
     g.beginPath(); g.moveTo(sx - w, top); g.lineTo(sx, top - hh); g.lineTo(sx + w, top); g.lineTo(sx + w, sy); g.lineTo(sx, sy + hh); g.lineTo(sx - w, sy); g.closePath();
     g.moveTo(sx - w, top); g.lineTo(sx, top + hh); g.lineTo(sx + w, top); g.moveTo(sx, top + hh); g.lineTo(sx, sy + hh);
     g.stroke();

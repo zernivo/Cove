@@ -35,8 +35,11 @@ button {
 }
 button:hover, button.open { background: var(--hover); }
 svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.mark svg { width: 17px; height: 17px; stroke-width: 2.6; }
-.mark .cube { fill: var(--accent); stroke: none; }
+/* Voxel mark B: a monochrome template image used as a mask, so it takes the bar's text colour. */
+.cove-mark { width: 16px; height: 16px; background: currentColor; -webkit-mask: url("/cove-menubar-16.png") center / 16px 16px no-repeat; mask: url("/cove-menubar-16.png") center / 16px 16px no-repeat; }
+@media (min-resolution: 1.5dppx) {
+  .cove-mark { -webkit-mask-image: url("/cove-menubar-24.png"); mask-image: url("/cove-menubar-24.png"); }
+}
 .app { font-weight: 600; padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
 .clock { font-variant-numeric: tabular-nums; }
 .batt { width: 22px; height: 11px; border: 1.5px solid currentColor; border-radius: 3px; position: relative; box-sizing: border-box; opacity: 0.9; }
