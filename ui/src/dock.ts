@@ -84,10 +84,8 @@ function render(): void {
       img.alt = "";
       el.appendChild(img);
     } else {
-      const l = document.createElement("div");
-      l.className = "letter";
-      l.textContent = (it.name.trim()[0] || "?").toUpperCase();
-      el.appendChild(l);
+      // The real icon is still being drawn by Windows: hold its place quietly.
+      el.appendChild(Object.assign(document.createElement("div"), { className: "letter pending" }));
     }
     if (it.windows.length) el.appendChild(Object.assign(document.createElement("span"), { className: "dot" }));
     el.appendChild(Object.assign(document.createElement("span"), { className: "label", textContent: it.name }));

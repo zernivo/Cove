@@ -17,6 +17,13 @@ pub struct Settings {
     pub dock: bool,
     /// Auto-hide the Windows taskbar while the dock is on.
     pub dock_hide_taskbar: bool,
+    /// Cove desktop: while the dock is on, the Windows taskbar is hidden
+    /// completely and the dock + menu bar replace it.
+    #[serde(default = "yes")]
+    pub takeover: bool,
+    /// The dock's pins were brought over from the Windows taskbar once.
+    #[serde(default)]
+    pub pins_imported: bool,
     /// Apps pinned to the dock, in order.
     pub dock_pins: Vec<Pin>,
     /// Which display the dock uses: "main", or "follow" (moves to the
@@ -71,8 +78,11 @@ pub struct Settings {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Pin {
     pub name: String,
-    /// Start-menu AppID (opened through shell:AppsFolder).
+    /// Start-menu AppID (opened through shell:AppsFolder), or a path.
     pub target: String,
+    /// The program a shortcut pin opens, so its windows group under it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exe: Option<String>,
 }
 
 fn off() -> String {
@@ -101,11 +111,12 @@ fn yes() -> bool {
 
 pub fn default_pins() -> Vec<Pin> {
     vec![
-        Pin { name: "File Explorer".into(), target: "Microsoft.Windows.Explorer".into() },
-        Pin { name: "Microsoft Edge".into(), target: "MSEdge".into() },
+        Pin { name: "File Explorer".into(), target: "Microsoft.Windows.Explorer".into(), exe: None },
+        Pin { name: "Microsoft Edge".into(), target: "MSEdge".into(), exe: None },
         Pin {
             name: "Settings".into(),
             target: "windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel".into(),
+            exe: None,
         },
     ]
 }
@@ -118,6 +129,8 @@ impl Default for Settings {
             clipboard: true,
             dock: false,
             dock_hide_taskbar: false,
+            takeover: true,
+            pins_imported: false,
             dock_pins: default_pins(),
             dock_stacks: vec!["downloads".into()],
             dock_display: "main".into(),

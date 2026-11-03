@@ -12,6 +12,7 @@ mod journal;
 mod registry;
 mod search;
 mod settings;
+mod shellprops;
 mod shell;
 mod stacks;
 mod switcher;
@@ -372,7 +373,11 @@ struct DockStatus {
 /// Make the taskbar's auto-hide match the settings, remembering (and later
 /// restoring) what it was before Cove touched it.
 fn sync_taskbar(s: &mut settings::Store) {
-    let want = s.data.dock && s.data.dock_hide_taskbar && !safe();
+    // Cove desktop: the dock replaces the taskbar, so it's hidden outright
+    // (and set to auto-hide, which frees the space it reserved).
+    let want = s.data.dock && (s.data.takeover || s.data.dock_hide_taskbar) && !safe();
+    dock::TASKBAR_GONE.store(want, std::sync::atomic::Ordering::SeqCst);
+    dock::taskbar_visible(!want);
     match (want, s.data.taskbar_prev_autohide) {
         (true, None) => {
             s.data.taskbar_prev_autohide = Some(dock::taskbar_autohide(Some(true)));
@@ -389,6 +394,14 @@ fn sync_taskbar(s: &mut settings::Store) {
 fn dock_apply(app: &AppHandle, state: &AppState) -> DockStatus {
     let (enabled, hide, stacks, display) = match state.settings.lock() {
         Ok(mut s) => {
+            // First time on: the dock starts with exactly the taskbar's pins.
+            if s.data.dock && !s.data.pins_imported && !safe() {
+                let pins = shellprops::taskbar_pins();
+                if !pins.is_empty() {
+                    s.data.dock_pins = pins;
+                }
+                s.data.pins_imported = true;
+            }
             sync_taskbar(&mut s);
             (s.data.dock, s.data.dock_hide_taskbar, s.data.dock_stacks.clone(), s.data.dock_display.clone())
         }
@@ -1039,6 +1052,10 @@ fn display_watch(app: AppHandle) {
         if safe() {
             continue;
         }
+        // Keep the taskbar gone if Explorer restarted or something showed it.
+        if dock::TASKBAR_GONE.load(std::sync::atomic::Ordering::SeqCst) && dock::taskbar_is_visible() {
+            dock::taskbar_visible(false);
+        }
         let (dock_on, follow, bar_on) = match st.settings.lock() {
             Ok(s) => (s.data.dock, s.data.dock_display == "follow", s.data.topbar),
             Err(_) => continue,
@@ -1159,7 +1176,7 @@ fn dock_pin(name: String, target: String, app: AppHandle, state: tauri::State<'_
     }
     if let Ok(mut s) = state.settings.lock() {
         if !s.data.dock_pins.iter().any(|p| p.target == target) {
-            s.data.dock_pins.push(settings::Pin { name, target });
+            s.data.dock_pins.push(settings::Pin { name, target, exe: None });
             let _ = s.save();
         }
     }
@@ -1406,14 +1423,42 @@ async fn update_install(app: AppHandle) -> Result<(), String> {
 }
 
 fn main() {
+    // Watchdog copy: wait for Cove to end, then put the taskbar back.
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() >= 4 && args[1] == "--watchdog" {
+        if let Ok(pid) = args[2].parse::<u32>() {
+            dock::watchdog(pid, std::path::Path::new(&args[3]));
+        }
+        return;
+    }
     let app = tauri::Builder::default()
         // Opening Cove again just brings the running copy forward.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
         .plugin(tauri_plugin_notification::init())
+        // Full-resolution app icons, served from memory (see icons.rs).
+        .register_uri_scheme_protocol("coveicon", |_ctx, req| {
+            let res = tauri::http::Response::builder().header("Access-Control-Allow-Origin", "*");
+            match icons::serve(req.uri().path()) {
+                Some(png) => res.header("Content-Type", "image/png").header("Cache-Control", "max-age=31536000, immutable").body(png),
+                None => res.status(404).body(Vec::new()),
+            }
+            .unwrap_or_default()
+        })
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             let journal = journal::Journal::load(dir.join("journal.json"))?;
             let store = settings::Store::load(dir.join("settings.json"));
+            // If Cove ever ends without tidying up, this brings the taskbar back.
+            #[cfg(windows)]
+            if let Ok(me) = std::env::current_exe() {
+                use std::os::windows::process::CommandExt;
+                let _ = std::process::Command::new(me)
+                    .arg("--watchdog")
+                    .arg(std::process::id().to_string())
+                    .arg(dir.join("settings.json"))
+                    .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+                    .spawn();
+            }
             let safe_why = safe_decide(&dir);
             if let Some(why) = safe_why {
                 SAFE.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -1706,6 +1751,8 @@ fn main() {
                     topbar::unregister(h.0 as isize);
                 }
             }
+            dock::TASKBAR_GONE.store(false, std::sync::atomic::Ordering::SeqCst);
+            dock::taskbar_visible(true);
             if let Some(state) = handle.try_state::<AppState>() {
                 if let Ok(mut s) = state.settings.lock() {
                     if let Some(prev) = s.data.taskbar_prev_autohide.take() {
