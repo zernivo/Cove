@@ -1,0 +1,36 @@
+name: Preview build
+
+# Manual test build from main: publishes a pre-release named "preview"
+# (never marked latest, so the in-app updater ignores it). No version bump.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  preview:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm install
+      - run: npx tauri build --bundles nsis
+      - name: Publish pre-release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          short=$(git rev-parse --short HEAD)
+          exe=$(ls src-tauri/target/release/bundle/nsis/*-setup.exe | head -1)
+          cp "$exe" "Cove-preview-${short}-setup.exe"
+          gh release delete preview --yes --cleanup-tag || true
+          gh release create preview "Cove-preview-${short}-setup.exe" --prerelease --latest=false \
+            --target "$GITHUB_SHA" --title "Cove preview (${short})" \
+            --notes "Test build from main at ${short}. Not code-signed, so SmartScreen may ask: More info, then Run anyway."
