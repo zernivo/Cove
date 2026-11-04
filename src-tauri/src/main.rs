@@ -1783,9 +1783,16 @@ fn reveal_desktop(app: &AppHandle) {
     cove_log(app, &format!("startup: desktop revealed (menu bar {bar_on}, dock {dock_on}, settings {settings})"));
 }
 
-/// The intro page has loaded: which intro to play.
+/// The intro page has loaded: which intro to play. The page can load
+/// before startup has decided, so wait (briefly) for intro_show.
 #[tauri::command]
-fn intro_begin(app: AppHandle) -> bool {
+async fn intro_begin(app: AppHandle) -> bool {
+    for _ in 0..250 {
+        if INTRO.lock().map(|s| s.run != 0).unwrap_or(true) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
     let full = INTRO.lock().map(|s| s.full).unwrap_or(false);
     cove_log(&app, &format!("intro: page playing ({})", if full { "full" } else { "short" }));
     full
