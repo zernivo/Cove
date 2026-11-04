@@ -8,7 +8,6 @@
     <link rel="stylesheet" href="./src/app.css" />
   </head>
   <body>
-    <div class="intro" id="intro" aria-hidden="true"></div>
 
     <!-- Title bar: Cove's own, no Windows caption. -->
     <header class="titlebar" data-tauri-drag-region>
@@ -88,6 +87,7 @@
           <p class="lede">Your taskbar, rebuilt. Pinned and open apps, with their real icons.</p>
           <div class="group">
             <div class="row"><div class="label"><h2>Show the dock</h2><p class="note" id="dock-note"></p></div><label class="switch"><input type="checkbox" id="dock-toggle" /><span></span></label></div>
+            <div class="row col"><div class="label"><h2>Hide the dock</h2><p class="note">The dock never takes space from your apps unless you choose Never. It comes back when you touch the bottom edge.</p></div><div class="seg" id="dock-hide"></div></div>
             <div class="row"><div class="label"><h2>Hide the Windows taskbar</h2><p class="note">While the dock is on. It comes back the moment you turn Cove off or quit.</p></div><label class="switch"><input type="checkbox" id="dock-taskbar" /><span></span></label></div>
           </div>
           <div class="group">

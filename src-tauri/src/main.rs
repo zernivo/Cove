@@ -385,6 +385,16 @@ fn popover_toggle(kind: String, x: f64, right: bool, data: Option<serde_json::Va
         popover_close(&app);
         return;
     }
+    // The app menu shows how many windows the app has ("Show All Windows 3").
+    let data = match data {
+        Some(mut d) if kind == "app" => {
+            let h = d.get("hwnd").and_then(|v| v.as_i64()).unwrap_or(0) as isize;
+            let n = if h != 0 { app_windows(h).len() } else { 0 };
+            d["count"] = serde_json::json!(n);
+            Some(d)
+        }
+        d => d,
+    };
     // The page renders, measures itself and calls popover_place to show.
     let _ = app.emit_to("popover", "popover-show", serde_json::json!({ "kind": kind, "data": data }));
 }
@@ -413,6 +423,18 @@ fn popover_place(kind: String, width: f64, height: f64, app: AppHandle) {
     let _ = w.show();
     appbar::place(w.hwnd().map(|h| h.0 as isize).unwrap_or(0), (left, top, left + pw, top + ph));
     let _ = w.set_focus();
+    // Ask the page for a fresh paint once Windows has really shown the
+    // window: a WebView can put the last frame it drew while hidden on
+    // screen first, which was the empty grey rectangle of the Cove menu.
+    {
+        let h = app.clone();
+        std::thread::spawn(move || {
+            for ms in [40u64, 160] {
+                std::thread::sleep(std::time::Duration::from_millis(ms));
+                let _ = h.emit_to("popover", "popover-repaint", ());
+            }
+        });
+    }
     if let Ok(mut p) = POP.lock() {
         p.open = Some(kind);
         p.blurred = None;
@@ -544,6 +566,34 @@ fn topbar_app(what: String, hwnd: isize, name: String, app: AppHandle) -> Result
         // App Exposé: just this app's windows.
         "expose" if !wins.is_empty() => open_expose(&app, name, wins),
         "hide" => wins.iter().for_each(|&h| dock::minimize(h)),
+        // Every other app's windows go to the dock; this app stays.
+        "hide-others" => {
+            let keep: Vec<isize> = if wins.is_empty() { vec![hwnd] } else { wins.clone() };
+            for w in dock::windows() {
+                if !keep.contains(&w.hwnd) {
+                    dock::minimize(w.hwnd);
+                }
+            }
+            // Cove's own window too, unless it's the app in front.
+            if let Some(w) = app.get_webview_window("main") {
+                let mine = w.hwnd().map(|h| h.0 as isize).unwrap_or(0);
+                if !keep.contains(&mine) && w.is_visible().unwrap_or(false) {
+                    let _ = w.minimize();
+                }
+            }
+        }
+        "minimize" if hwnd != 0 => dock::minimize(hwnd),
+        "zoom" if hwnd != 0 => dock::zoom(hwnd),
+        // Every window of the app comes forward, the front one last.
+        "front" => {
+            for &h in wins.iter().rev() {
+                dock::activate(h);
+            }
+            if hwnd != 0 {
+                dock::activate(hwnd);
+            }
+        }
+        "minimize" | "zoom" => {}
         // Ask politely (WM_CLOSE), so the app can offer to save.
         "quit" => dock::close_windows(&wins),
         "expose" => {}
@@ -560,6 +610,8 @@ struct DockStatus {
     hide_taskbar: bool,
     stacks: Vec<String>,
     display: String,
+    /// "smart", "always" or "never" (settings::DOCK_HIDE).
+    hide: String,
 }
 
 /// Make the taskbar's auto-hide match the settings, remembering (and later
@@ -584,7 +636,7 @@ fn sync_taskbar(s: &mut settings::Store) {
 }
 
 fn dock_apply(app: &AppHandle, state: &AppState) -> DockStatus {
-    let (enabled, hide, stacks, display) = match state.settings.lock() {
+    let (enabled, hide, stacks, display, hide_mode) = match state.settings.lock() {
         Ok(mut s) => {
             // First time on: the dock starts with exactly the taskbar's pins.
             // (Preview builds imported without AppIDs; v2 imports again once.)
@@ -597,14 +649,20 @@ fn dock_apply(app: &AppHandle, state: &AppState) -> DockStatus {
                 s.data.pins_v = 2;
             }
             sync_taskbar(&mut s);
-            (s.data.dock, s.data.takeover || s.data.dock_hide_taskbar, s.data.dock_stacks.clone(), s.data.dock_display.clone())
+            (
+                s.data.dock,
+                s.data.takeover || s.data.dock_hide_taskbar,
+                s.data.dock_stacks.clone(),
+                s.data.dock_display.clone(),
+                s.data.dock_hide.clone(),
+            )
         }
-        Err(_) => (false, false, Vec::new(), "main".into()),
+        Err(_) => (false, false, Vec::new(), "main".into(), "smart".into()),
     };
     if let Some(w) = app.get_webview_window("dock") {
         if enabled && !safe() {
             let _ = w.show();
-            // Reserve the dock's strip so maximised windows stop above it.
+            // Park it; only "Never hide" reserves its strip (dock_layout).
             dock_layout(app, &w, None);
             let _ = w.emit("dock-changed", ());
         } else {
@@ -612,7 +670,7 @@ fn dock_apply(app: &AppHandle, state: &AppState) -> DockStatus {
             dock_release(app);
         }
     }
-    DockStatus { enabled, hide_taskbar: hide, stacks, display }
+    DockStatus { enabled, hide_taskbar: hide, stacks, display, hide: hide_mode }
 }
 
 #[tauri::command]
@@ -623,6 +681,7 @@ fn dock_status(state: tauri::State<'_, AppState>) -> DockStatus {
         hide_taskbar: s.data.takeover || s.data.dock_hide_taskbar,
         stacks: s.data.dock_stacks.clone(),
         display: s.data.dock_display.clone(),
+        hide: s.data.dock_hide.clone(),
     }
 }
 
@@ -1375,7 +1434,8 @@ fn display_watch(app: AppHandle) {
             layout = Some(now);
         }
         let st = app.state::<AppState>();
-        if safe() {
+        // Nothing of the bars to look after until the startup intro is over.
+        if safe() || !DESKTOP_REVEALED.load(std::sync::atomic::Ordering::SeqCst) {
             continue;
         }
         // Keep the taskbar gone if Explorer restarted or something showed it.
@@ -1429,6 +1489,19 @@ fn display_watch(app: AppHandle) {
                 }
             }
             if dock_on {
+                // Not reserving (the default): keep it on the work area's
+                // bottom edge if the display or the work area changed.
+                if let (Some(h), Some(strip)) = (h_of("dock"), DOCK_STRIP.lock().ok().and_then(|s| *s)) {
+                    let (cx, cy) = ((strip.0 + strip.2) / 2, (strip.1 + strip.3) / 2);
+                    if appbar::held(h).is_none() && dock::monitor_at(cx, cy).is_some_and(|m| m.work.3 != strip.3) {
+                        let a = app.clone();
+                        let _ = app.run_on_main_thread(move || {
+                            if let Some(w) = a.get_webview_window("dock") {
+                                dock_layout(&a, &w, None);
+                            }
+                        });
+                    }
+                }
                 if let Some(h) = h_of("dock") {
                     if let (Some(rc), Some(now)) = (appbar::held(h), appbar::window_rect(h)) {
                         if now.3 != rc.3 {
@@ -1498,6 +1571,17 @@ fn dock_stacks_set(keys: Vec<String>, app: AppHandle, state: tauri::State<'_, Ap
     dock_apply(&app, &state)
 }
 
+/// "Hide the dock": "smart" (default), "always" or "never".
+#[tauri::command]
+fn dock_hide_set(mode: String, app: AppHandle, state: tauri::State<'_, AppState>) -> DockStatus {
+    if let Ok(mut s) = state.settings.lock() {
+        s.data.dock_hide = settings::DOCK_HIDE.iter().find(|m| **m == mode).unwrap_or(&"smart").to_string();
+        let _ = s.save();
+    }
+    // Never takes the strip back; the other two give it up at once.
+    dock_apply(&app, &state)
+}
+
 #[tauri::command]
 fn dock_display_set(display: String, app: AppHandle, state: tauri::State<'_, AppState>) -> DockStatus {
     if let Ok(mut s) = state.settings.lock() {
@@ -1559,29 +1643,172 @@ fn intro_key(version: &str, build: &str) -> String {
     }
 }
 
-/// Called by the Settings page as soon as it has painted its Ink cover:
-/// shows the window from here (so it never depends on a window permission
-/// in the page) and says which intro to play. True once per installed
-/// build: the full intro; false: the short logo animation.
-#[tauri::command]
-fn intro_first(app: AppHandle, state: tauri::State<'_, AppState>) -> bool {
-    if let Some(w) = app.get_webview_window("main") {
-        if !w.is_visible().unwrap_or(false) {
-            let _ = w.show();
-            let _ = w.unminimize();
-            keep_on_screen(&app, &w);
-            let _ = w.set_focus();
-            dock_changed(&app);
+// ---- Intro: its own full-screen Ink window ("intro") ----
+//
+// At startup the intro window is shown before the dock, the menu bar and
+// Settings, sized to the main display's full bounds. It plays the full
+// voxel build once per installed build (intro_key), the ~1 s logo
+// otherwise. When it ends (or a backstop fires) the window hides and Cove's
+// desktop appears; Settings opens only on a first run. A second launch
+// never replays it; "Play the intro" in About does. Every step is written to
+// cove.log in the app data folder, so a real launch can be checked.
+
+struct IntroState {
+    full: bool,
+    /// This run is the startup one: reveal the desktop when it ends.
+    startup: bool,
+    done: bool,
+    /// Bumped on every show, so a stale backstop can't end a replay.
+    run: u32,
+}
+
+static INTRO: Mutex<IntroState> = Mutex::new(IntroState { full: false, startup: false, done: true, run: 0 });
+/// Open Settings when the startup intro ends (first run).
+static OPEN_SETTINGS_AFTER_INTRO: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Append one line to cove.log in the app data folder (kept under 256 KB).
+fn cove_log(app: &AppHandle, msg: &str) {
+    let Ok(dir) = app.path().app_data_dir() else { return };
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("cove.log");
+    if std::fs::metadata(&path).map(|m| m.len() > 256 * 1024).unwrap_or(false) {
+        let _ = std::fs::rename(&path, dir.join("cove.old.log"));
+    }
+    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0);
+    let line = format!("{} {:.3} {}\n", log_stamp(secs as u64), secs.fract(), msg);
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = f.write_all(line.as_bytes());
+    }
+}
+
+/// "2026-11-04T17:21:05Z" from Unix seconds (UTC; no time zone database).
+fn log_stamp(t: u64) -> String {
+    let (days, rem) = (t / 86_400, t % 86_400);
+    // Civil date from days since 1970-01-01 (Howard Hinnant's algorithm).
+    let z = days as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
+    format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", rem / 3600, rem % 3600 / 60, rem % 60)
+}
+
+/// Show the intro window over the whole main display and let it play.
+fn intro_show(app: &AppHandle, full: bool, startup: bool) {
+    let run = {
+        let Ok(mut st) = INTRO.lock() else { return };
+        st.full = full;
+        st.startup = startup;
+        st.done = false;
+        st.run = st.run.wrapping_add(1);
+        st.run
+    };
+    let Some(w) = app.get_webview_window("intro") else {
+        cove_log(app, "intro: no intro window; skipping");
+        intro_finish(app, "no-window", run);
+        return;
+    };
+    // The main display's full bounds (over where the bar and dock will be).
+    let (x, y, pw, ph) = match app.primary_monitor().ok().flatten() {
+        Some(m) => (m.position().x, m.position().y, m.size().width, m.size().height),
+        None => dock::primary().map(|m| (m.monitor.0, m.monitor.1, (m.monitor.2 - m.monitor.0) as u32, (m.monitor.3 - m.monitor.1) as u32)).unwrap_or((0, 0, 1920, 1080)),
+    };
+    let _ = w.set_position(PhysicalPosition::new(x, y));
+    let _ = w.set_size(tauri::PhysicalSize::new(pw, ph));
+    if !startup {
+        // A replay: start the page over.
+        let _ = w.eval("location.reload()");
+    }
+    let _ = w.set_always_on_top(true);
+    let shown = w.show().is_ok();
+    let _ = w.set_position(PhysicalPosition::new(x, y));
+    let _ = w.set_focus();
+    cove_log(
+        app,
+        &format!("intro: window shown={shown} ({}, {pw}x{ph} at {x},{y}, {})", if full { "full" } else { "short" }, if startup { "startup" } else { "replay" }),
+    );
+    // Backstop: whatever the page does, the intro ends.
+    let h = app.clone();
+    let wait = if full { 9_000 } else { 4_000 };
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(wait));
+        let h2 = h.clone();
+        let _ = h.run_on_main_thread(move || intro_finish(&h2, "timeout", run));
+    });
+}
+
+/// End the intro (once per run): hide its window, then on startup reveal
+/// the dock and the menu bar and open Settings on a first run.
+fn intro_finish(app: &AppHandle, why: &str, run: u32) {
+    let startup = {
+        let Ok(mut st) = INTRO.lock() else { return };
+        if st.done || st.run != run {
+            return;
         }
+        st.done = true;
+        st.startup
+    };
+    if let Some(w) = app.get_webview_window("intro") {
+        let _ = w.hide();
     }
-    let key = intro_key(env!("CARGO_PKG_VERSION"), env!("COVE_BUILD_ID"));
-    let Ok(mut s) = state.settings.lock() else { return false };
-    if s.data.intro_seen.as_deref() == Some(key.as_str()) {
-        return false;
+    cove_log(app, &format!("intro: finished ({why})"));
+    if startup {
+        reveal_desktop(app);
     }
-    s.data.intro_seen = Some(key);
-    let _ = s.save();
-    true
+}
+
+/// The startup intro is over and the bars are up (display_watch waits).
+static DESKTOP_REVEALED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// After the startup intro: the menu bar, the dock and (first run) Settings.
+fn reveal_desktop(app: &AppHandle) {
+    DESKTOP_REVEALED.store(true, std::sync::atomic::Ordering::SeqCst);
+    let state = app.state::<AppState>();
+    let (bar_on, dock_on) = state.settings.lock().map(|s| (s.data.topbar, s.data.dock)).unwrap_or((false, false));
+    if bar_on {
+        topbar_apply(app, true);
+    }
+    if dock_on {
+        dock_apply(app, &state);
+    }
+    let settings = OPEN_SETTINGS_AFTER_INTRO.swap(false, std::sync::atomic::Ordering::SeqCst);
+    if settings {
+        show_main(app);
+    }
+    cove_log(app, &format!("startup: desktop revealed (menu bar {bar_on}, dock {dock_on}, settings {settings})"));
+}
+
+/// The intro page has loaded: which intro to play. The page can load
+/// before startup has decided, so wait (briefly) for intro_show.
+#[tauri::command]
+async fn intro_begin(app: AppHandle) -> bool {
+    for _ in 0..250 {
+        if INTRO.lock().map(|s| s.run != 0).unwrap_or(true) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let full = INTRO.lock().map(|s| s.full).unwrap_or(false);
+    cove_log(&app, &format!("intro: page playing ({})", if full { "full" } else { "short" }));
+    full
+}
+
+/// The intro page has finished (or was skipped).
+#[tauri::command]
+fn intro_done(skipped: bool, app: AppHandle) {
+    let run = INTRO.lock().map(|s| s.run).unwrap_or(0);
+    intro_finish(&app, if skipped { "skipped" } else { "played" }, run);
+}
+
+/// "Play the intro" in About: the full intro again, over everything.
+#[tauri::command]
+fn intro_play(app: AppHandle) {
+    intro_show(&app, true, false);
 }
 
 #[tauri::command]
@@ -1614,15 +1841,27 @@ fn dock_unpin(target: String, state: tauri::State<'_, AppState>) {
     }
 }
 
-/// The strip the dock keeps for itself at the bottom of its display, in
-/// DIP: the dock (48 + 16 padding + 2 border) and its 8 DIP of air. Maximised
-/// windows stop above it, like on a Mac. Magnified icons and labels draw
-/// above the strip, over the apps, only while the pointer is on the dock.
+/// The dock's own strip at the bottom of its display, in DIP: the dock
+/// (48 + 16 padding + 2 border) and its 8 DIP of air. Only "Never hide"
+/// reserves it (maximised windows then stop above it); by default the dock
+/// takes no space, like a Mac's, and slides away when a window touches it.
+/// Magnified icons and labels draw above the strip, over the apps, only
+/// while the pointer is on the dock.
 const DOCK_RESERVE: f64 = 74.0;
 
 fn dock_enabled(app: &AppHandle) -> bool {
     app.state::<AppState>().settings.lock().map(|s| s.data.dock).unwrap_or(false) && !safe()
 }
+
+/// "smart" | "always" | "never" (settings.dock_hide).
+fn dock_hide_mode(app: &AppHandle) -> String {
+    app.state::<AppState>().settings.lock().map(|s| s.data.dock_hide.clone()).unwrap_or_else(|_| "smart".into())
+}
+
+/// The dock's strip on screen (physical px) while the dock is shown,
+/// reserved or not: what a window must touch to send it away, and where
+/// the pointer arms it. Set by dock_layout.
+static DOCK_STRIP: Mutex<Option<(i32, i32, i32, i32)>> = Mutex::new(None);
 
 /// Park the dock at the bottom centre of its display and (while it's shown)
 /// reserve its strip as an AppBar. `size` in DIP; None keeps the current size.
@@ -1643,7 +1882,8 @@ fn dock_layout(app: &AppHandle, w: &tauri::WebviewWindow, size: Option<(f64, f64
         },
     };
     let hwnd = w.hwnd().map(|h| h.0 as isize).unwrap_or(0);
-    let reserve = dock_enabled(app) && w.is_visible().unwrap_or(false);
+    let shown = dock_enabled(app) && w.is_visible().unwrap_or(false);
+    let reserve = shown && dock_hide_mode(app) == "never";
     let (l, r, b) = match (reserve, mon) {
         (true, Some(m)) if hwnd != 0 => {
             let rc = appbar::register(hwnd, appbar::BOTTOM, m.monitor, (DOCK_RESERVE * sf).round() as i32);
@@ -1658,6 +1898,10 @@ fn dock_layout(app: &AppHandle, w: &tauri::WebviewWindow, size: Option<(f64, f64
         }
     };
     let pos = PhysicalPosition::new(l + (r - l - pw) / 2, b - ph);
+    if let Ok(mut st) = DOCK_STRIP.lock() {
+        let strip = (DOCK_RESERVE * sf).round() as i32;
+        *st = shown.then_some((pos.x, b - strip, pos.x + pw, b));
+    }
     // Move first, so a display with a different scale doesn't resize us
     // after we've set the size; then size, then settle the position.
     let _ = w.set_position(pos);
@@ -1672,6 +1916,9 @@ fn dock_layout(app: &AppHandle, w: &tauri::WebviewWindow, size: Option<(f64, f64
 
 /// Give the dock's strip back (dock off, safe mode, quitting).
 fn dock_release(app: &AppHandle) {
+    if let Ok(mut st) = DOCK_STRIP.lock() {
+        *st = None;
+    }
     if let Some(w) = app.get_webview_window("dock") {
         if let Ok(h) = w.hwnd() {
             appbar::unregister(h.0 as isize);
@@ -1687,28 +1934,83 @@ fn dock_busy(busy: bool) {
     DOCK_BUSY.store(busy, std::sync::atomic::Ordering::SeqCst);
 }
 
-/// The dock window is taller than its reserved strip (room for magnified
-/// icons, labels, menus and stacks). That headroom must not catch clicks
-/// meant for the app below it, so the window lets the pointer through until
-/// the pointer reaches the dock itself, and keeps it while the pointer stays
-/// on the dock window or a menu / stack is open. Polls every 40 ms: cheap.
+/// The dock window is taller than its strip (room for magnified icons,
+/// labels, menus and stacks). That headroom must not catch clicks meant for
+/// the app below it, so the window lets the pointer through until the
+/// pointer reaches the dock itself, and keeps it while the pointer stays on
+/// the dock window or a menu / stack is open.
+///
+/// It also hides the dock ("Hide the dock"): with "smart" (the default) the
+/// dock slides down while a window touches its strip and comes back when
+/// none does, or when the pointer touches the bottom edge under it (a 2 DIP
+/// trigger); "always" waits for the edge; "never" keeps it up (and its strip
+/// reserved). The page slides it (dock-slide); the window itself stays put
+/// and lets every click through while hidden. Polls every 40 ms: cheap.
 fn dock_hit_watch(app: AppHandle) {
     let mut through: Option<bool> = None;
     let mut on_dock = false;
+    let mut hidden: Option<bool> = None;
+    let mut revealed = false;
+    let mut left_at: Option<std::time::Instant> = None;
+    let mut covered = false;
+    let mut tick: u32 = 0;
     loop {
         std::thread::sleep(std::time::Duration::from_millis(40));
+        tick = tick.wrapping_add(1);
         let Some(w) = app.get_webview_window("dock") else { continue };
         let Ok(h) = w.hwnd() else { continue };
-        let Some(rc) = appbar::held(h.0 as isize) else {
-            // Not reserving (dock hidden): leave the window as it is.
+        let strip = appbar::held(h.0 as isize).or_else(|| DOCK_STRIP.lock().ok().and_then(|s| *s));
+        let Some(rc) = strip.filter(|_| w.is_visible().unwrap_or(false)) else {
+            // Dock off: forget its state, so it starts shown next time.
             through = None;
+            hidden = None;
+            revealed = false;
             continue;
         };
         let (Ok(pos), Ok(size), Some((x, y))) = (w.outer_position(), w.outer_size(), dock::cursor()) else { continue };
         let inside = x >= pos.x && x < pos.x + size.width as i32 && y >= pos.y && y < pos.y + size.height as i32;
-        // Reaching the strip arms the dock; leaving the window disarms it.
-        on_dock = inside && (on_dock || y >= rc.1);
-        let pass = !(on_dock || DOCK_BUSY.load(std::sync::atomic::Ordering::SeqCst));
+        let busy = DOCK_BUSY.load(std::sync::atomic::Ordering::SeqCst);
+        let mode = dock_hide_mode(&app);
+
+        // A window over the strip (checked every ~240 ms; EnumWindows is cheap
+        // but not free).
+        if mode == "smart" && tick % 6 == 0 {
+            covered = dock::overlaps(rc);
+        }
+        // The bottom edge under the dock: the last 2 DIP of the screen.
+        let sf = w.scale_factor().unwrap_or(1.0);
+        let edge = (2.0 * sf).round().max(1.0) as i32;
+        let at_edge = x >= rc.0 && x < rc.2 && y >= rc.3 - edge && y <= rc.3 + 1;
+        let is_hidden = hidden.unwrap_or(false);
+        if at_edge {
+            revealed = true;
+            left_at = None;
+        } else if revealed && !inside && !busy {
+            // Gone from the dock: put it away after a short grace.
+            let t = *left_at.get_or_insert_with(std::time::Instant::now);
+            if t.elapsed() >= std::time::Duration::from_millis(350) {
+                revealed = false;
+                left_at = None;
+            }
+        } else if inside {
+            left_at = None;
+        }
+        let want_hidden = match mode.as_str() {
+            "never" => false,
+            "always" => true,
+            _ => covered,
+        } && !revealed
+            && !busy
+            && !(inside && !is_hidden);
+        if hidden != Some(want_hidden) {
+            let _ = w.emit("dock-slide", want_hidden);
+            hidden = Some(want_hidden);
+        }
+
+        // Clicks: everything passes through while hidden; while shown,
+        // reaching the strip arms the dock and leaving the window disarms it.
+        on_dock = !want_hidden && inside && (on_dock || y >= rc.1);
+        let pass = want_hidden || !(on_dock || busy);
         if through != Some(pass) {
             let _ = w.set_ignore_cursor_events(pass);
             through = Some(pass);
@@ -2042,20 +2344,44 @@ fn main() {
                 settings: Mutex::new(store),
                 just_updated: std::sync::atomic::AtomicBool::new(updated),
             });
-            #[cfg(target_os = "windows")]
-            if let Some(window) = app.get_webview_window("topbar") {
-                let _ = window_vibrancy::apply_acrylic(&window, None);
-            }
-            if bar_on {
-                topbar_apply(app.handle(), true);
-            }
+            // No DWM acrylic on the menu bar: the bar window is never the
+            // active window, and Windows draws a system backdrop on an
+            // inactive window as its flat fallback colour, which is why the
+            // bar read as plain grey. The page paints an opaque Ink (or paper)
+            // bar over a blurred slice of the wallpaper instead.
             if let Some(p) = dock::primary() {
                 dock::set_dock_monitor(p, 0);
             }
-            if dock_on {
+            // The intro comes first, on its own: the menu bar, the dock and
+            // Settings appear only once it ends (intro_finish).
+            {
                 let h = app.handle().clone();
                 let st = app.state::<AppState>();
-                dock_apply(&h, &st);
+                let (full, first_run) = match st.settings.lock() {
+                    Ok(mut s) => {
+                        let key = intro_key(env!("CARGO_PKG_VERSION"), env!("COVE_BUILD_ID"));
+                        let full = s.data.intro_seen.as_deref() != Some(key.as_str());
+                        if full {
+                            s.data.intro_seen = Some(key);
+                            let _ = s.save();
+                        }
+                        // First run (tour not done yet), or nothing of Cove's
+                        // would be visible otherwise: open Settings after.
+                        (full, !s.data.tour_done || (!s.data.dock && !s.data.topbar))
+                    }
+                    Err(_) => (false, true),
+                };
+                OPEN_SETTINGS_AFTER_INTRO.store(first_run, std::sync::atomic::Ordering::SeqCst);
+                cove_log(
+                    &h,
+                    &format!(
+                        "startup: Cove {} build {:?}: intro {} (menu bar {bar_on}, dock {dock_on}, first run {first_run})",
+                        env!("CARGO_PKG_VERSION"),
+                        env!("COVE_BUILD_ID"),
+                        if full { "full (new build)" } else { "short" }
+                    ),
+                );
+                intro_show(&h, full, true);
             }
             {
                 let h = app.handle().clone();
@@ -2135,22 +2461,9 @@ fn main() {
                 })
                 .build(app)?;
 
-            // The main window starts hidden and the page shows it once painted.
-            // Safety net: if the page never does, show it anyway.
-            {
-                let h = app.handle().clone();
-                std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_secs(4));
-                    let h2 = h.clone();
-                    let _ = h.run_on_main_thread(move || {
-                        if let Some(w) = h2.get_webview_window("main") {
-                            if !w.is_visible().unwrap_or(true) {
-                                let _ = w.show();
-                            }
-                        }
-                    });
-                });
-            }
+            // The main window starts hidden; it opens after the intro on a
+            // first run (reveal_desktop), from the tray, the Cove menu or a
+            // second launch (show_main).
             // Mica: Windows' own cheap backdrop for the main window.
             #[cfg(target_os = "windows")]
             if let Some(window) = app.get_webview_window("main") {
@@ -2263,6 +2576,7 @@ fn main() {
             dock_state,
             dock_stacks_set,
             dock_display_set,
+            dock_hide_set,
             switcher_status,
             switcher_set,
             safe_status,
@@ -2302,7 +2616,9 @@ fn main() {
             clipboard_set,
             clipboard_status,
             just_updated,
-            intro_first
+            intro_begin,
+            intro_done,
+            intro_play
         ])
         .build(tauri::generate_context!())
         .expect("error while building Cove");

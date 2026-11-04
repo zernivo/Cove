@@ -11,81 +11,90 @@ html, body {
   color: var(--c-text);
   -webkit-font-smoothing: antialiased;
 }
-body { width: max-content; }
 .hidden { display: none !important; }
 button { border: 0; background: none; color: inherit; font: inherit; padding: 0; cursor: default; }
 button:focus-visible { outline: 2px solid var(--c-teal); outline-offset: -2px; }
 svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 
-/* Shared surface: the popover itself. */
+/* Shared surface: the popover itself. Thick Ink (or paper) over the
+   acrylic, so it reads as a deliberate dark panel even if Windows shows its
+   flat fallback instead of the blur. DWM rounds the window to 8 px. */
 .menu, .cc {
   background: var(--c-panel);
   border: 1px solid var(--c-stroke);
   border-radius: 8px;
   box-shadow: inset 0 1px 0 var(--c-rim);
-  animation: pop-in 0.12s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-@keyframes pop-in { from { opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .menu, .cc { animation: none; } }
+/* Placed: the popover fills its window exactly (the window was sized from
+   it, rounded to device pixels), so nothing is ever clipped at an edge. */
+html, body { width: max-content; height: max-content; }
+body.fit, html:has(body.fit) { width: 100vw; height: 100vh; }
+body.fit > .menu:not(.hidden), body.fit > .cc:not(.hidden) { width: 100vw; min-width: 0; max-width: none; height: 100vh; }
+body.tick { outline: 1px solid transparent; }
 
-/* ---- Menus: compact, calm, sharp corners. ---- */
-.menu { width: max-content; min-width: 220px; max-width: 360px; padding: 4px; }
+/* ---- Menus: 24 DIP rows, 13 DIP text, hairline separators aligned with
+   the text, a solid teal row under the pointer. ---- */
+.menu { width: max-content; min-width: 232px; max-width: 360px; padding: 5px; }
 .menu button {
-  display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 24px;
-  height: 24px; padding: 0 9px; border-radius: 4px; font-size: 13px; white-space: nowrap; text-align: left;
+  display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 28px;
+  height: 24px; padding: 0 10px; border-radius: 5px; font-size: 13px; letter-spacing: 0.005em; white-space: nowrap; text-align: left;
 }
-.menu button:hover:not(:disabled), .menu button:focus-visible { background: var(--c-select); outline: none; }
-.menu button:disabled { opacity: 0.38; }
-.menu kbd { font: inherit; font-size: 11.5px; color: var(--c-faint); }
-.menu hr { border: 0; height: 1px; background: var(--c-sep); margin: 4px 8px; }
+.menu button:hover:not(:disabled), .menu button:focus-visible { background: var(--c-teal); color: var(--c-on-teal); outline: none; }
+.menu button:disabled { opacity: 0.4; }
+.menu kbd, .menu .count { font: inherit; font-size: 12px; color: var(--c-faint); }
+.menu button:hover:not(:disabled) kbd, .menu button:hover:not(:disabled) .count, .menu button:focus-visible kbd { color: var(--c-on-teal-muted); }
+.menu hr { border: 0; height: 1px; background: var(--c-sep); margin: 5px 10px; }
 .confirm { width: 290px; padding: 12px; }
 .confirm p { margin: 0 0 12px; font-size: 13px; line-height: 1.4; white-space: normal; }
 .confirm-row { display: flex; justify-content: flex-end; gap: 6px; }
 .confirm-row button { width: auto; height: 26px; padding: 0 14px; background: var(--c-module); border: 1px solid var(--c-stroke); }
-.confirm-row button.primary { background: var(--c-teal); color: var(--c-on-teal); border-color: transparent; font-weight: 600; }
-.confirm-row button.primary:hover { background: #3fd6c6; }
+.confirm-row button:hover:not(:disabled) { background: var(--c-module-hover); color: inherit; }
+.confirm-row button.primary, .confirm-row button.primary:hover:not(:disabled) { background: var(--c-teal); color: var(--c-on-teal); border-color: transparent; font-weight: 600; }
 
-/* ---- Control Centre: 322 DIP, 8 px panel, 6 px modules. ---- */
-.cc { width: 322px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
-.row { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr); gap: 8px; }
-.col { display: flex; flex-direction: column; gap: 8px; }
+/* ---- Control Centre: 322 DIP, 10 DIP padding and gaps, 8 px panel,
+   6 px modules, 28 DIP rounded-square glyphs (teal when on). ---- */
+.cc { width: 322px; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+.row { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr); gap: 10px; }
+.col { display: flex; flex-direction: column; gap: 10px; }
 .module { background: var(--c-module); border: 1px solid var(--c-stroke); border-radius: 6px; }
 .stack { display: flex; flex-direction: column; justify-content: center; padding: 4px; gap: 2px; }
-.tog { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; padding: 6px; border-radius: 5px; min-width: 0; }
-.col .tog { flex: 1; padding: 7px 9px; border-radius: 6px; }
+.tog { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; padding: 6px 5px; border-radius: 5px; min-width: 0; }
+.col .tog { flex: 1; padding: 7px 8px; border-radius: 6px; }
 .tog:hover { background: var(--c-module-hover); }
 .ic { width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center; background: var(--c-icon-off); flex: none; }
 .ic svg { width: 15px; height: 15px; }
 .ic .solid { fill: currentColor; stroke: none; }
 .tog.on .ic { background: var(--c-teal); color: var(--c-on-teal); }
-.lab { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.lab b { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.lab small { font-size: 11.5px; color: var(--c-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lab { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.lab b { font-weight: 600; font-size: 13px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lab small { font-size: 11.5px; line-height: 14px; color: var(--c-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .slider-mod { padding: 9px 10px 10px; }
-.head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+.head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; min-height: 18px; }
 .head b { font-weight: 600; font-size: 13px; }
-.link { font-size: 12px; color: var(--c-muted); padding: 1px 4px; border-radius: 4px; }
+.link { font-size: 12px; color: var(--c-muted); padding: 1px 4px; margin-right: -4px; border-radius: 4px; }
 .link:hover { color: var(--c-text); background: var(--c-hover); }
 .note { font-size: 12px; color: var(--c-muted); }
 
-/* Neutral slider: a 24 DIP track, a light fill, a white knob with sharp-ish
-   corners. The real <input type=range> sits on top, invisible, so keyboard
-   and screen readers work as usual. */
-.slider { position: relative; height: 24px; border-radius: 6px; background: var(--c-track); overflow: hidden; --v: 50%; }
-.slider .fill { position: absolute; left: 0; top: 0; bottom: 0; width: max(24px, var(--v)); background: var(--c-fill); border-radius: 6px 0 0 6px; }
+/* Slider: a 24 DIP dark track, a soft fill and a round white thumb. The
+   real <input type=range> sits on top, invisible, so keyboard and screen
+   readers work as usual. */
+.slider { position: relative; height: 24px; border-radius: 12px; background: var(--c-track); overflow: hidden; --n: 0.5; }
+/* The fill ends under the thumb's right edge. */
+.slider .fill { position: absolute; left: 0; top: 0; bottom: 0; width: calc(24px + (100% - 24px) * var(--n)); background: var(--c-fill); border-radius: 12px; }
 .slider .knob {
-  position: absolute; top: 1px; bottom: 1px; width: 22px; left: clamp(1px, calc(var(--v) - 11px), calc(100% - 23px));
-  background: var(--c-knob); border-radius: 5px; box-shadow: 0 0 0 1px var(--c-knob-edge), 0 1px 3px rgba(0, 0, 0, 0.25);
+  position: absolute; top: 2px; width: 20px; height: 20px; left: calc(2px + (100% - 24px) * var(--n, 0.5));
+  background: var(--c-knob); border-radius: 50%; box-shadow: 0 0 0 0.5px var(--c-knob-edge), 0 1px 3px rgba(0, 0, 0, 0.3);
 }
-.slider .glyph { position: absolute; left: 0; top: 0; bottom: 0; width: 26px; display: grid; place-items: center; color: #3a3d44; z-index: 2; pointer-events: none; }
+.slider .glyph { position: absolute; left: 0; top: 0; bottom: 0; width: 28px; display: grid; place-items: center; color: var(--c-on-fill); z-index: 2; pointer-events: none; }
 .slider .glyph svg { width: 14px; height: 14px; }
-.slider .mute { pointer-events: auto; border-radius: 6px 0 0 6px; }
+.slider .mute { pointer-events: auto; border-radius: 12px 0 0 12px; }
 .slider .mute .x { display: none; }
 .slider .mute.on .x { display: inline; }
 .slider .mute.on .waves { display: none; }
-.slider .mute.on { color: #c8322a; }
-.slider input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: default; z-index: 1; }
+.slider .mute.on { color: #ff6b61; }
+.slider input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: default; z-index: 1; -webkit-appearance: none; appearance: none; }
 .slider:focus-within { outline: 2px solid var(--c-teal); outline-offset: 1px; }
 
-.foot { display: flex; justify-content: space-between; padding: 0 2px; }
+.foot { display: flex; justify-content: space-between; gap: 8px; min-width: 0; }
+.foot .link { margin: 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

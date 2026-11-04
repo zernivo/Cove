@@ -8,6 +8,11 @@
     <link rel="stylesheet" href="./src/topbar.css" />
   </head>
   <body>
+    <!-- Wallpaper plate: a pre-blurred slice of the desktop picture under the
+         Ink tint (a transparent WebView2 window can't blur what's behind it,
+         and DWM acrylic falls back to flat grey on a window that is never
+         active, which the bar never is). -->
+    <div class="plate" id="plate"><img id="plate-img" alt="" /></div>
     <div class="bar">
       <div class="left">
         <button class="mark" id="mark" title="Cove">
@@ -22,13 +27,10 @@
         <button class="pill" id="wifi-btn" title="Wi-Fi">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.5 16a5 5 0 0 1 7 0" /><circle cx="12" cy="19.2" r="0.6" /></svg>
         </button>
-        <button class="pill" id="vol-btn" title="Sound">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" /><path id="vol-waves" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" /><path id="vol-x" class="hidden" d="M16 9.5l5 5M21 9.5l-5 5" /></svg>
+        <button class="pill hidden" id="battery" title="Battery"><span class="batt"><span class="fill" id="batt-fill"></span></span></button>
+        <button class="pill" id="control" title="Control Centre (Wi-Fi, sound, display)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4" width="17" height="7" rx="3.5" /><rect x="3.5" y="13" width="17" height="7" rx="3.5" /><circle cx="16.5" cy="7.5" r="1.6" class="dot" /><circle cx="7.5" cy="16.5" r="1.6" class="dot" /></svg>
         </button>
-        <button class="pill" id="control" title="Control Centre">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h10M18 8h2M4 16h2M10 16h10" /><circle cx="16" cy="8" r="2" /><circle cx="8" cy="16" r="2" /></svg>
-        </button>
-        <button class="pill hidden" id="battery" title="Battery"><span class="batt"><span class="fill" id="batt-fill"></span></span><span id="batt-text"></span></button>
         <button class="pill clock" id="clock" title="Notifications and calendar"></button>
       </div>
     </div>

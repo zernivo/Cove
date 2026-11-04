@@ -32,7 +32,11 @@ html[data-mode="dark"], html[data-mode="dark"] body {
   align-items: flex-end;
   justify-content: center;
   padding-bottom: 8px;
+  /* Slide away / back: ~150 ms, critically damped (no bounce). */
+  transition: transform 0.16s cubic-bezier(0.25, 1, 0.5, 1);
 }
+body.tucked .stage { transform: translateY(calc(100% + 4px)); pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .stage { transition-duration: 0s; } }
 .dock {
   display: flex;
   align-items: flex-end;

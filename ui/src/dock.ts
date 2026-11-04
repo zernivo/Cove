@@ -307,6 +307,13 @@ if (inTauri) {
   listen<string>("dock-bounce", (e) => bounce(`${e.payload}:${e.payload}`));
   // Moved to another display, or the screen changed size or scale.
   listen("dock-reflow", () => { lastWidth = 0; lastHeight = 0; place(); });
+  // "Hide the dock": the app slides the dock down while a window touches it
+  // (or always, by choice) and back up at the bottom edge. Only the page
+  // moves; the window stays put and lets clicks through while it's down.
+  listen<boolean>("dock-slide", (e) => {
+    document.body.classList.toggle("tucked", e.payload);
+    if (e.payload) { hideMenu(); closeStack(); }
+  });
 }
 refresh();
 setInterval(refresh, 1200);

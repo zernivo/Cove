@@ -7,7 +7,7 @@ import "./theme";
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-interface TopState { app: string; kind: "app" | "cove" | "desktop" | "shell"; hwnd: number }
+interface TopState { app: string; kind: "app" | "cove" | "desktop" | "shell"; hwnd: number; count?: number }
 interface Controls { volume: number | null; muted: boolean; brightness: number | null; wifi: string | null; dark: boolean }
 type Kind = "cove" | "app" | "confirm" | "cc";
 
@@ -22,18 +22,31 @@ const $ = (id: string) => document.getElementById(id)!;
 const views: Record<Kind, HTMLElement> = { cove: $("menu"), app: $("appmenu"), confirm: $("confirm"), cc: $("cc") };
 let current: Kind | null = null;
 
-/** Show one popover, then have the app size the window to it and show it. */
+/** Show one popover, then have the app size the window to it and show it.
+ *
+ *  Robust against the "empty grey rectangle": the content is laid out and
+ *  measured synchronously (no animation frame needed, so it works while the
+ *  window is still hidden and the page gets no frames), there is no opacity
+ *  entrance (a fade that starts while hidden can sit at opacity 0 on the
+ *  first frame Windows shows), and once the window is visible the page
+ *  forces a fresh paint (popover-repaint), so the frame on screen is never
+ *  one rendered before the content was there. After placing, the popover
+ *  fills the window exactly (body.fit), so rounding never clips its edge. */
 async function show(kind: Kind): Promise<void> {
+  document.body.classList.remove("fit");
   for (const [k, el] of Object.entries(views)) el.classList.toggle("hidden", k !== kind);
   current = kind;
-  // Restart the entrance fade.
   const el = views[kind];
-  el.style.animation = "none";
-  void el.offsetWidth;
-  el.style.animation = "";
-  await new Promise(requestAnimationFrame);
-  const r = el.getBoundingClientRect();
+  const r = el.getBoundingClientRect(); // forces layout now
   await invoke("popover_place", { kind, width: Math.ceil(r.width), height: Math.ceil(r.height) }).catch(() => {});
+  document.body.classList.add("fit");
+  repaint();
+}
+
+/** Nudge a paint-only property so the compositor produces a new frame. */
+function repaint(): void {
+  document.body.classList.toggle("tick");
+  requestAnimationFrame(() => requestAnimationFrame(() => document.body.classList.toggle("tick")));
 }
 
 function hide(): void {
@@ -76,9 +89,15 @@ $("confirm-yes").addEventListener("click", () => {
 function buildAppMenu(s: TopState): void {
   const m = views.app;
   m.innerHTML = "";
-  const add = (label: string, run: () => unknown, enabled = true) => {
+  const add = (label: string, run: () => unknown, enabled = true, extra?: string, extraClass = "kbd") => {
     const b = document.createElement("button");
-    b.textContent = label;
+    b.append(label);
+    if (extra) {
+      const k = document.createElement(extraClass === "count" ? "span" : "kbd");
+      if (extraClass === "count") k.className = "count";
+      k.textContent = extra;
+      b.appendChild(k);
+    }
     b.disabled = !enabled;
     b.addEventListener("click", () => { hide(); run(); });
     m.appendChild(b);
@@ -89,22 +108,30 @@ function buildAppMenu(s: TopState): void {
     add("Cove Settings…", () => invoke("topbar_menu", { what: "settings" }));
     sep();
     add("Hide Cove", () => invoke("topbar_app", { what: "hide", hwnd: s.hwnd, name: s.app }));
+    add("Hide Others", () => invoke("topbar_app", { what: "hide-others", hwnd: s.hwnd, name: s.app }));
     sep();
     add("Quit Cove", () => invoke("topbar_menu", { what: "quit" }));
     return;
   }
   const has = s.kind === "app" && s.hwnd !== 0;
   const name = s.app || "Desktop";
-  add("Show All Windows", () => invoke("topbar_app", { what: "expose", hwnd: s.hwnd, name }), has);
-  add(`Hide ${name}`, () => invoke("topbar_app", { what: "hide", hwnd: s.hwnd, name }), has);
+  const app = (what: string) => () => invoke("topbar_app", { what, hwnd: s.hwnd, name });
+  add("Show All Windows", app("expose"), has, s.count ? String(s.count) : undefined, "count");
   sep();
-  add(`Quit ${name}`, () => invoke("topbar_app", { what: "quit", hwnd: s.hwnd, name }), has);
+  add(`Hide ${name}`, app("hide"), has);
+  add("Hide Others", app("hide-others"), has);
+  sep();
+  add("Minimise", app("minimize"), has, "Win ↓");
+  add("Zoom", app("zoom"), has);
+  add("Bring All to Front", app("front"), has);
+  sep();
+  add(`Quit ${name}`, app("quit"), has);
 }
 
 // ---- Control Centre ----
 const vol = $("vol") as HTMLInputElement;
 const bright = $("bright") as HTMLInputElement;
-const paint = (input: HTMLInputElement) => (input.parentElement as HTMLElement).style.setProperty("--v", `${input.value}%`);
+const paint = (input: HTMLInputElement) => (input.parentElement as HTMLElement).style.setProperty("--n", String(Number(input.value) / 100));
 
 function renderControls(c: Controls): void {
   $("wifi-name").textContent = c.wifi ?? "Not connected";
@@ -153,6 +180,7 @@ views.cc.querySelectorAll<HTMLButtonElement>(".foot button[data-go]").forEach((b
 
 // ---- Open / close ----
 if (inTauri) {
+  listen("popover-repaint", repaint);
   listen<{ kind: Kind; data: TopState | null }>("popover-show", async (e) => {
     const { kind, data } = e.payload;
     if (kind === "app") {
@@ -165,7 +193,8 @@ if (inTauri) {
 } else {
   // Browser preview: ?k=cc|cove|app
   const k = (new URLSearchParams(location.search).get("k") ?? "cc") as Kind;
-  if (k === "app") buildAppMenu({ app: "Google Chrome", kind: "app", hwnd: 1 });
+  const q = new URLSearchParams(location.search);
+  if (k === "app") buildAppMenu({ app: q.get("app") ?? "Google Chrome", kind: "app", hwnd: 1, count: 3 });
   if (k === "cc") invoke<Controls>("controls_get").then(renderControls);
   show(k);
 }

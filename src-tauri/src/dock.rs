@@ -356,8 +356,8 @@ pub fn insert_cove(items: &mut Vec<DockItem>, cove: DockItem) {
 }
 
 pub use imp::{
-    activate, close_windows, cursor, foreground, minimize, monitor_at, taskbar_autohide, taskbar_is_visible, taskbar_visible,
-    windows, work_area,
+    activate, close_windows, cursor, foreground, minimize, monitor_at, overlaps, taskbar_autohide, taskbar_is_visible,
+    taskbar_visible, windows, work_area, zoom,
 };
 
 /// While Cove desktop is on, the Windows taskbar stays hidden (the dock
@@ -628,6 +628,59 @@ mod imp {
         }
     }
 
+    /// "Zoom" in the app menu: maximise, or restore when already maximised.
+    pub fn zoom(h: isize) {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{IsZoomed, SW_MAXIMIZE};
+        if let Some(h) = valid(h) {
+            unsafe {
+                if IsZoomed(h) != 0 {
+                    ShowWindow(h, SW_RESTORE);
+                } else {
+                    ShowWindow(h, SW_MAXIMIZE);
+                }
+            }
+        }
+    }
+
+    /// Does any real, visible, non-minimised window (not Cove's bars) cover
+    /// any part of `rc` (physical px)? The dock hides itself while one does.
+    /// Cove's own Settings window ("Cove") counts like any app.
+    pub fn overlaps(rc: (i32, i32, i32, i32)) -> bool {
+        use windows_sys::Win32::Graphics::Dwm::DWMWA_EXTENDED_FRAME_BOUNDS;
+        unsafe extern "system" fn each(hwnd: HWND, lparam: LPARAM) -> BOOL {
+            let out = &mut *(lparam as *mut Vec<HWND>);
+            if is_real(hwnd) && IsIconic(hwnd) == 0 {
+                out.push(hwnd);
+            }
+            1
+        }
+        let mut hs: Vec<HWND> = Vec::new();
+        unsafe { EnumWindows(Some(each), &mut hs as *mut Vec<HWND> as LPARAM) };
+        let me = unsafe { GetCurrentProcessId() };
+        hs.into_iter().any(|h| unsafe {
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(h, &mut pid);
+            if pid == me {
+                let n = GetWindowTextLengthW(h);
+                let mut buf = vec![0u16; n as usize + 1];
+                let got = GetWindowTextW(h, buf.as_mut_ptr(), buf.len() as i32);
+                if String::from_utf16_lossy(&buf[..got.max(0) as usize]) != "Cove" {
+                    return false;
+                }
+            }
+            // The visible frame, without the invisible resize borders.
+            let mut r: RECT = std::mem::zeroed();
+            let ok = DwmGetWindowAttribute(
+                h,
+                DWMWA_EXTENDED_FRAME_BOUNDS as _,
+                &mut r as *mut RECT as *mut c_void,
+                std::mem::size_of::<RECT>() as u32,
+            ) == 0
+                || GetWindowRect(h, &mut r) != 0;
+            ok && r.left < rc.2 && r.right > rc.0 && r.top < rc.3 && r.bottom > rc.1
+        })
+    }
+
     pub fn close_windows(hs: &[isize]) {
         for &h in hs {
             if let Some(h) = valid(h) {
@@ -745,6 +798,10 @@ mod imp {
     }
     pub fn activate(_h: isize) {}
     pub fn minimize(_h: isize) {}
+    pub fn zoom(_h: isize) {}
+    pub fn overlaps(_rc: (i32, i32, i32, i32)) -> bool {
+        false
+    }
     pub fn close_windows(_h: &[isize]) {}
     pub fn work_area() -> Option<(i32, i32, i32, i32)> {
         None
