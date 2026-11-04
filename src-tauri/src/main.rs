@@ -303,6 +303,7 @@ fn topbar_apply(app: &AppHandle, on: bool) {
     } else {
         topbar::unregister(h);
         let _ = w.hide();
+        popover_close(app);
     }
 }
 
@@ -325,6 +326,103 @@ fn topbar_set(enabled: bool, app: AppHandle, state: tauri::State<'_, AppState>) 
 #[tauri::command]
 async fn topbar_state() -> topbar::TopState {
     topbar::state()
+}
+
+// ---- Menu bar popovers: Control Centre and the bar's menus ----
+//
+// Each opens in its own small transparent window ("popover"), sized to the
+// popover itself, so nothing but the popover shows. The menu bar window
+// never grows. Clicking anywhere else (the popover loses focus) closes it.
+
+struct PopState {
+    /// What's open now ("cc", "cove", "app", "confirm").
+    open: Option<String>,
+    /// Where it hangs from: x in DIP from the bar's left, and which edge.
+    x: f64,
+    right: bool,
+    /// The last popover closed because you clicked away, and when: a click
+    /// on the same bar item that caused it must not open it again.
+    blurred: Option<(String, std::time::Instant)>,
+}
+
+static POP: Mutex<PopState> = Mutex::new(PopState { open: None, x: 0.0, right: false, blurred: None });
+
+fn popover_state_changed(app: &AppHandle) {
+    let open = POP.lock().ok().and_then(|p| p.open.clone());
+    let _ = app.emit_to("topbar", "popover-state", open);
+}
+
+fn popover_close(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("popover") {
+        let _ = w.hide();
+    }
+    if let Ok(mut p) = POP.lock() {
+        p.open = None;
+    }
+    popover_state_changed(app);
+}
+
+/// Open (or close, when it's already open) a popover. `x` is the anchor in
+/// DIP from the menu bar's left edge; `right` hangs the popover's right edge
+/// there. `data` goes to the popover page (the app menu's front app).
+#[tauri::command]
+fn popover_toggle(kind: String, x: f64, right: bool, data: Option<serde_json::Value>, app: AppHandle) {
+    let open_now = {
+        let Ok(mut p) = POP.lock() else { return };
+        if p.open.as_deref() == Some(kind.as_str()) {
+            None
+        } else if p.blurred.as_ref().is_some_and(|(k, t)| *k == kind && t.elapsed() < std::time::Duration::from_millis(350)) {
+            // This very click closed it (the popover lost focus to the bar).
+            p.blurred = None;
+            return;
+        } else {
+            p.x = x;
+            p.right = right;
+            Some(())
+        }
+    };
+    if open_now.is_none() {
+        popover_close(&app);
+        return;
+    }
+    // The page renders, measures itself and calls popover_place to show.
+    let _ = app.emit_to("popover", "popover-show", serde_json::json!({ "kind": kind, "data": data }));
+}
+
+/// The popover page has rendered `kind` at `width` x `height` DIP: size the
+/// window to exactly that, hang it under the menu bar and show it.
+#[tauri::command]
+fn popover_place(kind: String, width: f64, height: f64, app: AppHandle) {
+    let Some(w) = app.get_webview_window("popover") else { return };
+    let (x, right) = POP.lock().map(|p| (p.x, p.right)).unwrap_or((0.0, false));
+    let Some(m) = dock::primary() else { return };
+    let sf = app.primary_monitor().ok().flatten().map(|m| m.scale_factor()).unwrap_or(1.0);
+    let bar = app
+        .get_webview_window("topbar")
+        .and_then(|t| t.hwnd().ok())
+        .and_then(|h| appbar::held(h.0 as isize))
+        .unwrap_or((m.monitor.0, m.monitor.1, m.monitor.2, m.monitor.1 + (TOPBAR_HEIGHT * sf).round() as i32));
+    let (pw, ph) = ((width * sf).ceil() as i32, (height * sf).ceil() as i32);
+    let ax = bar.0 + (x * sf).round() as i32;
+    let left = if right { ax - pw } else { ax };
+    let edge = (6.0 * sf).round() as i32;
+    let left = left.clamp(m.monitor.0 + edge, (m.monitor.2 - pw - edge).max(m.monitor.0));
+    // Menus hang from the bar; Control Centre floats a few DIP below it.
+    let gap = if kind == "cc" { (5.0 * sf).round() as i32 } else { (2.0 * sf).round() as i32 };
+    let top = bar.3 + gap;
+    let _ = w.show();
+    appbar::place(w.hwnd().map(|h| h.0 as isize).unwrap_or(0), (left, top, left + pw, top + ph));
+    let _ = w.set_focus();
+    if let Ok(mut p) = POP.lock() {
+        p.open = Some(kind);
+        p.blurred = None;
+    }
+    popover_state_changed(&app);
+}
+
+#[tauri::command]
+fn popover_hide(app: AppHandle) {
+    popover_close(&app);
 }
 
 // ---- Control Centre (async: runs off the UI thread) ----
@@ -2060,6 +2158,19 @@ fn main() {
                 // system shadow and rounded corners.
                 let _ = window.set_shadow(true);
             }
+            // Menu bar popovers: acrylic only behind the popover itself (the
+            // window is exactly the popover's size), 8 px corners.
+            #[cfg(target_os = "windows")]
+            if let Some(window) = app.get_webview_window("popover") {
+                let _ = window_vibrancy::apply_acrylic(&window, None);
+                if let Ok(hwnd) = window.hwnd() {
+                    use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE};
+                    let round: u32 = 2; // DWMWCP_ROUND (8 px)
+                    unsafe {
+                        DwmSetWindowAttribute(hwnd.0 as _, DWMWA_WINDOW_CORNER_PREFERENCE as _, &round as *const u32 as *const _, 4);
+                    }
+                }
+            }
             // Search panel: acrylic blur of the desktop behind it.
             #[cfg(target_os = "windows")]
             if let Some(window) = app.get_webview_window("search") {
@@ -2088,6 +2199,20 @@ fn main() {
                 api.prevent_close();
                 if window.label() == "main" {
                     dock_changed(window.app_handle());
+                }
+            }
+            // A menu bar popover closes as soon as you click anywhere else.
+            WindowEvent::Focused(false) if window.label() == "popover" => {
+                let was = POP.lock().ok().and_then(|mut p| {
+                    let k = p.open.take();
+                    if let Some(k) = &k {
+                        p.blurred = Some((k.clone(), std::time::Instant::now()));
+                    }
+                    k
+                });
+                if was.is_some() {
+                    let _ = window.hide();
+                    popover_state_changed(window.app_handle());
                 }
             }
             // Search disappears as soon as you click elsewhere.
@@ -2127,6 +2252,9 @@ fn main() {
             topbar_menu,
             topbar_power_now,
             topbar_app,
+            popover_toggle,
+            popover_place,
+            popover_hide,
             controls_get,
             controls_set,
             dock_status,

@@ -7,6 +7,7 @@
     "search",
     "dock",
     "topbar",
+    "popover",
     "switcher",
     "expose"
   ],
