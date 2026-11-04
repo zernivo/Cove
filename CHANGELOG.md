@@ -2,6 +2,9 @@
 
 Each release's notes come from its section here, and Cove shows them in **Updates**.
 
+## Unreleased
+- **Wallpaper gallery:** Settings › Desktop now has a gallery: Cove, Anime, Comic, F1, Cars, Coding, Nature, Space and Minimal, each in dark and light. Photos come from Wikimedia Commons and NASA under free licences, with the photographer, licence and a link on hover. Cove's own art (Anime, Comic, Coding) is made for Cove. Nothing downloads until you pick one; it shows real progress, then stays cached. **Use my own wallpaper** sets any picture you choose. Live wallpapers are coming soon.
+
 ## v0.9.0
 - **Launch intro:** the first time you open Cove, its C builds itself from small blocks and the name rises in. After that, a quick, quiet mark. Click or press any key to skip.
 - **Dock motion:** apps bounce until their window opens, hop when they need you, and grow in or shrink away as they come and go. Reduce motion keeps the dock still.

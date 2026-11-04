@@ -56,9 +56,18 @@
         <div class="scene" id="scene-desktop">
           <h1>Desktop</h1>
           <p class="lede">Wallpaper and the look of everything Cove draws.</p>
-          <div class="group">
-            <div class="walls" id="walls"></div>
-            <div class="row"><p class="note" id="wall-note">Original Cove art, in light and dark.</p><button class="btn link hidden" id="wall-restore">Use my own wallpaper</button></div>
+          <div class="group gallery" id="gallery">
+            <div class="gal-head"><h2>Wallpaper</h2><div class="seg" id="gal-mode" role="radiogroup" aria-label="Dark or light wallpapers"></div></div>
+            <div class="gal-chips" id="gal-chips" role="tablist" aria-label="Wallpaper categories"></div>
+            <div class="gal-grid" id="walls" role="listbox" aria-label="Wallpapers"></div>
+            <div class="gal-foot">
+              <p class="note" id="wall-note">Photos load from free-licence libraries when you pick one, and stay credited. Cove's own art ships with the app.</p>
+              <div class="gal-actions">
+                <button class="btn link hidden" id="wall-restore">Put back my old wallpaper</button>
+                <button class="btn link" id="wall-own">Use my own wallpaper</button>
+                <input type="file" id="wall-own-file" accept="image/jpeg,image/png,image/bmp" hidden />
+              </div>
+            </div>
           </div>
           <div class="group">
             <div class="row"><div class="label"><h2>Appearance</h2></div><div class="seg" id="look-mode"></div></div>

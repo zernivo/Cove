@@ -112,13 +112,57 @@ h2 { font-size: 13.5px; font-weight: 550; }
 .btn:disabled { opacity: 0.45; cursor: default; }
 
 /* Wallpapers */
-.walls { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-.wall { border: 0; padding: 0; background: none; cursor: pointer; text-align: left; }
-.wall img { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 9px; box-shadow: 0 0 0 1px var(--hair); transition: box-shadow 0.18s ease, transform 0.2s var(--spring); }
-.wall span { display: block; font-size: 12px; color: var(--fg-2); padding: 6px 2px 0; }
-.wall:hover img { transform: translateY(-1px); }
-.wall.on img { box-shadow: 0 0 0 2px var(--teal); }
-.wall.on span { color: var(--fg); }
+/* ---- Wallpaper gallery (Desktop scene). Sharp 6-8 px corners on Ink. ---- */
+.group.gallery { border-radius: 8px; }
+.gal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px 0; }
+.gal-head h2 { font-size: 13.5px; font-weight: 600; }
+.gal-head .seg { border-radius: 6px; }
+.gal-head .chip { border-radius: 5px; padding: 4px 12px; }
+.group.gallery > .gal-chips, .group.gallery > .gal-grid { border-top: 0; }
+.gal-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px 12px; }
+.gal-chips .chip { background: var(--ink); box-shadow: inset 0 0 0 1px var(--hair); padding: 4px 10px; font-size: 12px; border-radius: 6px; }
+.gal-chips .chip.on { background: var(--teal); color: var(--teal-ink); box-shadow: none; font-weight: 600; }
+.gal-chips .chip:disabled { cursor: default; color: var(--fg-3); }
+.gal-chips .chip:disabled:hover { color: var(--fg-3); }
+.gal-chips .chip sup { font-size: 9.5px; margin-left: 4px; color: var(--fg-3); vertical-align: 1px; font-weight: 500; }
+.gal-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 8px; padding: 0 14px 14px; }
+.gal-empty { grid-column: 1 / -1; color: var(--fg-3); font-size: 12.5px; padding: 18px 0; text-align: center; }
+.wt { border: 0; padding: 0; background: none; cursor: pointer; text-align: left; min-width: 0; color: inherit; }
+.wt:focus-visible { outline: none; }
+.wt:focus-visible .im { box-shadow: 0 0 0 2px var(--fg-2); }
+.wt .im { position: relative; aspect-ratio: 16 / 10; border-radius: 6px; background: #0c0d10 center / cover no-repeat; box-shadow: 0 0 0 1px var(--hair); overflow: hidden; transition: box-shadow 0.18s ease, transform 0.2s var(--spring); }
+.wt .im img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.2s ease; }
+.wt .im img.ready { opacity: 1; }
+.wt:hover .im { transform: translateY(-1px); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22), 0 8px 18px rgba(0, 0, 0, 0.45); }
+.wt.on .im { box-shadow: 0 0 0 2px var(--teal); }
+.wt .wcap { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; font-size: 11.5px; color: var(--fg-2); padding: 5px 1px 0; white-space: nowrap; }
+.wt .wcap b { font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
+.wt .wcap i { font-style: normal; color: var(--fg-3); font-size: 10.5px; flex: none; }
+.wt.on .wcap b { color: var(--fg); }
+.wt .tick { position: absolute; right: 5px; top: 5px; width: 16px; height: 16px; border-radius: 4px; background: var(--teal); display: grid; place-items: center; z-index: 2; }
+.wt .tick svg { width: 10px; height: 10px; fill: none; stroke: var(--teal-ink); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.wt .pair { position: absolute; left: 5px; bottom: 5px; width: 12px; height: 12px; border-radius: 50%; background: #111215; border-right: 6px solid #ecebe8; box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.7); z-index: 1; }
+.wt .credit { position: absolute; left: 0; right: 0; bottom: 0; padding: 6px 7px; background: rgba(12, 13, 16, 0.86); display: grid; gap: 1px; font-size: 10.5px; line-height: 1.3; opacity: 0; transform: translateY(4px); transition: opacity 0.15s ease, transform 0.2s var(--spring); pointer-events: none; z-index: 3; }
+.wt:hover .credit, .wt:focus-visible .credit { opacity: 1; transform: none; pointer-events: auto; }
+.wt .credit b { font-weight: 600; color: var(--fg); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wt .credit span { color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wt .credit a { color: var(--teal); text-decoration: none; justify-self: start; border-radius: 3px; }
+.wt .credit a:hover { text-decoration: underline; }
+.wt .credit em { font-style: normal; color: var(--fg-3); }
+/* Downloading: a real progress bar fed by the download. */
+.wt .load { position: absolute; inset: 0; display: grid; place-items: end stretch; background: rgba(12, 13, 16, 0.55); z-index: 4; }
+.wt .load .bar { height: 3px; margin: 0 8px 8px; border-radius: 2px; background: rgba(255, 255, 255, 0.14); overflow: hidden; }
+.wt .load .bar i { display: block; height: 100%; width: 0; background: var(--teal); transition: width 0.12s linear; }
+.wt .load .pct { position: absolute; left: 8px; bottom: 15px; font-size: 10.5px; color: var(--fg); font-variant-numeric: tabular-nums; }
+.wt .load.indet .bar i { width: 30%; animation: gal-indet 1.1s ease-in-out infinite; }
+@keyframes gal-indet { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+.wt .err { position: absolute; inset: 0; display: grid; align-content: end; gap: 2px; padding: 7px; background: rgba(12, 13, 16, 0.86); font-size: 10.5px; line-height: 1.3; color: var(--danger-fg); z-index: 4; }
+.wt .err span { color: var(--fg-2); }
+.gal-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; }
+.gal-foot .note { font-size: 11.5px; color: var(--fg-3); max-width: 40ch; margin: 0; }
+.gal-actions { display: flex; gap: 4px; flex: none; }
+.gal-actions .btn.link { border-radius: 6px; }
+@media (prefers-reduced-motion: reduce) { .wt .im, .wt .credit { transition: none; } .wt .load.indet .bar i { animation: none; width: 100%; opacity: 0.5; } }
 .sched-times { gap: 18px; color: var(--fg-2); font-size: 12.5px; }
 .sched-times.off { display: none; }
 .sched-times input {
