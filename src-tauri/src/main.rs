@@ -2,6 +2,7 @@
 // Hide the console window in release builds on Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod appnames;
 mod clipboard;
 mod controls;
 mod dock;
@@ -360,6 +361,82 @@ fn topbar_open(what: String, app: AppHandle) -> Result<(), String> {
         _ => return Err("Unknown item.".into()),
     };
     search::explorer(uri).map_err(|e| e.to_string())
+}
+
+/// The Cove menu (the mark at the left of the menu bar), like the Apple menu.
+/// Restart and Shut down never act without a confirmation: Windows shows its
+/// own, or the bar asks first and calls `topbar_power_now`.
+#[tauri::command]
+fn topbar_menu(what: String, app: AppHandle, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    match what.as_str() {
+        "about" => {
+            show_main(&app);
+            let _ = app.emit("nav", "updates");
+        }
+        "settings" => show_main(&app),
+        "wallpaper" => {
+            show_main(&app);
+            let _ = app.emit("nav", "desktop");
+        }
+        "desktop-off" => {
+            dock_set(false, app.clone(), state.clone());
+            topbar_set(false, app.clone(), state);
+            let _ = app.emit("settings-changed", ());
+        }
+        "lock" => return search::action("lock"),
+        "sleep" | "restart" | "shutdown" => return topbar::power(&what),
+        "quit" => app.exit(0),
+        _ => return Err("Unknown item.".into()),
+    }
+    Ok(())
+}
+
+/// Restart / Shut down after the menu bar's own confirmation (only used
+/// when Windows' confirmation dialog isn't available). Apps can still
+/// object: no force flag, so unsaved work stops it.
+#[tauri::command]
+fn topbar_power_now(what: String) -> Result<(), String> {
+    let flag = match what.as_str() {
+        "restart" => "/r",
+        "shutdown" => "/s",
+        _ => return Err("Unknown item.".into()),
+    };
+    let mut cmd = std::process::Command::new("shutdown.exe");
+    cmd.args([flag, "/t", "0"]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    cmd.spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// The app menu (click the app's name): every window of the app in front.
+fn app_windows(hwnd: isize) -> Vec<isize> {
+    let wins = dock::windows();
+    match wins.iter().find(|w| w.hwnd == hwnd) {
+        Some(w) => {
+            let key = w.app_key();
+            wins.iter().filter(|o| o.app_key() == key).map(|o| o.hwnd).collect()
+        }
+        None if hwnd != 0 => vec![hwnd],
+        None => Vec::new(),
+    }
+}
+
+#[tauri::command]
+fn topbar_app(what: String, hwnd: isize, name: String, app: AppHandle) -> Result<(), String> {
+    let wins = app_windows(hwnd);
+    match what.as_str() {
+        // App Exposé: just this app's windows.
+        "expose" if !wins.is_empty() => open_expose(&app, name, wins),
+        "hide" => wins.iter().for_each(|&h| dock::minimize(h)),
+        // Ask politely (WM_CLOSE), so the app can offer to save.
+        "quit" => dock::close_windows(&wins),
+        "expose" => {}
+        _ => return Err("Unknown item.".into()),
+    }
+    Ok(())
 }
 
 // ---- Cove Dock ----
@@ -1720,6 +1797,9 @@ fn main() {
             topbar_set,
             topbar_state,
             topbar_open,
+            topbar_menu,
+            topbar_power_now,
+            topbar_app,
             controls_get,
             controls_set,
             dock_status,

@@ -122,18 +122,6 @@ pub fn matches(pin_target: &str, pin_name: &str, exe: &str) -> bool {
     t.contains(&s) || n.contains(&s) || (s == "code" && t.contains("visualstudiocode"))
 }
 
-fn pretty(exe: &str, title: &str) -> String {
-    let s = std::path::Path::new(exe).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-    if s.eq_ignore_ascii_case("applicationframehost") || s.is_empty() {
-        return title.to_string();
-    }
-    let mut c = s.chars();
-    match c.next() {
-        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-        None => title.to_string(),
-    }
-}
-
 /// Pins are Start AppIDs, or a path (an exe kept from the running list, or
 /// a shortcut brought over from the taskbar).
 pub fn is_exe_pin(target: &str) -> bool {
@@ -247,7 +235,7 @@ pub fn state(pins: &[crate::settings::Pin], stacks: &[String]) -> DockState {
         let icon = icon_from(&w.icon_keys(), &mut icon_jobs);
         groups.push(DockItem {
             kind: "running",
-            name: pretty(&w.exe, &w.title),
+            name: crate::appnames::friendly(&w.exe, w.aumid.as_deref(), &w.title),
             // Store apps relaunch through their AppID; others through the exe.
             target: match (&w.aumid, w.is_uwp_frame()) {
                 (Some(a), true) => a.clone(),
