@@ -18,6 +18,7 @@ export default defineConfig({
         popover: resolve(__dirname, "ui/popover.html"),
         switcher: resolve(__dirname, "ui/switcher.html"),
         expose: resolve(__dirname, "ui/expose.html"),
+        intro: resolve(__dirname, "ui/intro.html"),
       },
     },
   },

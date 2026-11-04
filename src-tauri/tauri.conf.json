@@ -103,7 +103,7 @@
       },
       {
         "label": "expose",
-        "title": "Cove Expos\u00e9",
+        "title": "Cove Exposé",
         "url": "expose.html",
         "width": 1200,
         "height": 800,
@@ -115,6 +115,22 @@
         "resizable": false,
         "shadow": false,
         "focus": false
+      },
+      {
+        "label": "intro",
+        "title": "Cove",
+        "url": "intro.html",
+        "width": 1280,
+        "height": 720,
+        "decorations": false,
+        "transparent": false,
+        "backgroundColor": "#111215",
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "resizable": false,
+        "shadow": false,
+        "focus": true
       }
     ],
     "security": {

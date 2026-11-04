@@ -37,6 +37,11 @@ pub struct Settings {
     pub dock_display: String,
     /// Folder stacks in the dock (keys from stacks::KINDS), in order.
     pub dock_stacks: Vec<String>,
+    /// When the dock gets out of the way: "smart" (slides down while a
+    /// window touches it, back up at the bottom edge), "always" (only at
+    /// the bottom edge) or "never" (always shown, reserving its strip).
+    #[serde(default = "smart")]
+    pub dock_hide: String,
     /// The taskbar's auto-hide state before Cove changed it.
     pub taskbar_prev_autohide: Option<bool>,
     /// Alt+Tab shows Cove's app switcher (one icon per app).
@@ -119,6 +124,13 @@ fn yes() -> bool {
     true
 }
 
+fn smart() -> String {
+    "smart".into()
+}
+
+/// The dock hide modes Settings offers.
+pub const DOCK_HIDE: &[&str] = &["smart", "always", "never"];
+
 pub fn default_pins() -> Vec<Pin> {
     vec![
         Pin { name: "File Explorer".into(), target: "Microsoft.Windows.Explorer".into(), exe: None, aumid: None },
@@ -147,6 +159,7 @@ impl Default for Settings {
             dock_pins: default_pins(),
             dock_stacks: vec!["downloads".into()],
             dock_display: "main".into(),
+            dock_hide: smart(),
             taskbar_prev_autohide: None,
             topbar: false,
             switcher: false,

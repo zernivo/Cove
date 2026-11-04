@@ -4,46 +4,82 @@ html, body {
   overflow: hidden;
   background: transparent;
   user-select: none;
-  font: 13px/1 "Segoe UI Variable", "Segoe UI", Inter, system-ui, sans-serif;
-  color: var(--c-text);
+  font: 13px/1 "Segoe UI Variable Text", "Segoe UI", Inter, system-ui, sans-serif;
+  color: var(--c-bar-text);
+  -webkit-font-smoothing: antialiased;
   --bar-h: 25px;
 }
-/* Menu bar: 25 DIP like macOS (24 pt), 13 DIP text, 15 DIP icons. The
-   AppBar strip Cove reserves is the same 25 DIP (TOPBAR_HEIGHT in main.rs). */
+/* Menu bar: 25 DIP like macOS (24 pt), 13 DIP text, 16 DIP icons, a 21 DIP
+   hover pill. The AppBar strip Cove reserves is the same 25 DIP
+   (TOPBAR_HEIGHT in main.rs). Layers, bottom to top: an opaque base, the
+   blurred wallpaper plate, the Ink (or paper) tint and a hairline edge.
+   The base is opaque on purpose: the bar must never read as grey glass. */
+.plate {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--c-bar-base);
+}
+.plate img {
+  position: absolute;
+  /* Aligned to the screen (the bar sits at the main display's top-left);
+     40 DIP of bleed so the blur doesn't fade in from the edges. */
+  left: -40px;
+  top: -40px;
+  width: calc(var(--screen-w, 100vw) + 80px);
+  height: calc(var(--screen-h, 100vh) + 80px);
+  object-fit: cover;
+  filter: blur(22px) saturate(1.5);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+.plate img.ready { opacity: 1; }
 .bar {
+  position: relative;
   height: var(--bar-h);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 10px;
+  padding: 0 8px 0 6px;
   background: var(--c-bar);
+  box-shadow: inset 0 -1px 0 var(--c-bar-edge);
   box-sizing: border-box;
 }
-.left, .right { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.left, .right { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.right { gap: 6px; }
 button {
   border: 0;
   background: none;
   color: inherit;
   font: inherit;
   height: 21px;
-  padding: 0 7px;
+  padding: 0 6px;
   border-radius: 5px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  cursor: default;
+  transition: background-color 0.08s ease;
 }
-button:hover, button.open { background: var(--c-hover); }
-svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+button:hover, button.open { background: var(--c-bar-hover); }
+button:active, button.open { background: var(--c-bar-press); }
+button:focus-visible { outline: 2px solid var(--c-teal); outline-offset: -2px; }
+svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+svg .dot { fill: currentColor; stroke: none; }
 /* Voxel mark B: a monochrome template image used as a mask, so it takes the bar's text colour. */
+.mark { padding: 0 6px; }
 .cove-mark { width: 16px; height: 16px; background: currentColor; -webkit-mask: url("/cove-menubar-16.png") center / 16px 16px no-repeat; mask: url("/cove-menubar-16.png") center / 16px 16px no-repeat; }
 @media (min-resolution: 1.5dppx) {
   .cove-mark { -webkit-mask-image: url("/cove-menubar-24.png"); mask-image: url("/cove-menubar-24.png"); }
 }
-.app { font-weight: 600; padding: 0 8px; display: inline-block; line-height: 21px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
-.clock { font-variant-numeric: tabular-nums; }
-.batt { width: 21px; height: 10px; border: 1.5px solid currentColor; border-radius: 3px; position: relative; box-sizing: border-box; opacity: 0.9; }
-.batt::after { content: ""; position: absolute; right: -4px; top: 2px; width: 2px; height: 3.5px; border-radius: 0 1px 1px 0; background: currentColor; }
-.fill { position: absolute; left: 1px; top: 1px; bottom: 1px; border-radius: 1px; background: currentColor; }
+.app { font-weight: 700; padding: 0 7px; display: inline-block; line-height: 21px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; letter-spacing: 0.005em; }
+.clock { font-variant-numeric: tabular-nums; padding: 0 6px; white-space: pre; }
+.batt { width: 22px; height: 11px; border: 1.4px solid currentColor; border-radius: 3px; position: relative; box-sizing: border-box; margin-right: 3px; }
+.batt::after { content: ""; position: absolute; right: -3.6px; top: 2.6px; width: 1.8px; height: 3.4px; border-radius: 0 1px 1px 0; background: currentColor; }
+.fill { position: absolute; left: 1.2px; top: 1.2px; bottom: 1.2px; border-radius: 1px; background: currentColor; }
 .fill.low { background: #ff5f57; }
 .fill.charging { background: #34c759; }
 .hidden { display: none !important; }
+@media (prefers-reduced-transparency: reduce) {
+  .plate img { display: none; }
+}

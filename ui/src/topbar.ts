@@ -8,7 +8,7 @@ const inTauri = "__TAURI_INTERNALS__" in window;
 function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (inTauri) return tauriInvoke<T>(cmd, args);
   const demo: Record<string, unknown> = {
-    topbar_state: { app: "Google Chrome", kind: "app", hwnd: 1, battery: { percent: 53, charging: false }, volume: 40, muted: false },
+    topbar_state: { app: new URLSearchParams(location.search).get("app") ?? "Google Chrome", kind: "app", hwnd: 1, battery: { percent: 53, charging: false }, volume: 40, muted: false },
   };
   return Promise.resolve((demo[cmd] ?? null) as T);
 }
@@ -35,9 +35,10 @@ function openPopover(kind: Kind): void {
 function showOpen(): void {
   mark.classList.toggle("open", open === "cove" || open === "confirm");
   appBtn.classList.toggle("open", open === "app");
-  for (const id of ["control", "wifi-btn", "vol-btn"]) $(id).classList.toggle("open", open === "cc" && id === "control");
+  $("control").classList.toggle("open", open === "cc");
 }
 if (inTauri) listen<string | null>("popover-state", (e) => { open = e.payload; showOpen(); });
+else refresh().then(() => { open = new URLSearchParams(location.search).get("open"); showOpen(); });
 
 // Press-to-open, like the Mac menu bar: menus respond on pointer-down.
 mark.addEventListener("pointerdown", (e) => { if (e.button === 0) openPopover("cove"); });
@@ -45,7 +46,7 @@ appBtn.addEventListener("pointerdown", (e) => { if (e.button === 0) openPopover(
 // With a menu open, sliding to the other title switches menus (as on a Mac).
 mark.addEventListener("pointerenter", () => { if (open === "app") openPopover("cove"); });
 appBtn.addEventListener("pointerenter", () => { if (open === "cove") openPopover("app"); });
-for (const id of ["control", "wifi-btn", "vol-btn"]) $(id).addEventListener("pointerdown", (e) => { if (e.button === 0) openPopover("cc"); });
+for (const id of ["control", "wifi-btn"]) $(id).addEventListener("pointerdown", (e) => { if (e.button === 0) openPopover("cc"); });
 
 const go = (id: string, what: string) => $(id).addEventListener("click", () => invoke("topbar_open", { what }));
 go("search", "search");
@@ -56,7 +57,7 @@ function clock(): void {
   const d = new Date();
   const day = d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
   const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  $("clock").textContent = `${day}  ${time}`;
+  $("clock").textContent = `${day.replace(/,/g, "")}  ${time}`;
 }
 
 async function refresh(): Promise<void> {
@@ -70,18 +71,29 @@ async function refresh(): Promise<void> {
   const b = s.battery;
   $("battery").classList.toggle("hidden", !b);
   if (b) {
-    $("batt-text").textContent = `${b.percent}%`;
     const f = $("batt-fill");
-    f.style.width = `${Math.max(2, Math.round((b.percent / 100) * 16))}px`;
+    f.style.width = `${Math.max(2, Math.round((b.percent / 100) * 16.4))}px`;
     f.className = `fill${b.charging ? " charging" : b.percent <= 20 ? " low" : ""}`;
     $("battery").title = b.charging ? `Charging, ${b.percent}%` : `Battery ${b.percent}%`;
   }
-  $("vol-btn").classList.toggle("hidden", s.volume === null);
-  const silent = s.muted || s.volume === 0;
-  $("vol-waves").classList.toggle("hidden", silent);
-  $("vol-x").classList.toggle("hidden", !silent);
-  $("vol-btn").title = silent ? "Sound: muted" : `Sound: ${s.volume}%`;
 }
+
+// ---- Wallpaper plate: the desktop picture, blurred, under the bar's tint.
+const plate = $("plate-img") as HTMLImageElement;
+function loadPlate(): void {
+  document.documentElement.style.setProperty("--screen-w", `${screen.width}px`);
+  document.documentElement.style.setProperty("--screen-h", `${screen.height}px`);
+  const base = inTauri ? (navigator.userAgent.includes("Windows") ? "http://coveicon.localhost" : "coveicon://localhost") + "/wallpaper" : (new URLSearchParams(location.search).get("wall") ?? "/wallpapers/tidepool-dark.jpg");
+  const img = new Image();
+  img.onload = () => { plate.src = img.src; plate.classList.add("ready"); };
+  // No picture (solid colour desktop): the opaque Ink base alone.
+  img.onerror = () => plate.classList.remove("ready");
+  img.src = inTauri ? `${base}?t=${Date.now()}` : base;
+}
+loadPlate();
+if (inTauri) listen("wallpaper-changed", loadPlate);
+// Windows can change the picture by itself (slideshow, Spotlight).
+setInterval(loadPlate, 5 * 60 * 1000);
 
 clock();
 refresh();

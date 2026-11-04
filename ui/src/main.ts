@@ -2,7 +2,6 @@ import { applyTheme, type ThemeState } from "./theme";
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { playIntro } from "./intro";
 
 interface Status { version: string; journal_entries: number; windows: boolean }
 interface Tweak { id: string; title: string; description: string; settings_uri: string; applied: boolean | null }
@@ -37,6 +36,7 @@ const mock: Record<string, (a?: any) => unknown> = {
   dock_hide_taskbar_set: (a) => ({ enabled: true, hide_taskbar: a.enabled, stacks: ["downloads"], display: "main" }),
   dock_stacks_set: (a) => ({ enabled: true, hide_taskbar: false, stacks: a.keys, display: "main" }),
   dock_display_set: (a) => ({ enabled: true, hide_taskbar: false, stacks: ["downloads"], display: a.display }),
+  dock_hide_set: (a) => ({ enabled: true, hide_taskbar: false, stacks: ["downloads"], display: "main", hide: a.mode }),
   clipboard_status: () => true,
   switcher_status: () => false,
   switcher_set: (a) => a.enabled,
@@ -432,7 +432,7 @@ renderLook(look); // never show an empty Look page, even before the backend answ
 loadLook();
 window.addEventListener("focus", () => { if (look.accent_source === "windows") invoke<ThemeState>("theme_get").then(renderLook); });
 
-interface DockStatus { enabled: boolean; hide_taskbar: boolean; stacks: string[]; display: string }
+interface DockStatus { enabled: boolean; hide_taskbar: boolean; stacks: string[]; display: string; hide?: string }
 const STACKS: [string, string][] = [["downloads", "Downloads"], ["documents", "Documents"], ["desktop", "Desktop"], ["pictures", "Pictures"]];
 let dockStacks: string[] = [];
 function renderDock(d: DockStatus): void {
@@ -444,6 +444,14 @@ function renderDock(d: DockStatus): void {
     b.textContent = label;
     b.addEventListener("click", async () => renderDock(await invoke<DockStatus>("dock_display_set", { display: k })));
     $("dock-display").appendChild(b);
+  }
+  $("dock-hide").innerHTML = "";
+  for (const [k, label] of [["smart", "When a window touches it"], ["always", "Always"], ["never", "Never"]]) {
+    const b = document.createElement("button");
+    b.className = `chip${(d.hide ?? "smart") === k ? " on" : ""}`;
+    b.textContent = label;
+    b.addEventListener("click", async () => renderDock(await invoke<DockStatus>("dock_hide_set", { mode: k })));
+    $("dock-hide").appendChild(b);
   }
   $("dock-stacks").innerHTML = "";
   for (const [k, label] of STACKS) {
@@ -635,13 +643,9 @@ $("up-install").addEventListener("click", async () => {
 
 // ---- boot ----
 (async () => {
-  // The window starts hidden; the page's first paint is the Ink intro cover,
-  // so show it at once and let the intro run while the settings load.
-  if (inTauri) await getCurrentWindow().show().catch(() => {});
-  const first = inTauri ? await invoke<boolean>("intro_first").catch(() => undefined) : undefined;
-  const loading = Promise.all([refreshStatus(), renderCalm(), invoke<HotkeyStatus>("hotkeys_status").then(renderHabits)]).catch(() => {});
-  await playIntro(first);
-  await loading;
+  // The window starts hidden; the app shows it (after its own intro window
+  // on a first run, or when you open Settings), so the page just loads.
+  await Promise.all([refreshStatus(), renderCalm(), invoke<HotkeyStatus>("hotkeys_status").then(renderHabits)]).catch(() => {});
   if (!(await invoke<boolean>("tour_status").catch(() => true))) tourOpen();
   checkUpdates(true);
   if (await invoke<boolean>("just_updated")) toast(`Updated to Cove ${await currentVersion()} ✓`);
@@ -915,11 +919,9 @@ $("about").addEventListener("click", (e) => { if (e.target === $("about")) $("ab
 addEventListener("keydown", (e) => { if (e.key === "Escape") $("about").classList.add("hidden"); });
 $("intro-replay").addEventListener("click", () => {
   $("about").classList.add("hidden");
-  let host = document.getElementById("intro");
-  if (!host) { host = document.createElement("div"); host.id = "intro"; document.body.prepend(host); }
-  host.innerHTML = "";
-  host.classList.remove("out");
-  playIntro(true);
+  // The intro plays in its own full-screen window, over everything.
+  if (inTauri) invoke("intro_play").catch(() => {});
+  else window.open("/intro.html?full=1", "_blank");
 });
 $("tour-open").addEventListener("click", () => $("about").classList.add("hidden"));
 

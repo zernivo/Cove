@@ -9,7 +9,8 @@
     "topbar",
     "popover",
     "switcher",
-    "expose"
+    "expose",
+    "intro"
   ],
   "permissions": [
     "core:default",

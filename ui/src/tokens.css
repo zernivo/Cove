@@ -66,23 +66,21 @@
   --sidebar-glow: radial-gradient(220px 140px at 30px 20px, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%);
 }
 :root[data-mode="dark"] {
-  --ink-900: #faeeea;
-  --surface-base: #241a26;
-  --surface-content: rgba(36, 26, 38, 0.74);
-  --text: #faeeea;
-  --text-muted: #ccb4b0;
-  --glass-tint: rgba(34, 20, 34, 0.48);
-  --glass-stroke: rgba(255, 210, 200, 0.16);
-  --glass-rim: rgba(255, 180, 160, 0.1);
-  --panel-tint: rgba(38, 22, 36, 0.58);
-  --bar-tint: rgba(30, 16, 28, 0.34);
-  --menu-bg: rgba(40, 26, 40, 0.97);
+  /* Ink, never plum: neutral dark tints only (no purple anywhere). */
+  --ink-900: #ecebe8;
+  --surface-base: #111215;
+  --surface-content: rgba(17, 18, 21, 0.74);
+  --text: #ecebe8;
+  --text-muted: #a8aab0;
+  --glass-tint: rgba(17, 18, 21, 0.48);
+  --glass-stroke: rgba(255, 255, 255, 0.12);
+  --glass-rim: rgba(255, 255, 255, 0.07);
+  --panel-tint: rgba(17, 18, 21, 0.58);
+  --bar-tint: rgba(17, 18, 21, 0.4);
+  --menu-bg: rgba(24, 25, 29, 0.97);
   --warn: #ffb35c;
   --danger: #ff7a70;
-  --window-bg:
-    radial-gradient(1200px 600px at 100% -10%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 60%),
-    radial-gradient(900px 600px at -10% 110%, rgba(122, 58, 90, 0.35), transparent 60%),
-    var(--surface-base);
+  --window-bg: var(--surface-base);
 }
 
 /* Slate: quiet, mostly solid, graphite with one blue focus colour. */
