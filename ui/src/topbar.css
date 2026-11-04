@@ -5,13 +5,9 @@ html, body {
   background: transparent;
   user-select: none;
   font: 13px/1 "Segoe UI Variable", "Segoe UI", Inter, system-ui, sans-serif;
-  color: var(--text);
-  --tint: var(--bar-tint);
-  --hover: rgba(0, 0, 0, 0.08);
-  --menu: var(--menu-bg);
+  color: var(--c-text);
   --bar-h: 25px;
 }
-html[data-mode="dark"], html[data-mode="dark"] body { color: var(--text); --tint: var(--bar-tint); --hover: rgba(255, 255, 255, 0.12); --menu: var(--menu-bg); }
 /* Menu bar: 25 DIP like macOS (24 pt), 13 DIP text, 15 DIP icons. The
    AppBar strip Cove reserves is the same 25 DIP (TOPBAR_HEIGHT in main.rs). */
 .bar {
@@ -20,7 +16,7 @@ html[data-mode="dark"], html[data-mode="dark"] body { color: var(--text); --tint
   align-items: center;
   justify-content: space-between;
   padding: 0 10px;
-  background: var(--tint);
+  background: var(--c-bar);
   box-sizing: border-box;
 }
 .left, .right { display: flex; align-items: center; gap: 2px; min-width: 0; }
@@ -36,7 +32,7 @@ button {
   align-items: center;
   gap: 6px;
 }
-button:hover, button.open { background: var(--hover); }
+button:hover, button.open { background: var(--c-hover); }
 svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 /* Voxel mark B: a monochrome template image used as a mask, so it takes the bar's text colour. */
 .cove-mark { width: 16px; height: 16px; background: currentColor; -webkit-mask: url("/cove-menubar-16.png") center / 16px 16px no-repeat; mask: url("/cove-menubar-16.png") center / 16px 16px no-repeat; }
@@ -50,71 +46,4 @@ svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width:
 .fill { position: absolute; left: 1px; top: 1px; bottom: 1px; border-radius: 1px; background: currentColor; }
 .fill.low { background: #ff5f57; }
 .fill.charging { background: #34c759; }
-/* Menus: Ink, calm and compact, sharp 7 px corners. Always dark, in light
-   mode too, like the Settings window. */
-.menu {
-  position: fixed;
-  top: calc(var(--bar-h) + 1px);
-  left: 6px;
-  min-width: 220px;
-  padding: 4px;
-  border-radius: 7px;
-  background: rgba(17, 18, 21, 0.94);
-  color: #ecebe8;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.32), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
-  animation: menu-in 0.12s cubic-bezier(0.2, 0.8, 0.2, 1);
-  transform-origin: top left;
-}
-@keyframes menu-in { from { opacity: 0; transform: scale(0.98) translateY(-2px); } }
-.menu button {
-  width: 100%;
-  justify-content: space-between;
-  height: 22px;
-  padding: 0 9px;
-  border-radius: 4px;
-  font-size: 13px;
-}
-.menu button:hover:not(:disabled), .menu button:focus-visible { background: rgba(44, 201, 185, 0.24); outline: none; }
-.menu button:disabled { opacity: 0.38; }
-.menu kbd { font-family: inherit; font-size: 11.5px; opacity: 0.5; }
-.menu hr { border: 0; height: 1px; background: rgba(255, 255, 255, 0.09); margin: 4px 8px; }
-.confirm { width: 280px; padding: 12px; }
-.confirm p { margin: 0 0 12px; font-size: 13px; line-height: 1.4; }
-.confirm-row { display: flex; justify-content: flex-end; gap: 6px; }
-.confirm-row button { width: auto; height: 24px; padding: 0 12px; background: rgba(255, 255, 255, 0.08); }
-.confirm-row button.primary { background: #2cc9b9; color: #111215; font-weight: 600; }
-.confirm-row button.primary:hover { background: #3fd6c6 !important; }
-@media (prefers-reduced-motion: reduce) { .menu { animation: none; } }
 .hidden { display: none !important; }
-
-.panel {
-  position: fixed;
-  top: calc(var(--bar-h) + 4px);
-  right: 8px;
-  width: 300px;
-  padding: 10px;
-  border-radius: 14px;
-  background: var(--menu);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.tile { height: 52px; padding: 0 10px; border-radius: 12px; background: var(--hover); justify-content: flex-start; gap: 9px; text-align: left; }
-.tile > span:last-child { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.tile b { font-weight: 600; font-size: 12.5px; }
-.tile small { font-size: 11px; opacity: 0.65; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 95px; }
-.ic { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--hover); flex: none; }
-.ic svg { width: 15px; height: 15px; }
-.tile.on .ic { background: var(--accent); color: #fff; }
-.slider-card { padding: 9px 11px 11px; border-radius: 12px; background: var(--hover); }
-.slider-card label { display: block; font-weight: 600; font-size: 12.5px; margin-bottom: 8px; }
-.slide { display: flex; align-items: center; gap: 8px; }
-.slide > svg { flex: none; }
-.mute { padding: 0 4px; height: 22px; }
-.mute.on { color: #ff5f57; }
-input[type="range"] { flex: 1; accent-color: var(--accent); height: 4px; }
-.foot { display: flex; justify-content: space-between; }
-.foot button { font-size: 12px; opacity: 0.8; }
