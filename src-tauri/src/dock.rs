@@ -23,6 +23,9 @@ pub struct DockItem {
     /// draws a letter tile instead of waiting for ever.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub no_icon: bool,
+    /// Recycle Bin only: whether it holds anything (the icon follows).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub full: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -176,6 +179,13 @@ pub fn is_exe_pin(target: &str) -> bool {
     (t.ends_with(".exe") || t.ends_with(".lnk")) && std::path::Path::new(target).is_absolute()
 }
 
+/// Packaged (Store / MSIX / system) apps are named by "Family!AppId": their
+/// best picture is the package's own logo PNG (icons.rs reads the manifest).
+pub fn package_logo_key(target: &str) -> Option<String> {
+    let (family, app) = target.split_once('!')?;
+    (!family.is_empty() && !app.is_empty() && family.contains('_') && !is_exe_pin(target)).then(|| format!("pkglogo:{target}"))
+}
+
 fn pin_icon_path(target: &str) -> String {
     if is_exe_pin(target) {
         target.to_string()
@@ -247,7 +257,8 @@ pub fn state(pins: &[crate::settings::Pin], stacks: &[String]) -> DockState {
         }
         // The pin's own icon, then its program, then (when it's running)
         // whatever its window offers: exe, then the window's own icon.
-        let mut keys = vec![pin_icon_path(&p.target)];
+        let mut keys = package_logo_key(&p.target).into_iter().collect::<Vec<_>>();
+        keys.push(pin_icon_path(&p.target));
         if let Some(e) = &p.exe {
             keys.push(e.clone());
         }
@@ -268,6 +279,7 @@ pub fn state(pins: &[crate::settings::Pin], stacks: &[String]) -> DockState {
             windows: hw,
             icon,
             no_icon,
+            full: None,
         });
     }
 
@@ -286,7 +298,9 @@ pub fn state(pins: &[crate::settings::Pin], stacks: &[String]) -> DockState {
             continue;
         }
         keys.push(key);
-        let (icon, no_icon) = icon_or_none(&w.icon_keys(), &mut icon_jobs);
+        let mut wkeys: Vec<String> = w.aumid.as_deref().and_then(package_logo_key).into_iter().collect();
+        wkeys.extend(w.icon_keys());
+        let (icon, no_icon) = icon_or_none(&wkeys, &mut icon_jobs);
         groups.push(DockItem {
             kind: "running",
             name: crate::appnames::friendly(&w.exe, w.aumid.as_deref(), &w.title),
@@ -300,6 +314,7 @@ pub fn state(pins: &[crate::settings::Pin], stacks: &[String]) -> DockState {
             attention: false,
             icon,
             no_icon,
+            full: None,
         });
     }
     for g in groups.iter_mut() {
@@ -312,15 +327,19 @@ pub fn state(pins: &[crate::settings::Pin], stacks: &[String]) -> DockState {
         let (Some(label), Some(dir)) = (crate::stacks::label(key), crate::stacks::folder(key)) else { continue };
         let path = dir.to_string_lossy().to_string();
         let (icon, no_icon) = icon_or_none(&[path], &mut icon_jobs);
-        items.push(DockItem { kind: "stack", name: label.into(), target: key.clone(), windows: vec![], active: false, attention: false, icon, no_icon });
+        items.push(DockItem { kind: "stack", name: label.into(), target: key.clone(), windows: vec![], active: false, attention: false, icon, no_icon, full: None });
     }
 
     let trash = "::{645FF040-5081-101B-9F08-08002B2CF60E}".to_string();
     // The bin's shell item, then the same through its shell: name, then the
     // stock Recycle Bin icon Windows draws on the desktop.
-    let bin_keys = [trash.clone(), "shell:RecycleBinFolder".to_string(), "stock:recycler".to_string()];
+    // Empty and full are Windows' own stock icons (SIID_RECYCLER /
+    // SIID_RECYCLERFULL), so the picture follows the bin's state.
+    let full = imp::bin_full();
+    let stock = if full == Some(true) { "stock:recyclerfull" } else { "stock:recycler" };
+    let bin_keys = [stock.to_string(), trash.clone(), "shell:RecycleBinFolder".to_string()];
     let (icon, no_icon) = icon_or_none(&bin_keys, &mut icon_jobs);
-    items.push(DockItem { kind: "trash", name: "Recycle Bin".into(), target: trash, windows: vec![], active: false, attention: false, icon, no_icon });
+    items.push(DockItem { kind: "trash", name: "Recycle Bin".into(), target: trash, windows: vec![], active: false, attention: false, icon, no_icon, full });
 
     if !icon_jobs.is_empty() {
         std::thread::spawn(move || crate::icons::fill(icon_jobs));
@@ -346,6 +365,7 @@ pub fn cove_item(hwnd: isize) -> DockItem {
         attention: false,
         icon,
         no_icon,
+        full: None,
     }
 }
 
@@ -356,8 +376,8 @@ pub fn insert_cove(items: &mut Vec<DockItem>, cove: DockItem) {
 }
 
 pub use imp::{
-    activate, close_windows, cursor, foreground, minimize, monitor_at, overlaps, taskbar_autohide, taskbar_is_visible,
-    taskbar_visible, windows, work_area, zoom,
+    activate, bin_empty, close_windows, cursor, foreground, minimize, monitor_at, overlaps, taskbar_autohide, taskbar_is_visible,
+    taskbar_visible, windows, tile, work_area, zoom,
 };
 
 /// While Cove desktop is on, the Windows taskbar stays hidden (the dock
@@ -629,6 +649,46 @@ mod imp {
     }
 
     /// "Zoom" in the app menu: maximise, or restore when already maximised.
+    /// Does the Recycle Bin hold anything (all drives)? None if unknown.
+    pub fn bin_full() -> Option<bool> {
+        use windows_sys::Win32::UI::Shell::{SHQueryRecycleBinW, SHQUERYRBINFO};
+        unsafe {
+            let mut info: SHQUERYRBINFO = std::mem::zeroed();
+            info.cbSize = std::mem::size_of::<SHQUERYRBINFO>() as u32;
+            (SHQueryRecycleBinW(std::ptr::null(), &mut info) >= 0).then_some(info.i64NumItems > 0)
+        }
+    }
+
+    /// Empty the Recycle Bin. Windows asks for confirmation itself.
+    pub fn bin_empty() -> Result<(), String> {
+        use windows_sys::Win32::UI::Shell::SHEmptyRecycleBinW;
+        let hr = unsafe { SHEmptyRecycleBinW(std::ptr::null_mut(), std::ptr::null(), 0) };
+        // S_OK, or the user said no / the bin was already empty.
+        if hr >= 0 || hr == 0x8000_FFFFu32 as i32 || hr == 0x8007_04C7u32 as i32 { Ok(()) } else { Err(format!("Couldn't empty the Recycle Bin ({hr:#x}).")) }
+    }
+
+    /// Put a window on the left or right half of its display's work area.
+    pub fn tile(h: isize, left: bool) {
+        use windows_sys::Win32::Graphics::Gdi::{MonitorFromWindow, MONITOR_DEFAULTTONEAREST as NEAREST};
+        use windows_sys::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER};
+        let Some(h) = valid(h) else { return };
+        unsafe {
+            let m = MonitorFromWindow(h, NEAREST);
+            let mut mi: MONITORINFO = std::mem::zeroed();
+            mi.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+            if GetMonitorInfoW(m, &mut mi) == 0 {
+                return;
+            }
+            let w = mi.rcWork;
+            let half = (w.right - w.left) / 2;
+            ShowWindow(h, SW_RESTORE);
+            let x = if left { w.left } else { w.left + half };
+            let width = if left { half } else { w.right - w.left - half };
+            SetWindowPos(h, std::ptr::null_mut(), x, w.top, width, w.bottom - w.top, SWP_NOZORDER | SWP_NOACTIVATE);
+            SetForegroundWindow(h);
+        }
+    }
+
     pub fn zoom(h: isize) {
         use windows_sys::Win32::UI::WindowsAndMessaging::{IsZoomed, SW_MAXIMIZE};
         if let Some(h) = valid(h) {
@@ -799,6 +859,13 @@ mod imp {
     pub fn activate(_h: isize) {}
     pub fn minimize(_h: isize) {}
     pub fn zoom(_h: isize) {}
+    pub fn bin_full() -> Option<bool> {
+        None
+    }
+    pub fn bin_empty() -> Result<(), String> {
+        Err("Not on Windows.".into())
+    }
+    pub fn tile(_h: isize, _left: bool) {}
     pub fn overlaps(_rc: (i32, i32, i32, i32)) -> bool {
         false
     }
@@ -834,7 +901,7 @@ mod tests {
     #[test]
     fn cove_sits_after_running_apps() {
         use super::*;
-        let it = |kind: &'static str| DockItem { kind, name: kind.into(), target: kind.into(), windows: vec![], active: false, attention: false, icon: None, no_icon: false };
+        let it = |kind: &'static str| DockItem { kind, name: kind.into(), target: kind.into(), windows: vec![], active: false, attention: false, icon: None, no_icon: false, full: None };
         let mut v = vec![it("pin"), it("running"), it("stack"), it("trash")];
         insert_cove(&mut v, it("cove"));
         assert_eq!(v.iter().map(|i| i.kind).collect::<Vec<_>>(), ["pin", "running", "cove", "stack", "trash"]);

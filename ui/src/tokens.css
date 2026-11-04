@@ -33,7 +33,9 @@
 
 /* Tidepool (default): warm glass that lets the wallpaper's colour through. */
 :root {
-  --accent: #1fb5a8;
+  /* Graphite: the state colour (selection, on, focus). Never teal or the
+     logo's colours (2026-11-04 user pick). */
+  --accent: #3a3d44;
   --focus: var(--accent);
   --ink-900: #24191a;
   --surface-base: #fff8f3;
@@ -54,16 +56,14 @@
   --panel-tint: rgba(255, 246, 238, 0.5);
   --bar-tint: rgba(255, 240, 230, 0.3);
   --menu-bg: rgba(255, 249, 244, 0.97);
-  --glow: 0 0 12px color-mix(in srgb, var(--accent) 60%, transparent);
-  --on-accent: #062e2a;
+  --glow: none;
+  --on-accent: #ffffff;
   --warn: #b36200;
   --danger: #c8322a;
   /* Settings window: a warm wash that sets off the logo, top-left. */
   --window-bg:
-    radial-gradient(1200px 600px at 100% -10%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 60%),
-    radial-gradient(900px 600px at -10% 110%, rgba(242, 169, 143, 0.16), transparent 60%),
     var(--surface-base);
-  --sidebar-glow: radial-gradient(220px 140px at 30px 20px, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%);
+  --sidebar-glow: none;
 }
 :root[data-mode="dark"] {
   /* Ink, never plum: neutral dark tints only (no purple anywhere). */
@@ -81,6 +81,8 @@
   --warn: #ffb35c;
   --danger: #ff7a70;
   --window-bg: var(--surface-base);
+  --accent: #e4e3e0;
+  --on-accent: #111215;
 }
 
 /* Slate: quiet, mostly solid, graphite with one blue focus colour. */

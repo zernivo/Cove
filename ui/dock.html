@@ -4,13 +4,15 @@
     <meta charset="UTF-8" />
     <title>Cove Dock</title>
     <link rel="stylesheet" href="./src/tokens.css" />
+    <link rel="stylesheet" href="./src/chrome.css" />
     <link rel="stylesheet" href="./src/dock.css" />
   </head>
   <body>
     <div class="stage">
-      <div class="dock" id="dock"></div>
+      <div class="dock" id="dock">
+        <div class="glass" id="glass"><div class="plate" id="plate"></div><div class="tint"></div></div>
+      </div>
     </div>
-    <div class="menu hidden" id="menu"></div>
     <div class="stack hidden" id="stack"></div>
     <script type="module" src="./src/dock.ts"></script>
   </body>

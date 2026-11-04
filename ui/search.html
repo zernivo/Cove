@@ -8,27 +8,19 @@
     <link rel="stylesheet" href="./src/search.css" />
   </head>
   <body>
-    <div class="panel">
-      <div class="bar">
-        <svg class="glass" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5 20 20" /></svg>
-        <input id="q" type="text" placeholder="Search apps, files, settings…" autocomplete="off" spellcheck="false" autofocus />
-        <kbd class="hint">esc</kbd>
+    <div class="panel" id="panel">
+      <div class="field">
+        <svg class="mag" viewBox="0 0 22 22" aria-hidden="true"><circle cx="9.3" cy="9.3" r="6.6" /><path d="M14.2 14.2l5.4 5.4" /></svg>
+        <input id="q" type="text" placeholder="Search" autocomplete="off" spellcheck="false" autofocus />
+        <span class="scope hidden" id="scope"></span>
       </div>
-      <nav class="tabs" id="tabs">
-        <button data-tab="all" class="on">All</button>
-        <button data-tab="app">Apps</button>
-        <button data-tab="file">Files</button>
-        <button data-tab="setting">Settings</button>
-        <button data-tab="clip">Clipboard</button>
-      </nav>
       <ul class="results" id="results"></ul>
-      <footer class="foot">
-        <span><kbd>↑↓</kbd> move</span>
-        <span class="not-clip"><kbd>↵</kbd> open</span>
-        <span class="not-clip"><kbd>ctrl ↵</kbd> show in folder</span>
-        <span class="only-clip"><kbd>↵</kbd> paste · <kbd>ctrl ↵</kbd> copy</span>
-        <span class="not-clip"><kbd>ctrl D</kbd> add to Dock</span>
-        <span><kbd>tab</kbd> switch tab</span>
+      <footer class="foot" id="foot">
+        <span class="not-clip"><kbd>↵</kbd> Open</span>
+        <span class="not-clip"><kbd>Ctrl ↵</kbd> Show in folder</span>
+        <span class="only-clip"><kbd>↵</kbd> Paste</span>
+        <span class="only-clip"><kbd>Ctrl ↵</kbd> Copy</span>
+        <span><kbd>Tab</kbd> <i id="next-scope">Filter</i></span>
       </footer>
     </div>
     <script type="module" src="./src/search.ts"></script>

@@ -36,6 +36,7 @@ windows-sys = { version = "0.59", features = [
   "Win32_System_LibraryLoader",
   "Win32_System_SystemInformation",
   "Win32_Storage_FileSystem",
+  "Win32_Security_Authentication_Identity",
 ] }
 windows = { version = "0.61", features = [
   "Win32_Foundation",
@@ -51,6 +52,11 @@ windows = { version = "0.61", features = [
   "Win32_System_Variant",
   "Win32_UI_Shell_PropertiesSystem",
   "Win32_UI_WindowsAndMessaging",
+  "Foundation",
+  "Media_Control",
+  "Devices_Radios",
+  "Foundation_Collections",
+  "Win32_Devices_FunctionDiscovery",
 ] }
 
 [profile.release]

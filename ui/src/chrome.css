@@ -1,68 +1,107 @@
-/* Cove chrome: the menu bar, its menus, Control Centre and Search share one
-   look. Ink tint over Windows acrylic in dark, a warm paper tint in light;
-   teal (#2cc9b9) only for things that are on, the current selection and
-   the primary button. No gradients, no purple. theme.ts sets data-mode. */
+/* Cove chrome: the menu bar, its menus, Control Centre, Search and the dock
+   share one Liquid Glass family (docs/design/GLASS_AND_APPLE_GUIDE.md).
+   Bar and dock: the wallpaper plate. Menus, Control Centre, Search: Windows
+   acrylic + an Ink (or paper) tint + a rim. Highlights are GRAPHITE: a soft
+   frosted white pill with a top sheen and white text (light mode: a dark
+   glass pill with dark text). No teal or logo colours for state, no
+   gradients, no purple. theme.ts sets data-mode. */
 :root {
-  --c-text: #17181b;
-  --c-muted: rgba(23, 24, 27, 0.6);
-  --c-faint: rgba(23, 24, 27, 0.38);
-  /* Glass tints (thick for panels so text reads, regular for the bar). */
-  /* Menu bar (paper): opaque base + wallpaper plate + paper tint. */
+  /* Corner family (dock variant A, 66 DIP, r 18). */
+  --r-dock: 18px;
+  --r-menu: 11px;
+  --r-row: 6px;
+  --r-cc: 20px;
+  --r-module: 10px;
+  --r-search: 14px;
+  --r-search-row: 8px;
+  --r-control: 8px;
+  --r-tile: 11px;
+
+  /* Light (paper). */
+  --c-text: #1b1c20;
+  --c-muted: rgba(27, 28, 32, 0.6);
+  --c-faint: rgba(27, 28, 32, 0.45);
+  /* Menu bar: opaque base + wallpaper plate + paper tint (>= 0.51 for dark text). */
   --c-bar-base: #ecebe7;
-  --c-bar: rgba(246, 245, 242, 0.74);
+  --c-bar-tint: 247, 243, 239;
+  --c-bar-alpha: 0.56;
   --c-bar-text: #111215;
-  --c-bar-edge: rgba(17, 18, 21, 0.12);
-  --c-bar-hover: rgba(17, 18, 21, 0.08);
-  --c-bar-press: rgba(17, 18, 21, 0.13);
-  --c-panel: rgba(244, 243, 240, 0.9);
-  --c-module: rgba(255, 255, 255, 0.72);
-  --c-module-hover: rgba(255, 255, 255, 0.95);
-  --c-stroke: rgba(17, 18, 21, 0.1);
-  --c-rim: rgba(255, 255, 255, 0.6);
-  --c-hover: rgba(17, 18, 21, 0.07);
-  --c-sep: rgba(17, 18, 21, 0.1);
-  --c-icon-off: rgba(17, 18, 21, 0.08);
-  --c-track: rgba(17, 18, 21, 0.1);
-  --c-fill: rgba(17, 18, 21, 0.3);
-  --c-on-fill: #111215;
-  --c-knob: #ffffff;
-  --c-knob-edge: rgba(17, 18, 21, 0.22);
-  --c-teal: #2cc9b9;
-  --c-on-teal: #0b2a27;
-  --c-on-teal-muted: rgba(11, 42, 39, 0.66);
-  --c-select: rgba(44, 201, 185, 0.22);
-  --c-shadow: 0 10px 28px rgba(17, 18, 21, 0.18);
-  --c-solid: #f6f5f2;
+  --c-bar-edge: rgba(17, 18, 21, 0.1);
+  /* Dock: plate + clear paper tint, light rim and a 0.5 px outer stroke. */
+  --c-dock-tint: rgba(247, 243, 239, 0.34);
+  --c-dock-rim: inset 0 1px 0 rgba(255, 255, 255, 0.6), inset 0 0 0 1px rgba(255, 255, 255, 0.3), inset 0 -1px 0 rgba(255, 255, 255, 0.12);
+  --c-dock-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.1), 0 6px 18px rgba(0, 0, 0, 0.13), 0 1px 4px rgba(0, 0, 0, 0.07);
+  --c-dot: rgba(20, 20, 24, 0.7);
+  --c-divider: rgba(0, 0, 0, 0.14);
+  /* Panels over apps: thick paper tint over acrylic (>= 0.51 floor). */
+  --c-panel: rgba(247, 243, 239, 0.76);
+  --c-panel-rim: inset 0 1px 0 rgba(255, 255, 255, 0.7), inset 0 0 0 1px rgba(0, 0, 0, 0.07);
+  --c-module: rgba(255, 255, 255, 0.55);
+  --c-module-rim: inset 0 0 0 1px rgba(0, 0, 0, 0.05);
+  --c-sep: rgba(0, 0, 0, 0.08);
+  --c-hover: rgba(0, 0, 0, 0.05);
+  --c-chip-off: rgba(0, 0, 0, 0.07);
+  --c-chip-on: #1b1c20;
+  --c-chip-on-glyph: #f7f3ef;
+  --c-track: rgba(0, 0, 0, 0.08);
+  --c-fill: #ffffff;
+  --c-fill-glyph: #1b1c20;
+  /* Graphite highlight (light mode): a dark glass pill, dark text. */
+  --c-hl: rgba(0, 0, 0, 0.09);
+  --c-hl-sheen: inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+  --c-hl-text: #111215;
+  --c-hl-muted: rgba(17, 18, 21, 0.62);
+  --c-focus: rgba(17, 18, 21, 0.55);
+  --c-caret: #1b1c20;
+  --c-tooltip: rgba(247, 243, 239, 0.94);
+  --c-tooltip-text: #1b1c20;
+  --c-danger: #c7372f;
+  --c-solid: #f7f3ef;
+  --c-shadow: 0 7px 19px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.1);
+  /* Acrylic stand-in (browser preview only; Windows paints real acrylic). */
+  --c-acrylic-standin: rgba(247, 243, 239, 0.5);
 }
 :root[data-mode="dark"] {
-  --c-text: #f2f1ee;
-  --c-muted: rgba(236, 235, 232, 0.62);
-  --c-faint: rgba(236, 235, 232, 0.38);
-  /* Menu bar (Ink): a deliberate dark bar, not grey glass. */
+  --c-text: #f4f2ef;
+  --c-muted: rgba(244, 242, 239, 0.62);
+  --c-faint: rgba(244, 242, 239, 0.42);
   --c-bar-base: #111215;
-  --c-bar: rgba(17, 18, 21, 0.78);
+  --c-bar-tint: 17, 18, 21;
+  --c-bar-alpha: 0.59;
   --c-bar-text: #ffffff;
-  --c-bar-edge: rgba(255, 255, 255, 0.08);
-  --c-bar-hover: rgba(255, 255, 255, 0.12);
-  --c-bar-press: rgba(255, 255, 255, 0.17);
-  --c-panel: rgba(21, 22, 25, 0.88);
-  --c-module: rgba(255, 255, 255, 0.055);
-  --c-module-hover: rgba(255, 255, 255, 0.1);
-  --c-stroke: rgba(255, 255, 255, 0.09);
-  --c-rim: rgba(255, 255, 255, 0.05);
-  --c-hover: rgba(255, 255, 255, 0.1);
-  --c-sep: rgba(255, 255, 255, 0.09);
-  --c-icon-off: rgba(255, 255, 255, 0.1);
-  --c-track: rgba(255, 255, 255, 0.1);
-  --c-fill: rgba(255, 255, 255, 0.26);
-  --c-on-fill: #ffffff;
-  --c-knob: #ffffff;
-  --c-knob-edge: rgba(0, 0, 0, 0.35);
-  --c-on-teal: #0b2a27;
-  --c-select: rgba(44, 201, 185, 0.24);
-  --c-shadow: 0 12px 32px rgba(0, 0, 0, 0.32);
+  --c-bar-edge: rgba(255, 255, 255, 0.06);
+  --c-dock-tint: rgba(17, 18, 21, 0.22);
+  --c-dock-rim: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 0 0 1px rgba(255, 255, 255, 0.1), inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+  --c-dock-shadow: 0 10px 30px rgba(0, 0, 0, 0.22), 0 2px 6px rgba(0, 0, 0, 0.12);
+  --c-dot: rgba(255, 255, 255, 0.85);
+  --c-divider: rgba(255, 255, 255, 0.16);
+  --c-panel: rgba(30, 31, 36, 0.7);
+  --c-panel-rim: inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+  --c-module: rgba(255, 255, 255, 0.07);
+  --c-module-rim: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --c-sep: rgba(255, 255, 255, 0.1);
+  --c-hover: rgba(255, 255, 255, 0.08);
+  --c-chip-off: rgba(255, 255, 255, 0.12);
+  --c-chip-on: #f4f2ef;
+  --c-chip-on-glyph: #111215;
+  --c-track: rgba(255, 255, 255, 0.12);
+  --c-fill: #f4f2ef;
+  --c-fill-glyph: #111215;
+  /* Graphite highlight (dark mode): frosted white pill, top sheen, white text. */
+  --c-hl: rgba(255, 255, 255, 0.18);
+  --c-hl-sheen: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 0 0 0.5px rgba(255, 255, 255, 0.1);
+  --c-hl-text: #ffffff;
+  --c-hl-muted: rgba(255, 255, 255, 0.7);
+  --c-focus: rgba(255, 255, 255, 0.6);
+  --c-caret: #ffffff;
+  --c-tooltip: rgba(24, 25, 30, 0.86);
+  --c-tooltip-text: #f4f2ef;
+  --c-danger: #ff8a80;
   --c-solid: #111215;
+  --c-shadow: 0 12px 32px rgba(0, 0, 0, 0.3), 0 4px 10px rgba(0, 0, 0, 0.16);
+  --c-acrylic-standin: rgba(30, 31, 36, 0.35);
 }
+/* Reduced transparency: solid Ink (or paper), same geometry and rim. */
 @media (prefers-reduced-transparency: reduce) {
-  :root, :root[data-mode="dark"] { --c-bar: var(--c-solid); --c-panel: var(--c-solid); --c-bar-base: var(--c-solid); }
+  :root, :root[data-mode="dark"] { --c-bar-alpha: 1; --c-panel: var(--c-solid); --c-dock-tint: var(--c-solid); }
 }

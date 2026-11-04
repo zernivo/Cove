@@ -420,9 +420,9 @@ function renderLook(t: ThemeState): void {
   if (wall) renderWall(wall);
   chipGroup("look-theme", [["tidepool", "Clear"], ["slate", "Solid"]], t.theme, (k) => setLook({ theme: k }));
   chipGroup("look-mode", [["system", "Auto"], ["light", "Light"], ["dark", "Dark"]], t.mode, (k) => setLook({ mode: k }));
-  chipGroup("look-accent", [["cove", "Cove teal"], ["windows", "Windows'"]], t.accent_source, (k) => setLook({ accent: k }));
+  chipGroup("look-accent", [["cove", "Graphite"], ["windows", "Windows'"]], t.accent_source, (k) => setLook({ accent: k }));
   $("look-theme-note").textContent = LOOK_NOTES[t.theme] ?? "";
-  $("look-accent-note").textContent = t.accent_source === "windows" && !t.accent ? "Couldn't read Windows' accent, so Cove's teal is used." : "";
+  $("look-accent-note").textContent = t.accent_source === "windows" && !t.accent ? "Couldn't read Windows' accent, so Graphite is used." : "";
 }
 function loadLook(): void {
   invoke<ThemeState>("theme_get").then(renderLook).catch(() => renderLook(look));

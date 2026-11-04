@@ -29,7 +29,7 @@ html, body {
   outline-offset: 4px;
   transition: outline-color 120ms;
 }
-.tile.sel, .tile:hover { outline-color: var(--accent); }
+.tile.sel, .tile:hover { outline-color: rgba(255, 255, 255, 0.7); }
 .cap {
   position: absolute;
   left: 50%;
@@ -75,7 +75,7 @@ html, body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.min.sel, .min:hover { background: color-mix(in srgb, var(--accent) 55%, transparent); }
+.min.sel, .min:hover { background: rgba(255, 255, 255, 0.2); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22); }
 .empty {
   position: absolute;
   top: 50%;

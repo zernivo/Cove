@@ -57,6 +57,23 @@ pub fn classify(class: &str, exe: &str, aumid: Option<&str>, title: &str) -> (St
 
 pub use imp::{power, refresh_icons};
 
+/// First name of the signed-in user, for "Sign Out Khubaib…" (display
+/// name when Windows has one, else the account name).
+pub fn user_first_name() -> String {
+    let full = imp::display_name().filter(|n| !n.trim().is_empty()).or_else(|| std::env::var("USERNAME").ok()).or_else(|| std::env::var("USER").ok()).unwrap_or_default();
+    first_word(&full)
+}
+
+pub fn first_word(name: &str) -> String {
+    let n = name.trim();
+    // "Nazeer, Khubaib" style display names put the given name second.
+    let given = match n.split_once(',') {
+        Some((_, g)) if !g.trim().is_empty() => g.trim(),
+        _ => n,
+    };
+    given.split_whitespace().next().unwrap_or("").to_string()
+}
+
 /// Reserve the menu bar's strip (`height` physical px) at the top of the
 /// main display; returns the rectangle the bar occupies.
 pub fn register(hwnd: isize, height: i32) -> (i32, i32, i32, i32) {
@@ -156,6 +173,14 @@ mod imp {
     /// down ask Windows to show its own confirmation (shell32 RestartDialog,
     /// the prompt installers use); Err("confirm") when that isn't available,
     /// and the menu bar asks instead (then `power_now`).
+    pub fn display_name() -> Option<String> {
+        use windows_sys::Win32::Security::Authentication::Identity::{GetUserNameExW, NameDisplay};
+        let mut buf = [0u16; 256];
+        let mut n = buf.len() as u32;
+        let ok = unsafe { GetUserNameExW(NameDisplay, buf.as_mut_ptr(), &mut n) };
+        (ok != 0).then(|| String::from_utf16_lossy(&buf[..n as usize]))
+    }
+
     pub fn power(what: &str) -> Result<(), String> {
         use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
         match what {
@@ -200,6 +225,9 @@ mod imp {
     pub fn front() -> super::Front {
         super::Front { name: "Desktop".into(), kind: "desktop", hwnd: 0 }
     }
+    pub fn display_name() -> Option<String> {
+        None
+    }
     pub fn power(_what: &str) -> Result<(), String> {
         Err("confirm".into())
     }
@@ -207,6 +235,13 @@ mod imp {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn first_names() {
+        assert_eq!(super::first_word("Khubaib Nazeer"), "Khubaib");
+        assert_eq!(super::first_word("Nazeer, Khubaib"), "Khubaib");
+        assert_eq!(super::first_word("  khuba "), "khuba");
+    }
+
     use super::classify;
     #[test]
     fn names_the_front_app() {
