@@ -1416,15 +1416,39 @@ fn dock_launch(target: String) -> Result<(), String> {
     dock::launch(&target)
 }
 
-/// True once per install (and once per minor version): play the full intro.
+/// What the full intro is keyed on: this exact build (version + commit),
+/// so every new build plays it once even when the version number stays the
+/// same (preview builds). Falls back to the version when no build id was
+/// embedded.
+fn intro_key(version: &str, build: &str) -> String {
+    if build.is_empty() {
+        version.to_string()
+    } else {
+        format!("{version}+{build}")
+    }
+}
+
+/// Called by the Settings page as soon as it has painted its Ink cover:
+/// shows the window from here (so it never depends on a window permission
+/// in the page) and says which intro to play. True once per installed
+/// build: the full intro; false: the short logo animation.
 #[tauri::command]
-fn intro_first(state: tauri::State<'_, AppState>) -> bool {
-    let v = env!("CARGO_PKG_VERSION").splitn(3, '.').take(2).collect::<Vec<_>>().join(".");
+fn intro_first(app: AppHandle, state: tauri::State<'_, AppState>) -> bool {
+    if let Some(w) = app.get_webview_window("main") {
+        if !w.is_visible().unwrap_or(false) {
+            let _ = w.show();
+            let _ = w.unminimize();
+            keep_on_screen(&app, &w);
+            let _ = w.set_focus();
+            dock_changed(&app);
+        }
+    }
+    let key = intro_key(env!("CARGO_PKG_VERSION"), env!("COVE_BUILD_ID"));
     let Ok(mut s) = state.settings.lock() else { return false };
-    if s.data.intro_seen.as_deref() == Some(v.as_str()) {
+    if s.data.intro_seen.as_deref() == Some(key.as_str()) {
         return false;
     }
-    s.data.intro_seen = Some(v);
+    s.data.intro_seen = Some(key);
     let _ = s.save();
     true
 }
@@ -2144,4 +2168,14 @@ fn main() {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn intro_is_keyed_per_build() {
+        assert_eq!(super::intro_key("0.9.0", "046d323abcde"), "0.9.0+046d323abcde");
+        assert_ne!(super::intro_key("0.9.0", "046d323"), super::intro_key("0.9.0", "8a1edcc"));
+        assert_eq!(super::intro_key("0.9.0", ""), "0.9.0");
+    }
 }

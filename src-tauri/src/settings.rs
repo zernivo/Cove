@@ -17,7 +17,7 @@ pub struct Settings {
     pub dock: bool,
     /// Auto-hide the Windows taskbar while the dock is on.
     pub dock_hide_taskbar: bool,
-    /// Version whose first launch played the full intro ("0.9").
+    /// The build whose first launch played the full intro ("0.9.0+046d323").
     #[serde(default)]
     pub intro_seen: Option<String>,
     /// Cove desktop: while the dock is on, the Windows taskbar is hidden
