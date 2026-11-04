@@ -168,29 +168,71 @@ $("wi-toggle").addEventListener("change", async (e) => {
 invoke<SearchInfo>("search_info").then(renderSearchInfo);
 window.addEventListener("focus", () => invoke<SearchInfo>("search_info").then(renderSearchInfo));
 
-// ---- Look (Cove Glass) ----
+// ---- Wallpaper gallery ----
 interface WallStatus { scenes: string[]; current: string; has_prev: boolean; schedule: string; light_at: string; dark_at: string; dark_now: boolean }
+interface WallItem {
+  id: string; category: string; mode: "dark" | "light" | "both"; title: string; author: string;
+  license: string; licenseUrl: string; source: string; sourceUrl: string; thumb: string; url?: string; bundled?: string;
+}
+interface WallManifest { categories: { id: string; name: string; soon?: boolean }[]; items: WallItem[] }
+interface WallProgress { id: string; received: number; total: number }
 let mockWall: WallStatus = { scenes: ["tidepool", "lagoon", "dune", "slate"], current: "", has_prev: false, schedule: "off", light_at: "07:00", dark_at: "19:00", dark_now: false };
-const WALL_NAMES: Record<string, string> = { tidepool: "Tidepool", lagoon: "Lagoon", dune: "Dune", slate: "Slate" };
 let wall: WallStatus = mockWall;
+let gallery: WallManifest | null = null;
+let galCat = localStorage.getItem("cove.wall.cat") ?? "all";
+let galMode: "dark" | "light" | null = null; // null: follow Cove's appearance
+let galCached = new Set<string>();
+const galLoading = new Map<string, number>(); // id -> fraction (or -1 when the size is unknown)
+const galErrors = new Map<string, string>();
+let galBusy = ""; // the id being downloaded
+
+fetch("/wallpapers/manifest.json").then((r) => r.json()).then((m: WallManifest) => { gallery = m; renderWall(wall); }).catch(() => {
+  $("wall-note").textContent = "Couldn't load the wallpaper list.";
+});
+if (inTauri) invoke<string[]>("wallpaper_cached").then((ids) => { galCached = new Set(ids); }).catch(() => {});
+
+function currentId(w: WallStatus): string {
+  if (w.current.startsWith("gallery:")) return w.current.slice(8);
+  if (gallery) return gallery.items.find((i) => i.bundled && i.bundled === w.current)?.id ?? "";
+  return "";
+}
+function thumbUrl(it: WallItem, mode: "dark" | "light"): string {
+  return "/wallpapers/" + it.thumb.replace("{mode}", mode);
+}
+function fmtMB(n: number): string { return (n / 1048576).toFixed(1); }
+
 function renderWall(w: WallStatus): void {
   wall = w;
-  const v = (document.documentElement.dataset.mode === "dark") ? "dark" : "light";
-  $("walls").innerHTML = "";
-  for (const sc of w.scenes) {
+  const mode = galMode ?? ((document.documentElement.dataset.mode === "dark") ? "dark" : "light");
+  chipGroup("gal-mode", [["dark", "Dark"], ["light", "Light"]], mode, (k) => { galMode = k as "dark" | "light"; renderWall(wall); });
+  const chips = $("gal-chips");
+  chips.innerHTML = "";
+  const cats = [{ id: "all", name: "All" }, ...(gallery?.categories ?? [])];
+  for (const c of cats) {
     const b = document.createElement("button");
-    b.className = `wall${w.current === sc ? " on" : ""}`;
-    const img = document.createElement("img");
-    img.src = `/wallpapers/${sc}-${v}.jpg`;
-    img.alt = "";
-    const t = document.createElement("span");
-    t.textContent = WALL_NAMES[sc] ?? sc;
-    b.append(img, t);
-    b.addEventListener("click", async () => {
-      try { renderWall(await invoke<WallStatus>("wallpaper_set", { scene: sc })); }
-      catch (e) { $("wall-note").textContent = String(e); }
-    });
-    $("walls").appendChild(b);
+    b.className = `chip${galCat === c.id ? " on" : ""}`;
+    b.setAttribute("role", "tab");
+    b.setAttribute("aria-selected", String(galCat === c.id));
+    b.textContent = c.name;
+    if ("soon" in c && c.soon) {
+      b.disabled = true;
+      b.title = "Live wallpapers are in beta and coming soon";
+      b.append(Object.assign(document.createElement("sup"), { textContent: "beta \u2013 coming soon" }));
+    } else {
+      b.addEventListener("click", () => { galCat = c.id; localStorage.setItem("cove.wall.cat", c.id); renderWall(wall); });
+    }
+    chips.appendChild(b);
+  }
+  const grid = $("walls");
+  grid.innerHTML = "";
+  if (!gallery) {
+    for (let i = 0; i < 6; i++) grid.insertAdjacentHTML("beforeend", '<div class="wt"><div class="im"></div><span class="wcap"><b>&nbsp;</b></span></div>');
+  } else {
+    const on = currentId(w);
+    const list = gallery.items.filter((it) => (galCat === "all" || it.category === galCat) && (it.mode === "both" || it.mode === mode));
+    if (!list.length) grid.innerHTML = '<p class="gal-empty">Nothing here in this mode yet.</p>';
+    const catName = new Map(gallery.categories.map((c) => [c.id, c.name]));
+    for (const it of list) grid.appendChild(wallTile(it, mode, it.id === on, catName.get(it.category) ?? ""));
   }
   $("wall-restore").classList.toggle("hidden", !w.has_prev);
   chipGroup("sched-mode", [["off", "Off"], ["times", "On"]], w.schedule, (k) => saveSched(k));
@@ -198,6 +240,141 @@ function renderWall(w: WallStatus): void {
   ($("sched-dark") as HTMLInputElement).value = w.dark_at;
   $("sched-times").classList.toggle("off", w.schedule !== "times");
 }
+
+function wallTile(it: WallItem, mode: "dark" | "light", on: boolean, cat: string): HTMLElement {
+  const b = document.createElement("div");
+  b.className = `wt${on ? " on" : ""}`;
+  b.tabIndex = 0;
+  b.setAttribute("role", "option");
+  b.setAttribute("aria-selected", String(on));
+  b.dataset.id = it.id;
+  b.setAttribute("aria-label", `${it.title}, ${it.author === "Cove" ? "Cove original art" : `${it.author}, ${it.license}`}`);
+  const im = document.createElement("div");
+  im.className = "im";
+  const img = new Image();
+  img.alt = "";
+  img.decoding = "async";
+  img.onload = () => img.classList.add("ready");
+  img.src = thumbUrl(it, mode);
+  im.appendChild(img);
+  if (on) im.insertAdjacentHTML("beforeend", '<span class="tick"><svg viewBox="0 0 12 12"><path d="M2.5 6.2l2.3 2.3 4.7-5"/></svg></span>');
+  if (it.mode === "both") im.insertAdjacentHTML("beforeend", '<span class="pair" title="Has a light and a dark version and follows Cove\'s appearance"></span>');
+  // The credit, on hover and keyboard focus.
+  const cr = document.createElement("div");
+  cr.className = "credit";
+  cr.append(Object.assign(document.createElement("b"), { textContent: it.title }));
+  if (it.author === "Cove") {
+    cr.append(Object.assign(document.createElement("em"), { textContent: it.bundled ? "Cove original art, ships with Cove" : "Cove original art" }));
+  } else {
+    cr.append(Object.assign(document.createElement("span"), { textContent: `${it.author} \u00b7 ${it.license}` }));
+    const a = Object.assign(document.createElement("a"), { textContent: `${it.source} \u2197`, href: it.sourceUrl, title: it.sourceUrl });
+    a.addEventListener("click", (e) => {
+      e.preventDefault(); e.stopPropagation();
+      if (inTauri) invoke("wallpaper_open_source", { id: it.id }).catch(() => {});
+      else window.open(it.sourceUrl, "_blank", "noopener");
+    });
+    cr.append(a);
+  }
+  im.appendChild(cr);
+  const frac = galLoading.get(it.id);
+  if (frac !== undefined) im.appendChild(loadOverlay(frac));
+  const err = galErrors.get(it.id);
+  if (err) {
+    const e = document.createElement("div");
+    e.className = "err";
+    e.append(Object.assign(document.createElement("b"), { textContent: "Couldn't set this one" }), Object.assign(document.createElement("span"), { textContent: `${err} Click to try again.` }));
+    im.appendChild(e);
+  }
+  const cap = document.createElement("span");
+  cap.className = "wcap";
+  cap.append(Object.assign(document.createElement("b"), { textContent: it.title }), Object.assign(document.createElement("i"), { textContent: cat }));
+  b.append(im, cap);
+  const pick = () => pickWall(it);
+  b.addEventListener("click", pick);
+  b.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+  return b;
+}
+
+function loadOverlay(frac: number, text?: string): HTMLElement {
+  const l = document.createElement("div");
+  l.className = `load${frac < 0 ? " indet" : ""}`;
+  l.innerHTML = '<span class="pct"></span><div class="bar"><i></i></div>';
+  (l.querySelector(".pct") as HTMLElement).textContent = text ?? (frac < 0 ? "Downloading\u2026" : `${Math.round(frac * 100)}%`);
+  if (frac >= 0) (l.querySelector(".bar i") as HTMLElement).style.width = `${Math.round(frac * 100)}%`;
+  return l;
+}
+
+function showProgress(p: WallProgress): void {
+  if (!galLoading.has(p.id)) return;
+  const frac = p.total > 0 ? Math.min(1, p.received / p.total) : -1;
+  galLoading.set(p.id, frac);
+  const tile = document.querySelector<HTMLElement>(`.wt[data-id="${p.id}"] .im`);
+  if (!tile) return;
+  tile.querySelector(".load")?.remove();
+  const text = frac < 0 ? `${fmtMB(p.received)} MB` : `${Math.round(frac * 100)}%  \u00b7  ${fmtMB(p.received)} of ${fmtMB(p.total)} MB`;
+  tile.appendChild(loadOverlay(frac, text));
+}
+
+async function pickWall(it: WallItem): Promise<void> {
+  if (galBusy && galBusy !== it.id) galLoading.delete(galBusy); // the newer pick wins
+  galErrors.delete(it.id);
+  const needsDownload = !it.bundled && !galCached.has(it.id);
+  galBusy = it.id;
+  if (needsDownload) { galLoading.set(it.id, -1); renderWall(wall); }
+  try {
+    const st = inTauri ? await invoke<WallStatus>("wallpaper_pick", { id: it.id }) : await mockPick(it, needsDownload);
+    if (!it.bundled) galCached.add(it.id);
+    if (galBusy === it.id) galBusy = "";
+    if (!inTauri) $("mini-wall").style.backgroundImage = `url("${thumbUrl(it, galMode ?? "dark")}")`; // preview only
+    galLoading.delete(it.id);
+    renderWall(st);
+  } catch (e) {
+    galLoading.delete(it.id);
+    if (galBusy === it.id) galBusy = "";
+    if (String(e) !== "cancelled") galErrors.set(it.id, String(e).replace(/\.?$/, "."));
+    renderWall(wall);
+  }
+}
+
+// Browser preview: pretend to download so the loading state can be designed.
+function mockPick(it: WallItem, slow: boolean): Promise<WallStatus> {
+  return new Promise((done) => {
+    const total = 4.2 * 1048576;
+    let got = 0;
+    const step = () => {
+      if (!slow || got >= total) {
+        mockWall = { ...mockWall, current: it.bundled ? it.bundled : `gallery:${it.id}`, has_prev: true };
+        return done({ ...mockWall });
+      }
+      got = Math.min(total, got + total / 14);
+      showProgress({ id: it.id, received: got, total });
+      setTimeout(step, 120);
+    };
+    step();
+  });
+}
+
+$("wall-own").addEventListener("click", () => ($("wall-own-file") as HTMLInputElement).click());
+$("wall-own-file").addEventListener("change", async (e) => {
+  const input = e.target as HTMLInputElement;
+  const f = input.files?.[0];
+  input.value = "";
+  if (!f) return;
+  $("wall-note").textContent = `Setting ${f.name}\u2026`;
+  try {
+    const buf = new Uint8Array(await f.arrayBuffer());
+    let bin = "";
+    for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+    const st = inTauri ? await invoke<WallStatus>("wallpaper_own", { data: btoa(bin) }) : { ...(mockWall = { ...mockWall, current: "own:mock", has_prev: true }) };
+    $("wall-note").textContent = `Your picture is on the desktop.`;
+    renderWall(st);
+  } catch (err) {
+    $("wall-note").textContent = String(err);
+  }
+});
+if (inTauri) listen<WallProgress>("wallpaper-progress", (e) => showProgress(e.payload));
+
+// ---- Look (Cove Glass) ----
 async function saveSched(mode?: string): Promise<void> {
   try {
     renderWall(await invoke<WallStatus>("schedule_set", {

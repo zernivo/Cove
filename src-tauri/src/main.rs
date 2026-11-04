@@ -766,6 +766,18 @@ fn wallpaper_sync(app: &AppHandle, state: &AppState) -> Result<(), String> {
     if scene.is_empty() {
         return Ok(());
     }
+    // A gallery pick or your own picture: one fixed file in Cove's data folder.
+    if let Some(file) = wallpaper_fixed_file(app, &scene) {
+        let f = file.to_string_lossy().to_string();
+        if !file.exists() || WALL_LAST.lock().map(|l| *l == f).unwrap_or(false) {
+            return Ok(());
+        }
+        wallpaper::set(&f)?;
+        if let Ok(mut l) = WALL_LAST.lock() {
+            *l = f;
+        }
+        return Ok(());
+    }
     let name = wallpaper::file_name(&scene, dark);
     let src = app
         .path()
@@ -787,6 +799,105 @@ fn wallpaper_sync(app: &AppHandle, state: &AppState) -> Result<(), String> {
         *l = dst_s;
     }
     Ok(())
+}
+
+fn gallery_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    Ok(app.path().app_data_dir().map_err(|e| e.to_string())?.join("wallpapers").join("gallery"))
+}
+
+/// "gallery:<id>" and "own:<file>" name one file; Cove scenes return None.
+fn wallpaper_fixed_file(app: &AppHandle, choice: &str) -> Option<std::path::PathBuf> {
+    let dir = gallery_dir(app).ok()?;
+    if let Some(id) = choice.strip_prefix("gallery:") {
+        return wallpaper::safe_id(id).then(|| wallpaper::cache_file(&dir, id));
+    }
+    let f = choice.strip_prefix("own:")?;
+    (!f.contains(['/', '\\']) && f.starts_with("own-")).then(|| dir.join(f))
+}
+
+/// Remember the wallpaper from before Cove, then record the new choice and show it.
+fn wallpaper_choose(app: &AppHandle, choice: String) -> Result<wallpaper::WallpaperStatus, String> {
+    let state = app.state::<AppState>();
+    {
+        let mut s = state.settings.lock().map_err(|e| e.to_string())?;
+        if s.data.wallpaper_prev.is_none() {
+            s.data.wallpaper_prev = Some(wallpaper::current().unwrap_or_default());
+        }
+        s.data.wallpaper = choice;
+        let _ = s.save();
+    }
+    wallpaper_sync(app, &state)?;
+    let _ = app.emit("wallpaper-changed", ());
+    let s = state.settings.lock().map_err(|e| e.to_string())?;
+    Ok(wallpaper_status_of(&s.data))
+}
+
+#[derive(Clone, serde::Serialize)]
+struct WallProgress {
+    id: String,
+    received: u64,
+    total: u64,
+}
+
+/// Pick a gallery wallpaper: Cove scenes apply at once; photos and art are
+/// downloaded on first use (progress as "wallpaper-progress"), then cached.
+#[tauri::command]
+async fn wallpaper_pick(id: String, app: AppHandle) -> Result<wallpaper::WallpaperStatus, String> {
+    let item = wallpaper::item(&id).ok_or("Unknown wallpaper")?;
+    let ticket = wallpaper::next_pick();
+    if !item.bundled.is_empty() {
+        let scene = item.bundled.clone();
+        return wallpaper_choose(&app, scene);
+    }
+    let dir = gallery_dir(&app)?;
+    let a = app.clone();
+    let path = tauri::async_runtime::spawn_blocking(move || {
+        wallpaper::fetch(item, &dir, ticket, |received, total| {
+            let _ = a.emit("wallpaper-progress", WallProgress { id: item.id.clone(), received, total });
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    if !wallpaper::still_wanted(ticket) || !path.exists() {
+        return Err(wallpaper::CANCELLED.into());
+    }
+    wallpaper_choose(&app, format!("gallery:{}", id))
+}
+
+/// "Use my own wallpaper": a JPEG, PNG or BMP the user chose, sent as base64.
+#[tauri::command]
+async fn wallpaper_own(data: String, app: AppHandle) -> Result<wallpaper::WallpaperStatus, String> {
+    use base64::Engine;
+    wallpaper::next_pick();
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data.as_bytes()).map_err(|_| "Couldn't read that file")?;
+    if bytes.len() > 64 * 1024 * 1024 {
+        return Err("That picture is too large".into());
+    }
+    let ext = wallpaper::image_ext(&bytes).ok_or("Pick a JPEG, PNG or BMP picture")?;
+    let dir = gallery_dir(&app)?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    // A fresh name each time, so Windows doesn't keep showing a cached copy.
+    if let Ok(rd) = std::fs::read_dir(&dir) {
+        for e in rd.flatten() {
+            if e.file_name().to_string_lossy().starts_with("own-") {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let name = format!("own-{}.{}", stamp, ext);
+    std::fs::write(dir.join(&name), &bytes).map_err(|e| format!("Couldn't save the picture: {}", e))?;
+    wallpaper_choose(&app, format!("own:{}", name))
+}
+
+#[tauri::command]
+fn wallpaper_cached(app: AppHandle) -> Vec<String> {
+    gallery_dir(&app).map(|d| wallpaper::cached(&d)).unwrap_or_default()
+}
+
+#[tauri::command]
+fn wallpaper_open_source(id: String) -> Result<(), String> {
+    wallpaper::open_source(&id)
 }
 
 fn wallpaper_put_back(state: &AppState) -> Result<bool, String> {
@@ -1977,6 +2088,10 @@ fn main() {
             wallpaper_status,
             wallpaper_set,
             wallpaper_restore,
+            wallpaper_pick,
+            wallpaper_own,
+            wallpaper_cached,
+            wallpaper_open_source,
             schedule_set,
             expose_open,
             expose_pick,
