@@ -2,6 +2,7 @@
 // Hide the console window in release builds on Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod appbar;
 mod appnames;
 mod clipboard;
 mod controls;
@@ -230,6 +231,7 @@ fn restore_all(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<Rest
     if let Some(w) = app.get_webview_window("dock") {
         let _ = w.hide();
     }
+    dock_release(&app);
     let had_bar = state.settings.lock().map(|mut s| {
         let was = s.data.topbar;
         s.data.topbar = false;
@@ -501,9 +503,12 @@ fn dock_apply(app: &AppHandle, state: &AppState) -> DockStatus {
     if let Some(w) = app.get_webview_window("dock") {
         if enabled && !safe() {
             let _ = w.show();
+            // Reserve the dock's strip so maximised windows stop above it.
+            dock_layout(app, &w, None);
             let _ = w.emit("dock-changed", ());
         } else {
             let _ = w.hide();
+            dock_release(app);
         }
     }
     DockStatus { enabled, hide_taskbar: hide, stacks, display }
@@ -1170,6 +1175,33 @@ fn display_watch(app: AppHandle) {
             Err(_) => continue,
         };
 
+        // Explorer restarted (it forgets every AppBar): the work area runs
+        // under a bar again, so reserve the strips anew (checked every 3 s).
+        if tick % 10 == 5 {
+            let held = |label: &str| {
+                app.get_webview_window(label)
+                    .and_then(|w| w.hwnd().ok())
+                    .map(|h| h.0 as isize)
+                    .and_then(|h| appbar::held(h).map(|rc| (h, rc)))
+            };
+            if let (true, Some((h, rc)), Some(p)) = (bar_on, held("topbar"), dock::primary()) {
+                if p.work.1 < rc.3 {
+                    appbar::forget(h);
+                    let a = app.clone();
+                    let _ = app.run_on_main_thread(move || topbar_apply(&a, true));
+                }
+            }
+            if let (true, Some((h, rc))) = (dock_on, held("dock")) {
+                let (cx, cy) = ((rc.0 + rc.2) / 2, (rc.1 + rc.3) / 2);
+                if dock::monitor_at(cx, cy).is_some_and(|m| m.work.3 > rc.1) {
+                    appbar::forget(h);
+                    if let Some(w) = app.get_webview_window("dock") {
+                        let _ = w.emit("dock-reflow", ());
+                    }
+                }
+            }
+        }
+
         // Top bar: main display geometry or scale changed (checked each second).
         if bar_on && tick % 3 == 0 {
             if let Some(p) = dock::primary() {
@@ -1316,13 +1348,20 @@ fn dock_unpin(target: String, state: tauri::State<'_, AppState>) {
     }
 }
 
-/// Size the dock window and park it at the bottom centre of the main
-/// screen's work area.
-#[tauri::command]
-fn dock_place(width: f64, height: f64, app: AppHandle) {
-    let Some(w) = app.get_webview_window("dock") else { return };
+/// The strip the dock keeps for itself at the bottom of its display, in
+/// DIP: the dock (48 + 16 padding + 2 border) and its 8 DIP of air. Maximised
+/// windows stop above it, like on a Mac. Magnified icons and labels draw
+/// above the strip, over the apps, only while the pointer is on the dock.
+const DOCK_RESERVE: f64 = 74.0;
+
+fn dock_enabled(app: &AppHandle) -> bool {
+    app.state::<AppState>().settings.lock().map(|s| s.data.dock).unwrap_or(false) && !safe()
+}
+
+/// Park the dock at the bottom centre of its display and (while it's shown)
+/// reserve its strip as an AppBar. `size` in DIP; None keeps the current size.
+fn dock_layout(app: &AppHandle, w: &tauri::WebviewWindow, size: Option<(f64, f64)>) {
     let mon = dock::dock_monitor().or_else(dock::primary);
-    let (l, _t, r, b) = mon.map(|m| m.work).or_else(dock::work_area).unwrap_or((0, 0, 1920, 1080));
     let sf = mon
         .and_then(|m| {
             let (cx, cy) = m.centre();
@@ -1330,13 +1369,87 @@ fn dock_place(width: f64, height: f64, app: AppHandle) {
         })
         .map(|m| m.scale_factor())
         .unwrap_or_else(|| w.scale_factor().unwrap_or(1.0));
-    let (pw, ph) = ((width * sf).round() as i32, (height * sf).round() as i32);
+    let (pw, ph) = match size {
+        Some((width, height)) => ((width * sf).round() as i32, (height * sf).round() as i32),
+        None => match w.outer_size() {
+            Ok(s) => (s.width as i32, s.height as i32),
+            Err(_) => return,
+        },
+    };
+    let hwnd = w.hwnd().map(|h| h.0 as isize).unwrap_or(0);
+    let reserve = dock_enabled(app) && w.is_visible().unwrap_or(false);
+    let (l, r, b) = match (reserve, mon) {
+        (true, Some(m)) if hwnd != 0 => {
+            let rc = appbar::register(hwnd, appbar::BOTTOM, m.monitor, (DOCK_RESERVE * sf).round() as i32);
+            (rc.0, rc.2, rc.3)
+        }
+        _ => {
+            if hwnd != 0 {
+                appbar::unregister(hwnd);
+            }
+            let (l, _t, r, b) = mon.map(|m| m.work).or_else(dock::work_area).unwrap_or((0, 0, 1920, 1080));
+            (l, r, b)
+        }
+    };
     let pos = PhysicalPosition::new(l + (r - l - pw) / 2, b - ph);
     // Move first, so a display with a different scale doesn't resize us
     // after we've set the size; then size, then settle the position.
     let _ = w.set_position(pos);
     let _ = w.set_size(tauri::PhysicalSize::new(pw as u32, ph as u32));
     let _ = w.set_position(pos);
+}
+
+/// Give the dock's strip back (dock off, safe mode, quitting).
+fn dock_release(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("dock") {
+        if let Ok(h) = w.hwnd() {
+            appbar::unregister(h.0 as isize);
+        }
+    }
+}
+
+/// A dock menu or folder stack is open above the dock (set by the dock page).
+static DOCK_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[tauri::command]
+fn dock_busy(busy: bool) {
+    DOCK_BUSY.store(busy, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// The dock window is taller than its reserved strip (room for magnified
+/// icons, labels, menus and stacks). That headroom must not catch clicks
+/// meant for the app below it, so the window lets the pointer through until
+/// the pointer reaches the dock itself, and keeps it while the pointer stays
+/// on the dock window or a menu / stack is open. Polls every 40 ms: cheap.
+fn dock_hit_watch(app: AppHandle) {
+    let mut through: Option<bool> = None;
+    let mut on_dock = false;
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(40));
+        let Some(w) = app.get_webview_window("dock") else { continue };
+        let Ok(h) = w.hwnd() else { continue };
+        let Some(rc) = appbar::held(h.0 as isize) else {
+            // Not reserving (dock hidden): leave the window as it is.
+            through = None;
+            continue;
+        };
+        let (Ok(pos), Ok(size), Some((x, y))) = (w.outer_position(), w.outer_size(), dock::cursor()) else { continue };
+        let inside = x >= pos.x && x < pos.x + size.width as i32 && y >= pos.y && y < pos.y + size.height as i32;
+        // Reaching the strip arms the dock; leaving the window disarms it.
+        on_dock = inside && (on_dock || y >= rc.1);
+        let pass = !(on_dock || DOCK_BUSY.load(std::sync::atomic::Ordering::SeqCst));
+        if through != Some(pass) {
+            let _ = w.set_ignore_cursor_events(pass);
+            through = Some(pass);
+        }
+    }
+}
+
+/// Size the dock window (DIP) and park it on its display.
+#[tauri::command]
+fn dock_place(width: f64, height: f64, app: AppHandle) {
+    let Some(w) = app.get_webview_window("dock") else { return };
+    dock_layout(&app, &w, Some((width, height)));
 }
 
 #[tauri::command]
@@ -1584,6 +1697,9 @@ fn main() {
             let dir = app.path().app_data_dir()?;
             let journal = journal::Journal::load(dir.join("journal.json"))?;
             let store = settings::Store::load(dir.join("settings.json"));
+            // Bars a crashed run still held (the watchdog normally frees them).
+            appbar::release_recorded(&dir.join("settings.json"));
+            appbar::set_record(appbar::record_path(&dir.join("settings.json")));
             // If Cove ever ends without tidying up, this brings the taskbar back.
             #[cfg(windows)]
             if let Ok(me) = std::env::current_exe() {
@@ -1673,6 +1789,8 @@ fn main() {
             {
                 let h = app.handle().clone();
                 std::thread::spawn(move || display_watch(h));
+                let h = app.handle().clone();
+                std::thread::spawn(move || dock_hit_watch(h));
             }
             if updated {
                 use tauri_plugin_notification::NotificationExt;
@@ -1872,6 +1990,7 @@ fn main() {
             dock_pin,
             dock_unpin,
             dock_place,
+            dock_busy,
             clip_history,
             clip_use,
             clip_clear,
@@ -1891,11 +2010,13 @@ fn main() {
             hotkeys::stop();
             switcher::set_enabled(false);
             snap::configure(false, true);
+            // Give the menu bar's and the dock's space back.
             if let Some(w) = handle.get_webview_window("topbar") {
                 if let Ok(h) = w.hwnd() {
                     topbar::unregister(h.0 as isize);
                 }
             }
+            dock_release(handle);
             dock::TASKBAR_GONE.store(false, std::sync::atomic::Ordering::SeqCst);
             dock::taskbar_visible(true);
             if let Some(state) = handle.try_state::<AppState>() {

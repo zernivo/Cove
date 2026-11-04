@@ -174,11 +174,20 @@ function showMenu(it: DockItem, x: number, y: number): void {
     menu.appendChild(b);
   }
   menu.classList.remove("hidden");
+  busy();
   const r = menu.getBoundingClientRect();
   menu.style.left = `${Math.max(4, Math.min(x - r.width / 2, innerWidth - r.width - 4))}px`;
   menu.style.top = `${Math.max(4, y - r.height - 12)}px`;
 }
-function hideMenu(): void { menu.classList.add("hidden"); }
+function hideMenu(): void { menu.classList.add("hidden"); busy(); }
+// A menu or stack reaches above the dock's reserved strip: keep the whole
+// window clickable while one is open (otherwise its headroom lets clicks
+// through to the app below).
+let wasBusy = false;
+function busy(): void {
+  const now = !menu.classList.contains("hidden") || !!openStack;
+  if (now !== wasBusy) { wasBusy = now; invoke("dock_busy", { busy: now }); }
+}
 document.addEventListener("click", (e) => {
   const t = e.target as Node;
   if (!menu.contains(t)) hideMenu();
@@ -194,6 +203,7 @@ function closeStack(): void {
   if (!openStack) return;
   openStack = "";
   stack.classList.add("hidden");
+  busy();
   dock.querySelectorAll(".item.open").forEach((e) => e.classList.remove("open"));
   place();
 }
@@ -201,6 +211,7 @@ function closeStack(): void {
 async function toggleStack(it: DockItem, el: HTMLElement): Promise<void> {
   if (openStack === it.target) { closeStack(); return; }
   openStack = it.target;
+  busy();
   if (inTauri) getCurrentWindow().setFocus().catch(() => {}); // so clicking elsewhere closes it
   dock.querySelectorAll(".item.open").forEach((e) => e.classList.remove("open"));
   el.classList.add("open");

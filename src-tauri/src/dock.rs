@@ -313,9 +313,11 @@ pub use imp::{
 pub static TASKBAR_GONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Watchdog side of the takeover: after Cove's process `pid` ends, for any
-/// reason, the taskbar comes back. Runs as `cove --watchdog <pid> <settings>`.
+/// reason, the taskbar comes back and Cove's reserved strips are released. Runs as `cove --watchdog <pid> <settings>`.
 pub fn watchdog(pid: u32, settings: &std::path::Path) {
     imp::wait_for_exit(pid);
+    // The space the menu bar and dock reserved goes back to the apps.
+    crate::appbar::release_recorded(settings);
     taskbar_visible(true);
     let mut s = crate::settings::Store::load(settings.to_path_buf());
     if let Some(prev) = s.data.taskbar_prev_autohide.take() {
