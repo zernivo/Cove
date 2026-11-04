@@ -72,6 +72,21 @@
         "focus": false
       },
       {
+        "label": "popover",
+        "title": "Cove Menu",
+        "url": "popover.html",
+        "width": 322,
+        "height": 300,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "resizable": false,
+        "shadow": true,
+        "focus": false
+      },
+      {
         "label": "switcher",
         "title": "Cove Switcher",
         "url": "switcher.html",

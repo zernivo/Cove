@@ -97,11 +97,14 @@ function cube(g: CanvasRenderingContext2D, sx: number, sy: number, s: number, c:
   }
 }
 
+/** The quick launch mark: about a second, never longer than this. */
+export const SHORT = 1.0;
+
 export interface IntroOpts { full: boolean; calm: boolean; font: string }
 
 /** Length of each intro in seconds. */
 export function introLength(o: IntroOpts): number {
-  return o.full ? (o.calm ? 4.8 : 5.6) : o.calm ? 0.9 : 1.25;
+  return o.full ? (o.calm ? 4.8 : 5.6) : o.calm ? 0.8 : SHORT;
 }
 
 /** Draw the intro at time t (seconds) into a W x H (CSS px) context. */
@@ -118,12 +121,32 @@ export function drawIntro(g: CanvasRenderingContext2D, t: number, W: number, H: 
   const centre = (N - 1) / 2;
 
   if (!full) {
-    // Every later launch: the finished C, a quick drop-in of the cube, done.
-    const a = o.calm ? eout(t / 0.25) * (1 - eout((t - 0.6) / 0.3)) : eout(t / 0.3) * (1 - eout((t - 0.95) / 0.3));
-    g.globalAlpha = a;
-    for (const v of RING) { const [x, y] = P(v.x - centre, v.y - centre, v.z - centre); cube(g, x, y, s, FACE, 0); }
-    const drop = o.calm ? 0 : (1 - eout((t - 0.05) / 0.35)) * -60 - bounce(t - 0.4, 10);
-    drawTeal(g, P, s, drop, 0);
+    // Every later launch: the sharp-edged logo B settles in about a second.
+    // Each block drops a short way and lands (staggered from the ground up),
+    // the teal cube drops in, a short hold, then the cover fades.
+    const out = o.calm ? 1 - eout((t - 0.55) / 0.25) : 1 - eout((t - 0.78) / 0.22);
+    const FALL = 0.22, SPREAD = 0.34, DROP = 2.2 * s;
+    for (const v of RING) {
+      const t0 = 0.02 + v.land * SPREAD;
+      if (t < t0) continue;
+      const u = clamp((t - t0) / FALL);
+      const dy = o.calm ? 0 : -DROP * (1 - eout(u)) - (u >= 1 ? bounce(t - t0 - FALL, s * 0.18) : 0);
+      const [x, y] = P(v.x - centre, v.y - centre, v.z - centre);
+      g.globalAlpha = clamp(u * 2.5);
+      cube(g, x, y + dy, s, FACE, 0);
+    }
+    const tt = 0.4; // teal cube drops in as the last blocks land
+    if (t >= tt) {
+      const u = clamp((t - tt) / 0.2);
+      const dy = o.calm ? 0 : -4 * s * (1 - u * u) - (u >= 1 ? bounce(t - tt - 0.2, s * 0.35) : 0);
+      g.globalAlpha = clamp(u * 3);
+      drawTeal(g, P, s, dy, 0);
+    }
+    // Fade the finished mark as one piece (an Ink veil), so overlapping
+    // blocks never show see-through seams.
+    g.globalAlpha = 1 - out;
+    g.fillStyle = INK;
+    g.fillRect(0, 0, W, H);
     g.globalAlpha = 1;
     return;
   }

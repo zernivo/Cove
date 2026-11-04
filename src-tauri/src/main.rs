@@ -293,13 +293,17 @@ fn topbar_apply(app: &AppHandle, on: bool) {
             .flatten()
             .map(|m| m.scale_factor())
             .unwrap_or_else(|| w.scale_factor().unwrap_or(1.0));
-        let (l, t, r, b) = topbar::register(h, (TOPBAR_HEIGHT * sf).round() as i32);
-        let _ = w.set_size(tauri::PhysicalSize::new((r - l).max(1) as u32, (b - t).max(1) as u32));
-        let _ = w.set_position(PhysicalPosition::new(l, t));
+        // The bar sits on exactly the strip ABM_SETPOS returned: the
+        // monitor's top edge. Placed with a synchronous SetWindowPos after
+        // showing (tao's own moves are asynchronous and in its coordinates),
+        // and checked again by display_watch.
+        let rc = topbar::register(h, (TOPBAR_HEIGHT * sf).round() as i32);
         let _ = w.show();
+        appbar::place(h, rc);
     } else {
         topbar::unregister(h);
         let _ = w.hide();
+        popover_close(app);
     }
 }
 
@@ -322,6 +326,103 @@ fn topbar_set(enabled: bool, app: AppHandle, state: tauri::State<'_, AppState>) 
 #[tauri::command]
 async fn topbar_state() -> topbar::TopState {
     topbar::state()
+}
+
+// ---- Menu bar popovers: Control Centre and the bar's menus ----
+//
+// Each opens in its own small transparent window ("popover"), sized to the
+// popover itself, so nothing but the popover shows. The menu bar window
+// never grows. Clicking anywhere else (the popover loses focus) closes it.
+
+struct PopState {
+    /// What's open now ("cc", "cove", "app", "confirm").
+    open: Option<String>,
+    /// Where it hangs from: x in DIP from the bar's left, and which edge.
+    x: f64,
+    right: bool,
+    /// The last popover closed because you clicked away, and when: a click
+    /// on the same bar item that caused it must not open it again.
+    blurred: Option<(String, std::time::Instant)>,
+}
+
+static POP: Mutex<PopState> = Mutex::new(PopState { open: None, x: 0.0, right: false, blurred: None });
+
+fn popover_state_changed(app: &AppHandle) {
+    let open = POP.lock().ok().and_then(|p| p.open.clone());
+    let _ = app.emit_to("topbar", "popover-state", open);
+}
+
+fn popover_close(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("popover") {
+        let _ = w.hide();
+    }
+    if let Ok(mut p) = POP.lock() {
+        p.open = None;
+    }
+    popover_state_changed(app);
+}
+
+/// Open (or close, when it's already open) a popover. `x` is the anchor in
+/// DIP from the menu bar's left edge; `right` hangs the popover's right edge
+/// there. `data` goes to the popover page (the app menu's front app).
+#[tauri::command]
+fn popover_toggle(kind: String, x: f64, right: bool, data: Option<serde_json::Value>, app: AppHandle) {
+    let open_now = {
+        let Ok(mut p) = POP.lock() else { return };
+        if p.open.as_deref() == Some(kind.as_str()) {
+            None
+        } else if p.blurred.as_ref().is_some_and(|(k, t)| *k == kind && t.elapsed() < std::time::Duration::from_millis(350)) {
+            // This very click closed it (the popover lost focus to the bar).
+            p.blurred = None;
+            return;
+        } else {
+            p.x = x;
+            p.right = right;
+            Some(())
+        }
+    };
+    if open_now.is_none() {
+        popover_close(&app);
+        return;
+    }
+    // The page renders, measures itself and calls popover_place to show.
+    let _ = app.emit_to("popover", "popover-show", serde_json::json!({ "kind": kind, "data": data }));
+}
+
+/// The popover page has rendered `kind` at `width` x `height` DIP: size the
+/// window to exactly that, hang it under the menu bar and show it.
+#[tauri::command]
+fn popover_place(kind: String, width: f64, height: f64, app: AppHandle) {
+    let Some(w) = app.get_webview_window("popover") else { return };
+    let (x, right) = POP.lock().map(|p| (p.x, p.right)).unwrap_or((0.0, false));
+    let Some(m) = dock::primary() else { return };
+    let sf = app.primary_monitor().ok().flatten().map(|m| m.scale_factor()).unwrap_or(1.0);
+    let bar = app
+        .get_webview_window("topbar")
+        .and_then(|t| t.hwnd().ok())
+        .and_then(|h| appbar::held(h.0 as isize))
+        .unwrap_or((m.monitor.0, m.monitor.1, m.monitor.2, m.monitor.1 + (TOPBAR_HEIGHT * sf).round() as i32));
+    let (pw, ph) = ((width * sf).ceil() as i32, (height * sf).ceil() as i32);
+    let ax = bar.0 + (x * sf).round() as i32;
+    let left = if right { ax - pw } else { ax };
+    let edge = (6.0 * sf).round() as i32;
+    let left = left.clamp(m.monitor.0 + edge, (m.monitor.2 - pw - edge).max(m.monitor.0));
+    // Menus hang from the bar; Control Centre floats a few DIP below it.
+    let gap = if kind == "cc" { (5.0 * sf).round() as i32 } else { (2.0 * sf).round() as i32 };
+    let top = bar.3 + gap;
+    let _ = w.show();
+    appbar::place(w.hwnd().map(|h| h.0 as isize).unwrap_or(0), (left, top, left + pw, top + ph));
+    let _ = w.set_focus();
+    if let Ok(mut p) = POP.lock() {
+        p.open = Some(kind);
+        p.blurred = None;
+    }
+    popover_state_changed(&app);
+}
+
+#[tauri::command]
+fn popover_hide(app: AppHandle) {
+    popover_close(&app);
 }
 
 // ---- Control Centre (async: runs off the UI thread) ----
@@ -1313,6 +1414,36 @@ fn display_watch(app: AppHandle) {
             }
         }
 
+        // The bars must stay exactly on their reserved strips: if anything
+        // moved a bar window (a DPI change, a show, Windows keeping it out
+        // of the work area), put it back on the ABM_SETPOS rectangle.
+        if tick % 3 == 2 {
+            let h_of = |label: &str| app.get_webview_window(label).and_then(|w| w.hwnd().ok()).map(|h| h.0 as isize);
+            if bar_on {
+                if let Some(h) = h_of("topbar") {
+                    if let (Some(rc), Some(now)) = (appbar::held(h), appbar::window_rect(h)) {
+                        if now != rc {
+                            let _ = app.run_on_main_thread(move || appbar::place(h, rc));
+                        }
+                    }
+                }
+            }
+            if dock_on {
+                if let Some(h) = h_of("dock") {
+                    if let (Some(rc), Some(now)) = (appbar::held(h), appbar::window_rect(h)) {
+                        if now.3 != rc.3 {
+                            let a = app.clone();
+                            let _ = app.run_on_main_thread(move || {
+                                if let Some(w) = a.get_webview_window("dock") {
+                                    dock_layout(&a, &w, None);
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
         // Top bar: main display geometry or scale changed (checked each second).
         if bar_on && tick % 3 == 0 {
             if let Some(p) = dock::primary() {
@@ -1416,15 +1547,39 @@ fn dock_launch(target: String) -> Result<(), String> {
     dock::launch(&target)
 }
 
-/// True once per install (and once per minor version): play the full intro.
+/// What the full intro is keyed on: this exact build (version + commit),
+/// so every new build plays it once even when the version number stays the
+/// same (preview builds). Falls back to the version when no build id was
+/// embedded.
+fn intro_key(version: &str, build: &str) -> String {
+    if build.is_empty() {
+        version.to_string()
+    } else {
+        format!("{version}+{build}")
+    }
+}
+
+/// Called by the Settings page as soon as it has painted its Ink cover:
+/// shows the window from here (so it never depends on a window permission
+/// in the page) and says which intro to play. True once per installed
+/// build: the full intro; false: the short logo animation.
 #[tauri::command]
-fn intro_first(state: tauri::State<'_, AppState>) -> bool {
-    let v = env!("CARGO_PKG_VERSION").splitn(3, '.').take(2).collect::<Vec<_>>().join(".");
+fn intro_first(app: AppHandle, state: tauri::State<'_, AppState>) -> bool {
+    if let Some(w) = app.get_webview_window("main") {
+        if !w.is_visible().unwrap_or(false) {
+            let _ = w.show();
+            let _ = w.unminimize();
+            keep_on_screen(&app, &w);
+            let _ = w.set_focus();
+            dock_changed(&app);
+        }
+    }
+    let key = intro_key(env!("CARGO_PKG_VERSION"), env!("COVE_BUILD_ID"));
     let Ok(mut s) = state.settings.lock() else { return false };
-    if s.data.intro_seen.as_deref() == Some(v.as_str()) {
+    if s.data.intro_seen.as_deref() == Some(key.as_str()) {
         return false;
     }
-    s.data.intro_seen = Some(v);
+    s.data.intro_seen = Some(key);
     let _ = s.save();
     true
 }
@@ -1508,6 +1663,11 @@ fn dock_layout(app: &AppHandle, w: &tauri::WebviewWindow, size: Option<(f64, f64
     let _ = w.set_position(pos);
     let _ = w.set_size(tauri::PhysicalSize::new(pw as u32, ph as u32));
     let _ = w.set_position(pos);
+    // Bottom edge on the reserved strip's bottom (the monitor's edge), in
+    // screen coordinates, synchronously: never derived from the work area.
+    if hwnd != 0 && reserve {
+        appbar::place(hwnd, (pos.x, pos.y, pos.x + pw, pos.y + ph));
+    }
 }
 
 /// Give the dock's strip back (dock off, safe mode, quitting).
@@ -1998,6 +2158,19 @@ fn main() {
                 // system shadow and rounded corners.
                 let _ = window.set_shadow(true);
             }
+            // Menu bar popovers: acrylic only behind the popover itself (the
+            // window is exactly the popover's size), 8 px corners.
+            #[cfg(target_os = "windows")]
+            if let Some(window) = app.get_webview_window("popover") {
+                let _ = window_vibrancy::apply_acrylic(&window, None);
+                if let Ok(hwnd) = window.hwnd() {
+                    use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE};
+                    let round: u32 = 2; // DWMWCP_ROUND (8 px)
+                    unsafe {
+                        DwmSetWindowAttribute(hwnd.0 as _, DWMWA_WINDOW_CORNER_PREFERENCE as _, &round as *const u32 as *const _, 4);
+                    }
+                }
+            }
             // Search panel: acrylic blur of the desktop behind it.
             #[cfg(target_os = "windows")]
             if let Some(window) = app.get_webview_window("search") {
@@ -2026,6 +2199,20 @@ fn main() {
                 api.prevent_close();
                 if window.label() == "main" {
                     dock_changed(window.app_handle());
+                }
+            }
+            // A menu bar popover closes as soon as you click anywhere else.
+            WindowEvent::Focused(false) if window.label() == "popover" => {
+                let was = POP.lock().ok().and_then(|mut p| {
+                    let k = p.open.take();
+                    if let Some(k) = &k {
+                        p.blurred = Some((k.clone(), std::time::Instant::now()));
+                    }
+                    k
+                });
+                if was.is_some() {
+                    let _ = window.hide();
+                    popover_state_changed(window.app_handle());
                 }
             }
             // Search disappears as soon as you click elsewhere.
@@ -2065,6 +2252,9 @@ fn main() {
             topbar_menu,
             topbar_power_now,
             topbar_app,
+            popover_toggle,
+            popover_place,
+            popover_hide,
             controls_get,
             controls_set,
             dock_status,
@@ -2144,4 +2334,14 @@ fn main() {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn intro_is_keyed_per_build() {
+        assert_eq!(super::intro_key("0.9.0", "046d323abcde"), "0.9.0+046d323abcde");
+        assert_ne!(super::intro_key("0.9.0", "046d323"), super::intro_key("0.9.0", "8a1edcc"));
+        assert_eq!(super::intro_key("0.9.0", ""), "0.9.0");
+    }
 }

@@ -34,6 +34,7 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GIT_SHA: ${{ github.sha }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Cove ${{ github.ref_name }} (early preview)"

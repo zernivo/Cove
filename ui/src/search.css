@@ -1,67 +1,68 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
-body { font-family: var(--font-ui); color: var(--text); -webkit-font-smoothing: antialiased; user-select: none; }
+body { font-family: var(--font-ui); color: var(--c-text); -webkit-font-smoothing: antialiased; user-select: none; }
 
 /* The OS acrylic is the glass; this only adds a calm tint and a rim. */
 .panel {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--panel-tint);
-  border: 1px solid var(--glass-stroke);
-  border-radius: var(--radius-panel);
-  box-shadow: inset 0 1px 0 var(--glass-rim);
+  /* Same Ink (or paper) glass as the menu bar's popovers. */
+  background: var(--c-panel);
+  border: 1px solid var(--c-stroke);
+  border-radius: 8px;
+  box-shadow: inset 0 1px 0 var(--c-rim);
   animation: pop 160ms var(--ease-out);
 }
 @keyframes pop { from { opacity: 0; transform: scale(0.985) translateY(-4px); } }
 
 .bar { display: flex; align-items: center; gap: 12px; padding: 14px 18px; }
-.glass { width: 22px; height: 22px; fill: none; stroke: var(--text-muted); stroke-width: 2; stroke-linecap: round; flex: none; }
+.glass { width: 22px; height: 22px; fill: none; stroke: var(--c-muted); stroke-width: 2; stroke-linecap: round; flex: none; }
 #q {
-  flex: 1; font: 400 22px/1.2 var(--font-ui); color: var(--text);
-  background: transparent; border: 0; outline: none; caret-color: var(--focus);
+  flex: 1; font: 400 22px/1.2 var(--font-ui); color: var(--c-text);
+  background: transparent; border: 0; outline: none; caret-color: var(--c-teal);
 }
-#q::placeholder { color: var(--text-muted); opacity: 0.7; }
+#q::placeholder { color: var(--c-faint); }
 
 kbd {
   font: 11px var(--font-ui); padding: 1px 6px; border-radius: 4px;
-  background: rgba(127, 127, 127, 0.16); color: var(--text-muted);
+  background: var(--c-hover); color: var(--c-muted);
 }
 
-.tabs { display: flex; gap: 4px; padding: 0 14px 8px; border-bottom: 1px solid rgba(127, 127, 127, 0.16); }
+.tabs { display: flex; gap: 4px; padding: 0 14px 8px; border-bottom: 1px solid var(--c-sep); }
 .tabs button {
-  font: 600 12px var(--font-ui); color: var(--text-muted); background: transparent;
-  border: 0; border-radius: 999px; padding: 4px 12px; cursor: pointer;
+  font: 600 12px var(--font-ui); color: var(--c-muted); background: transparent;
+  border: 0; border-radius: 5px; padding: 4px 12px; cursor: pointer;
   transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
 }
-.tabs button:hover { background: rgba(127, 127, 127, 0.12); }
-.tabs button.on { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+.tabs button:hover { background: var(--c-hover); }
+.tabs button.on { background: var(--c-select); color: var(--c-text); }
 
 .results { list-style: none; margin: 0; padding: 6px; flex: 1; overflow-y: auto; scrollbar-width: thin; }
 .row {
   display: flex; align-items: center; gap: 12px; padding: 7px 10px; border-radius: var(--radius-control); cursor: default;
 }
-.row.sel { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.row.sel { background: var(--c-select); }
 .tile {
   width: 30px; height: 30px; border-radius: 7px; flex: none;
   display: grid; place-items: center; font: 700 14px var(--font-brand); color: #fff;
 }
 .tile.has-icon { background: none; }
 .tile img { width: 30px; height: 30px; object-fit: contain; }
-.k-app { background: linear-gradient(160deg, #5bb8ff, #2a86e0); }
-.k-file { background: linear-gradient(160deg, #f2f4f7, #d7dde5); font-size: 15px; }
-.k-setting { background: linear-gradient(160deg, #8e96a3, #5d6572); font-size: 16px; }
-.k-action { background: linear-gradient(160deg, #4a5160, #2a2f38); font-size: 15px; }
-.k-calc { background: linear-gradient(160deg, #ffb340, #ff8a00); font-size: 17px; }
+.k-app { background: #2f7fd0; }
+.k-file { background: #e3e6ea; color: #3a3d44; font-size: 15px; }
+.k-setting { background: #6b7280; font-size: 16px; }
+.k-action { background: #34383f; font-size: 15px; }
+.k-calc { background: #e58a1f; font-size: 17px; }
 .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .txt b { font-weight: 500; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.txt small { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tag { font-size: 12px; color: var(--text-muted); width: 16px; text-align: center; }
-.empty { padding: 28px; text-align: center; color: var(--text-muted); font-size: 13px; }
+.txt small { font-size: 11.5px; color: var(--c-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tag { font-size: 12px; color: var(--c-muted); width: 16px; text-align: center; }
+.empty { padding: 28px; text-align: center; color: var(--c-muted); font-size: 13px; }
 
 .foot {
-  display: flex; gap: 16px; padding: 8px 18px; font-size: 11px; color: var(--text-muted);
-  border-top: 1px solid rgba(127, 127, 127, 0.16);
+  display: flex; gap: 16px; padding: 8px 18px; font-size: 11px; color: var(--c-muted);
+  border-top: 1px solid var(--c-sep);
 }
 .foot span { display: flex; align-items: center; gap: 6px; }
 
