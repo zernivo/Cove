@@ -16,11 +16,60 @@ pub struct Controls {
     /// Connected Wi-Fi name; None when not on Wi-Fi.
     pub wifi: Option<String>,
     pub dark: bool,
+    /// Bluetooth radio on / off; None when there's no Bluetooth radio.
+    pub bluetooth: Option<bool>,
+    /// Do not disturb (Focus) is on.
+    pub focus: Option<bool>,
+    /// The sound output's friendly name ("Speakers (Realtek(R) Audio)").
+    pub device: Option<String>,
+    /// What's playing (Windows' media session), if anything.
+    pub media: Option<Media>,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct Media {
+    pub title: String,
+    pub artist: String,
+    /// The player's friendly name ("Spotify").
+    pub app: String,
+    pub playing: bool,
+    /// The player's real icon (coveicon URL), once rendered.
+    pub icon: Option<String>,
 }
 
 pub fn get() -> Controls {
     let (volume, muted) = imp::volume();
-    Controls { volume, muted, brightness: imp::brightness(), wifi: imp::wifi(), dark: imp::dark() }
+    Controls {
+        volume,
+        muted,
+        brightness: imp::brightness(),
+        wifi: imp::wifi(),
+        dark: imp::dark(),
+        bluetooth: imp::bluetooth(),
+        focus: imp::focus(),
+        device: imp::device().map(|d| tidy_device(&d)),
+        media: imp::media(),
+    }
+}
+
+/// "Speakers (Realtek(R) Audio)" -> "Speakers (Realtek)".
+pub fn tidy_device(name: &str) -> String {
+    name.replace("(R)", "").replace(" Audio)", ")").replace("  ", " ").trim().to_string()
+}
+
+/// A media app id ("Spotify.exe", "Chrome", "Family!App") as a friendly name.
+pub fn player_name(app_id: &str) -> String {
+    let base = app_id.rsplit(['\\', '!']).next().unwrap_or(app_id);
+    let base = base.strip_suffix(".exe").or_else(|| base.strip_suffix(".EXE")).unwrap_or(base);
+    let mut c = base.chars();
+    match c.next() {
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+        None => String::new(),
+    }
+}
+
+pub fn media_control(what: &str) -> Result<(), String> {
+    imp::media_control(what)
 }
 
 /// Quick state for the bar icons (no PowerShell / netsh): volume and mute.
@@ -162,6 +211,85 @@ mod imp {
             SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE, 0, wide.as_ptr() as isize, SMTO_ABORTIFHUNG, 1000, &mut result);
         }
     }
+
+    pub fn bluetooth() -> Option<bool> {
+        use windows::Devices::Radios::{Radio, RadioKind, RadioState};
+        let radios = Radio::GetRadiosAsync().ok()?.get().ok()?;
+        for r in radios {
+            if r.Kind().ok()? == RadioKind::Bluetooth {
+                return Some(r.State().ok()? == RadioState::On);
+            }
+        }
+        None
+    }
+
+    /// Windows 11's Do not disturb: the global toast switch Settings writes.
+    pub fn focus() -> Option<bool> {
+        use winreg::{enums::HKEY_CURRENT_USER, RegKey};
+        let v = RegKey::predef(HKEY_CURRENT_USER)
+            .open_subkey(r"Software\Microsoft\Windows\CurrentVersion\Notifications\Settings")
+            .and_then(|k| k.get_value::<u32, _>("NOC_GLOBAL_SETTING_TOASTS_ENABLED"));
+        Some(matches!(v, Ok(0)))
+    }
+
+    pub fn device() -> Option<String> {
+        use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
+        use windows::Win32::Media::Audio::{eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator};
+        use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL, STGM_READ};
+        let mut out = None;
+        crate::icons::with_com(|| unsafe {
+            let Ok(en) = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) else { return };
+            let Ok(dev) = en.GetDefaultAudioEndpoint(eRender, eConsole) else { return };
+            let Ok(store) = dev.OpenPropertyStore(STGM_READ) else { return };
+            if let Ok(v) = store.GetValue(&PKEY_Device_FriendlyName) {
+                let s = v.to_string();
+                if !s.is_empty() {
+                    out = Some(s);
+                }
+            }
+        });
+        out
+    }
+
+    fn session() -> Option<windows::Media::Control::GlobalSystemMediaTransportControlsSession> {
+        use windows::Media::Control::GlobalSystemMediaTransportControlsSessionManager as Manager;
+        Manager::RequestAsync().ok()?.get().ok()?.GetCurrentSession().ok()
+    }
+
+    pub fn media() -> Option<super::Media> {
+        use windows::Media::Control::GlobalSystemMediaTransportControlsSessionPlaybackStatus as Status;
+        let s = session()?;
+        let props = s.TryGetMediaPropertiesAsync().ok()?.get().ok()?;
+        let title = props.Title().map(|t| t.to_string()).unwrap_or_default();
+        if title.is_empty() {
+            return None;
+        }
+        let app_id = s.SourceAppUserModelId().map(|t| t.to_string()).unwrap_or_default();
+        let playing = s.GetPlaybackInfo().ok().and_then(|i| i.PlaybackStatus().ok()) == Some(Status::Playing);
+        // The player's real icon: its package logo, its Start entry, its exe.
+        let mut keys: Vec<String> = crate::dock::package_logo_key(&app_id).into_iter().collect();
+        if !app_id.is_empty() {
+            keys.push(format!(r"shell:AppsFolder\{app_id}"));
+        }
+        let mut jobs = Vec::new();
+        let icon = crate::dock::icon_from(&keys, &mut jobs);
+        if !jobs.is_empty() {
+            std::thread::spawn(move || crate::icons::fill(jobs));
+        }
+        let app = crate::shellprops::app_name(&app_id).unwrap_or_else(|| super::player_name(&app_id));
+        Some(super::Media { title, artist: props.Artist().map(|t| t.to_string()).unwrap_or_default(), app, playing, icon })
+    }
+
+    pub fn media_control(what: &str) -> Result<(), String> {
+        let s = session().ok_or("Nothing is playing.")?;
+        let op = match what {
+            "toggle" => s.TryTogglePlayPauseAsync(),
+            "next" => s.TrySkipNextAsync(),
+            "prev" => s.TrySkipPreviousAsync(),
+            _ => return Err("Unknown control.".into()),
+        };
+        op.and_then(|o| o.get()).map(|_| ()).map_err(|e| e.to_string())
+    }
 }
 
 #[cfg(not(windows))]
@@ -188,10 +316,31 @@ mod imp {
     pub fn set_dark(_on: bool) -> Result<(), String> {
         Err("Windows only".into())
     }
+    pub fn bluetooth() -> Option<bool> {
+        None
+    }
+    pub fn focus() -> Option<bool> {
+        None
+    }
+    pub fn device() -> Option<String> {
+        None
+    }
+    pub fn media() -> Option<super::Media> {
+        None
+    }
+    pub fn media_control(_what: &str) -> Result<(), String> {
+        Err("Windows only".into())
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn tidies_names() {
+        assert_eq!(super::tidy_device("Speakers (Realtek(R) Audio)"), "Speakers (Realtek)");
+        assert_eq!(super::player_name("Spotify.exe"), "Spotify");
+        assert_eq!(super::player_name("chrome"), "Chrome");
+    }
     #[test]
     fn ssid_parsing() {
         let t = "    Name                   : Wi-Fi\n    State                  : connected\n    SSID                   : HomeNet 5G\n    BSSID                  : aa:bb\n";

@@ -1,5 +1,5 @@
 /* Cove settings window: "your desktop is the settings".
-   Solid Ink, one teal accent, no gradients. The dock and menu bar keep
+   Solid Ink, one graphite state colour, no gradients. The dock and menu bar keep
    their own glass themes (tokens.css); this window doesn't follow them. */
 :root {
   --ink: #111215;
@@ -10,8 +10,8 @@
   --fg: #ecebe8;
   --fg-2: #a3a3ab;
   --fg-3: #6f7078;
-  --teal: #2cc9b9;
-  --teal-ink: #062b27;
+  --teal: #e9e8e4; /* graphite state colour (was teal; user pick 2026-11-04) */
+  --teal-ink: #111215;
   --danger-fg: #ff8a80;
   --r-group: 14px;
   --r-ctl: 9px;

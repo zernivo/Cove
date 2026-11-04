@@ -19,6 +19,7 @@ mod shell;
 mod stacks;
 mod switcher;
 mod expose;
+mod glass;
 mod snap;
 mod winindex;
 mod theme;
@@ -278,7 +279,7 @@ fn restore_all(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<Rest
 
 /// Menu bar height in DIP (macOS: 24 pt). The reserved AppBar strip is
 /// exactly this, scaled to the main display; topbar.css/ts use the same 25.
-const TOPBAR_HEIGHT: f64 = 25.0;
+const TOPBAR_HEIGHT: f64 = 24.0;
 
 fn topbar_apply(app: &AppHandle, on: bool) {
     let on = on && !safe();
@@ -340,16 +341,21 @@ struct PopState {
     /// Where it hangs from: x in DIP from the bar's left, and which edge.
     x: f64,
     right: bool,
+    /// Dock menus: the anchor point on screen (physical px): the icon's
+    /// centre and the dock's top edge. None for bar menus.
+    at: Option<(i32, i32)>,
     /// The last popover closed because you clicked away, and when: a click
     /// on the same bar item that caused it must not open it again.
     blurred: Option<(String, std::time::Instant)>,
 }
 
-static POP: Mutex<PopState> = Mutex::new(PopState { open: None, x: 0.0, right: false, blurred: None });
+static POP: Mutex<PopState> = Mutex::new(PopState { open: None, x: 0.0, right: false, at: None, blurred: None });
 
 fn popover_state_changed(app: &AppHandle) {
     let open = POP.lock().ok().and_then(|p| p.open.clone());
-    let _ = app.emit_to("topbar", "popover-state", open);
+    // The bar shows which title is open; the dock keeps itself up while
+    // its own menu is open.
+    let _ = app.emit("popover-state", open);
 }
 
 fn popover_close(app: &AppHandle) {
@@ -359,6 +365,7 @@ fn popover_close(app: &AppHandle) {
     if let Ok(mut p) = POP.lock() {
         p.open = None;
     }
+    let _ = app.emit_to("popover", "popover-hidden", ());
     popover_state_changed(app);
 }
 
@@ -378,6 +385,7 @@ fn popover_toggle(kind: String, x: f64, right: bool, data: Option<serde_json::Va
         } else {
             p.x = x;
             p.right = right;
+            p.at = None;
             Some(())
         }
     };
@@ -385,43 +393,96 @@ fn popover_toggle(kind: String, x: f64, right: bool, data: Option<serde_json::Va
         popover_close(&app);
         return;
     }
-    // The app menu shows how many windows the app has ("Show All Windows 3").
+    // The app menu shows how many windows the app has ("Show All Windows 3")
+    // and the app's real icon; the Cove menu says whose session it is.
     let data = match data {
-        Some(mut d) if kind == "app" => {
-            let h = d.get("hwnd").and_then(|v| v.as_i64()).unwrap_or(0) as isize;
-            let n = if h != 0 { app_windows(h).len() } else { 0 };
-            d["count"] = serde_json::json!(n);
+        Some(mut d) => {
+            if kind == "app" {
+                let h = d.get("hwnd").and_then(|v| v.as_i64()).unwrap_or(0) as isize;
+                let n = if h != 0 { app_windows(h).len() } else { 0 };
+                d["count"] = serde_json::json!(n);
+                if let Some(w) = dock::windows().into_iter().find(|w| w.hwnd == h) {
+                    let mut keys: Vec<String> = w.aumid.as_deref().and_then(dock::package_logo_key).into_iter().collect();
+                    keys.extend(w.icon_keys());
+                    let mut jobs = Vec::new();
+                    d["icon"] = serde_json::json!(dock::icon_from(&keys, &mut jobs));
+                    if !jobs.is_empty() {
+                        std::thread::spawn(move || icons::fill(jobs));
+                    }
+                }
+            }
+            if kind == "cove" {
+                d["user"] = serde_json::json!(topbar::user_first_name());
+            }
             Some(d)
         }
-        d => d,
+        None => None,
     };
     // The page renders, measures itself and calls popover_place to show.
     let _ = app.emit_to("popover", "popover-show", serde_json::json!({ "kind": kind, "data": data }));
 }
 
-/// The popover page has rendered `kind` at `width` x `height` DIP: size the
-/// window to exactly that, hang it under the menu bar and show it.
+/// A dock icon's context menu: the shared glass menu, centred on the icon
+/// (`x`, dock window DIP) and hanging 10 DIP above the dock's top (`y`).
 #[tauri::command]
-fn popover_place(kind: String, width: f64, height: f64, app: AppHandle) {
+fn popover_at(kind: String, x: f64, y: f64, data: Option<serde_json::Value>, app: AppHandle) {
+    let Some(d) = app.get_webview_window("dock") else { return };
+    let (Ok(pos), Ok(sf)) = (d.outer_position(), d.scale_factor()) else { return };
+    if let Ok(mut p) = POP.lock() {
+        p.at = Some((pos.x + (x * sf).round() as i32, pos.y + (y * sf).round() as i32));
+        p.blurred = None;
+    }
+    let _ = app.emit_to("popover", "popover-show", serde_json::json!({ "kind": kind, "data": data }));
+}
+
+/// The popover page has rendered `kind` at `width` x `height` DIP: size the
+/// window to exactly that, shape it to the panels shown (`shapes`: x, y, w,
+/// h, radius in DIP; a menu and its open submenu are two), place it and
+/// show it. Bar menus hang 3 DIP under the bar from their title (Control
+/// Centre 6 DIP under it, 8 DIP from the right); dock menus centre their
+/// main panel (`anchor_w` wide) on the icon, 10 DIP above the dock.
+#[tauri::command]
+fn popover_place(kind: String, width: f64, height: f64, shapes: Option<Vec<[f64; 5]>>, anchor_w: Option<f64>, app: AppHandle) {
     let Some(w) = app.get_webview_window("popover") else { return };
-    let (x, right) = POP.lock().map(|p| (p.x, p.right)).unwrap_or((0.0, false));
-    let Some(m) = dock::primary() else { return };
-    let sf = app.primary_monitor().ok().flatten().map(|m| m.scale_factor()).unwrap_or(1.0);
-    let bar = app
-        .get_webview_window("topbar")
-        .and_then(|t| t.hwnd().ok())
-        .and_then(|h| appbar::held(h.0 as isize))
-        .unwrap_or((m.monitor.0, m.monitor.1, m.monitor.2, m.monitor.1 + (TOPBAR_HEIGHT * sf).round() as i32));
-    let (pw, ph) = ((width * sf).ceil() as i32, (height * sf).ceil() as i32);
-    let ax = bar.0 + (x * sf).round() as i32;
-    let left = if right { ax - pw } else { ax };
-    let edge = (6.0 * sf).round() as i32;
-    let left = left.clamp(m.monitor.0 + edge, (m.monitor.2 - pw - edge).max(m.monitor.0));
-    // Menus hang from the bar; Control Centre floats a few DIP below it.
-    let gap = if kind == "cc" { (5.0 * sf).round() as i32 } else { (2.0 * sf).round() as i32 };
-    let top = bar.3 + gap;
+    let (x, right, at) = POP.lock().map(|p| (p.x, p.right, p.at)).unwrap_or((0.0, false, None));
+    let (pw, ph, left, top, mon) = if let Some((ax, ay)) = at {
+        let m = dock::monitor_at(ax, ay).or_else(dock::dock_monitor).or_else(dock::primary);
+        let Some(m) = m else { return };
+        let sf = w.monitor_from_point(ax as f64, ay as f64).ok().flatten().map(|m| m.scale_factor()).unwrap_or(1.0);
+        let (pw, ph) = ((width * sf).ceil() as i32, (height * sf).ceil() as i32);
+        let aw = (anchor_w.unwrap_or(width) * sf).round() as i32;
+        let left = ax - aw / 2;
+        let top = ay - (10.0 * sf).round() as i32 - ph;
+        (pw, ph, left, top.max(m.monitor.1), m)
+    } else {
+        let Some(m) = dock::primary() else { return };
+        let sf = app.primary_monitor().ok().flatten().map(|m| m.scale_factor()).unwrap_or(1.0);
+        let bar = app
+            .get_webview_window("topbar")
+            .and_then(|t| t.hwnd().ok())
+            .and_then(|h| appbar::held(h.0 as isize))
+            .unwrap_or((m.monitor.0, m.monitor.1, m.monitor.2, m.monitor.1 + (TOPBAR_HEIGHT * sf).round() as i32));
+        let (pw, ph) = ((width * sf).ceil() as i32, (height * sf).ceil() as i32);
+        let ax = bar.0 + (x * sf).round() as i32;
+        let left = if right { ax - pw } else { ax };
+        // Menus hang right under the bar; Control Centre floats 6 DIP below it.
+        let gap = if kind == "cc" { (6.0 * sf).round() as i32 } else { (3.0 * sf).round() as i32 };
+        (pw, ph, left, bar.3 + gap, m)
+    };
+    let sf = w.scale_factor().unwrap_or(1.0);
+    let edge = (4.0 * sf).round() as i32;
+    let left = left.clamp(mon.monitor.0 + edge, (mon.monitor.2 - pw - edge).max(mon.monitor.0));
     let _ = w.show();
-    appbar::place(w.hwnd().map(|h| h.0 as isize).unwrap_or(0), (left, top, left + pw, top + ph));
+    let hwnd = w.hwnd().map(|h| h.0 as isize).unwrap_or(0);
+    appbar::place(hwnd, (left, top, left + pw, top + ph));
+    // Clip the acrylic to the rounded panels (DWM only rounds to 8 px).
+    if let Some(shapes) = shapes {
+        let px: Vec<(i32, i32, i32, i32, i32)> = shapes
+            .iter()
+            .map(|s| ((s[0] * sf).round() as i32, (s[1] * sf).round() as i32, (s[2] * sf).round() as i32, (s[3] * sf).round() as i32, (s[4] * sf).round() as i32))
+            .collect();
+        glass::round_region(hwnd, &px);
+    }
     let _ = w.set_focus();
     // Ask the page for a fresh paint once Windows has really shown the
     // window: a WebView can put the last frame it drew while hidden on
@@ -440,6 +501,125 @@ fn popover_place(kind: String, width: f64, height: f64, app: AppHandle) {
         p.blurred = None;
     }
     popover_state_changed(&app);
+}
+
+/// A dock menu item was picked in the popover: the dock runs it.
+#[tauri::command]
+fn dock_menu_pick(id: String, app: AppHandle) {
+    let _ = app.emit_to("dock", "dock-menu-pick", id);
+}
+
+/// The look changed: tint the acrylic behind the popovers and Search to
+/// match (Windows 10's acrylic takes the colour; Windows 11's transient
+/// backdrop follows the window's dark/light theme).
+#[tauri::command]
+fn glass_tint(dark: bool, app: AppHandle) {
+    for label in ["popover", "search"] {
+        if let Some(w) = app.get_webview_window(label) {
+            glass::acrylic(&w, dark);
+        }
+    }
+}
+
+/// Size Search to its panel (`height` DIP; 640 DIP wide), keeping its top
+/// edge where it opened, and shape the window to the 14 DIP corners.
+#[tauri::command]
+fn search_fit(height: f64, app: AppHandle) {
+    let Some(w) = app.get_webview_window("search") else { return };
+    let sf = w.scale_factor().unwrap_or(1.0);
+    let (pw, ph) = ((SEARCH_W * sf).round() as i32, (height.clamp(40.0, 900.0) * sf).ceil() as i32);
+    if let Ok(pos) = w.outer_position() {
+        let hwnd = w.hwnd().map(|h| h.0 as isize).unwrap_or(0);
+        let _ = w.set_size(tauri::PhysicalSize::new(pw as u32, ph as u32));
+        let _ = w.set_position(pos);
+        glass::round_region(hwnd, &[(0, 0, pw, ph, (14.0 * sf).round() as i32)]);
+    }
+}
+const SEARCH_W: f64 = 640.0;
+
+/// Real system icons for menus, Search and Control Centre, by name.
+#[tauri::command]
+fn icons_system() -> std::collections::HashMap<String, Option<String>> {
+    let mut out = std::collections::HashMap::new();
+    let mut jobs = Vec::new();
+    for (name, keys) in icons::system_keys() {
+        out.insert(name.to_string(), dock::icon_from(&keys, &mut jobs));
+    }
+    if !jobs.is_empty() {
+        std::thread::spawn(move || icons::fill(jobs));
+    }
+    out
+}
+
+#[derive(Serialize)]
+struct Recent {
+    name: String,
+    target: String,
+    icon: Option<String>,
+}
+
+/// The Cove menu's Recent Items: recent files Windows lists.
+#[tauri::command]
+async fn recent_items() -> Vec<Recent> {
+    search::index()
+        .into_iter()
+        .filter(|i| i.kind == "file" && i.subtitle == "Recent")
+        .take(10)
+        .map(|i| Recent { name: i.name, target: i.target, icon: i.icon })
+        .collect()
+}
+
+#[tauri::command]
+fn bin_empty(app: AppHandle) -> Result<(), String> {
+    let r = dock::bin_empty();
+    dock_changed(&app);
+    r
+}
+
+/// The Go and File menus: a fixed list of folders, opened in File Explorer.
+#[tauri::command]
+fn topbar_go(what: String) -> Result<(), String> {
+    let home = std::env::var("USERPROFILE").unwrap_or_default();
+    let target = match what.as_str() {
+        "explorer" => "shell:::{679f85cb-0220-4080-b29b-5540cc05aab6}".to_string(), // Home / Quick access
+        "home" => home,
+        "desktop" => "shell:Desktop".into(),
+        "documents" => "shell:Personal".into(),
+        "downloads" => "shell:Downloads".into(),
+        "pictures" => "shell:My Pictures".into(),
+        "thispc" => "shell:MyComputerFolder".into(),
+        "recycler" => "shell:RecycleBinFolder".into(),
+        "controlpanel" => "shell:ControlPanelFolder".into(),
+        _ => return Err("Unknown folder.".into()),
+    };
+    search::explorer(&target).map_err(|e| e.to_string())
+}
+
+/// The desktop's View and File menu actions.
+#[tauri::command]
+fn topbar_view(what: String) -> Result<(), String> {
+    match what.as_str() {
+        "show-desktop" => glass::keys(&[0x5B, 0x44]), // Win+D
+        "task-view" => glass::keys(&[0x5B, 0x09]),    // Win+Tab
+        "toggle-icons" => glass::toggle_desktop_icons(),
+        "new-folder" => {
+            let desk = std::path::PathBuf::from(std::env::var("USERPROFILE").map_err(|e| e.to_string())?).join("Desktop");
+            let mut p = desk.join("New folder");
+            let mut n = 2;
+            while p.exists() {
+                p = desk.join(format!("New folder ({n})"));
+                n += 1;
+            }
+            std::fs::create_dir(&p).map_err(|e| e.to_string())
+        }
+        _ => Err("Unknown item.".into()),
+    }
+}
+
+/// Now Playing in Control Centre: play/pause, next, previous.
+#[tauri::command]
+async fn media_control(what: String) -> Result<(), String> {
+    controls::media_control(&what)
 }
 
 #[tauri::command]
@@ -493,6 +673,7 @@ fn topbar_open(what: String, app: AppHandle) -> Result<(), String> {
         "sound" => "ms-settings:sound",
         "display" => "ms-settings:display",
         "taskmgr" => "taskmgr.exe",
+        "about-pc" => "ms-settings:about",
         _ => return Err("Unknown item.".into()),
     };
     search::explorer(uri).map_err(|e| e.to_string())
@@ -518,8 +699,11 @@ fn topbar_menu(what: String, app: AppHandle, state: tauri::State<'_, AppState>) 
             topbar_set(false, app.clone(), state);
             let _ = app.emit("settings-changed", ());
         }
+        "about-pc" => return search::explorer("ms-settings:about").map_err(|e| e.to_string()),
         "lock" => return search::action("lock"),
         "sleep" | "restart" | "shutdown" => return topbar::power(&what),
+        // Signing out always asks first (the popover's confirmation).
+        "signout" => return Err("confirm".into()),
         "quit" => app.exit(0),
         _ => return Err("Unknown item.".into()),
     }
@@ -534,10 +718,15 @@ fn topbar_power_now(what: String) -> Result<(), String> {
     let flag = match what.as_str() {
         "restart" => "/r",
         "shutdown" => "/s",
+        "signout" => "/l",
         _ => return Err("Unknown item.".into()),
     };
     let mut cmd = std::process::Command::new("shutdown.exe");
-    cmd.args([flag, "/t", "0"]);
+    if flag == "/l" {
+        cmd.arg(flag);
+    } else {
+        cmd.args([flag, "/t", "0"]);
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -593,7 +782,8 @@ fn topbar_app(what: String, hwnd: isize, name: String, app: AppHandle) -> Result
                 dock::activate(hwnd);
             }
         }
-        "minimize" | "zoom" => {}
+        "tile-left" | "tile-right" if hwnd != 0 => dock::tile(hwnd, what == "tile-left"),
+        "minimize" | "zoom" | "tile-left" | "tile-right" => {}
         // Ask politely (WM_CLOSE), so the app can offer to save.
         "quit" => dock::close_windows(&wins),
         "expose" => {}
@@ -1847,7 +2037,7 @@ fn dock_unpin(target: String, state: tauri::State<'_, AppState>) {
 /// takes no space, like a Mac's, and slides away when a window touches it.
 /// Magnified icons and labels draw above the strip, over the apps, only
 /// while the pointer is on the dock.
-const DOCK_RESERVE: f64 = 74.0;
+const DOCK_RESERVE: f64 = 72.0; // 66 DIP dock + 6 DIP float
 
 fn dock_enabled(app: &AppHandle) -> bool {
     app.state::<AppState>().settings.lock().map(|s| s.data.dock).unwrap_or(false) && !safe()
@@ -1900,7 +2090,22 @@ fn dock_layout(app: &AppHandle, w: &tauri::WebviewWindow, size: Option<(f64, f64
     let pos = PhysicalPosition::new(l + (r - l - pw) / 2, b - ph);
     if let Ok(mut st) = DOCK_STRIP.lock() {
         let strip = (DOCK_RESERVE * sf).round() as i32;
-        *st = shown.then_some((pos.x, b - strip, pos.x + pw, b));
+        // Only the slab itself (plus magnification room) is live.
+        let pill = (DOCK_PILL.load(std::sync::atomic::Ordering::SeqCst) as f64 * sf).round() as i32;
+        let inset = if pill > 0 && pill < pw { (pw - pill) / 2 } else { 0 };
+        *st = shown.then_some((pos.x + inset, b - strip, pos.x + pw - inset, b));
+    }
+    // Where the window sits on its display, for the page's wallpaper plate.
+    if let Some(m) = mon {
+        let _ = w.emit(
+            "dock-geom",
+            serde_json::json!({
+                "x": (pos.x - m.monitor.0) as f64 / sf,
+                "y": (pos.y - m.monitor.1) as f64 / sf,
+                "mw": (m.monitor.2 - m.monitor.0) as f64 / sf,
+                "mh": (m.monitor.3 - m.monitor.1) as f64 / sf,
+            }),
+        );
     }
     // Move first, so a display with a different scale doesn't resize us
     // after we've set the size; then size, then settle the position.
@@ -2009,7 +2214,8 @@ fn dock_hit_watch(app: AppHandle) {
 
         // Clicks: everything passes through while hidden; while shown,
         // reaching the strip arms the dock and leaving the window disarms it.
-        on_dock = !want_hidden && inside && (on_dock || y >= rc.1);
+        // Only the slab arms it (not the transparent sides of the window).
+        on_dock = !want_hidden && inside && (on_dock || (y >= rc.1 && x >= rc.0 && x < rc.2));
         let pass = want_hidden || !(on_dock || busy);
         if through != Some(pass) {
             let _ = w.set_ignore_cursor_events(pass);
@@ -2020,10 +2226,17 @@ fn dock_hit_watch(app: AppHandle) {
 
 /// Size the dock window (DIP) and park it on its display.
 #[tauri::command]
-fn dock_place(width: f64, height: f64, app: AppHandle) {
+fn dock_place(width: f64, height: f64, pill_width: Option<f64>, app: AppHandle) {
     let Some(w) = app.get_webview_window("dock") else { return };
+    if let Some(p) = pill_width {
+        DOCK_PILL.store(p.round().max(0.0) as u32, std::sync::atomic::Ordering::SeqCst);
+    }
     dock_layout(&app, &w, Some((width, height)));
 }
+
+/// The slab's width (DIP): only this part of the dock window's bottom strip
+/// catches the pointer; the transparent sides let clicks through.
+static DOCK_PILL: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
 #[tauri::command]
 fn open_settings(uri: String) -> Result<(), String> {
@@ -2300,6 +2513,10 @@ fn main() {
                 });
             }
             let _ = TOUR_APP.set(app.handle().clone());
+            {
+                let h = app.handle().clone();
+                icons::set_logger(move |m| cove_log(&h, m));
+            }
             let handle = app.handle().clone();
             hotkeys::set_search_handler(move || {
                 search::mark_open();
@@ -2471,36 +2688,15 @@ fn main() {
                 // system shadow and rounded corners.
                 let _ = window.set_shadow(true);
             }
-            // Menu bar popovers: acrylic only behind the popover itself (the
-            // window is exactly the popover's size), 8 px corners.
+            // Menu bar popovers and Search: acrylic, shaped by a rounded
+            // window region to the panels (11 DIP menus, 20 DIP Control
+            // Centre, 14 DIP Search), so DWM's own 8 px rounding is off.
             #[cfg(target_os = "windows")]
-            if let Some(window) = app.get_webview_window("popover") {
-                let _ = window_vibrancy::apply_acrylic(&window, None);
-                if let Ok(hwnd) = window.hwnd() {
-                    use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE};
-                    let round: u32 = 2; // DWMWCP_ROUND (8 px)
-                    unsafe {
-                        DwmSetWindowAttribute(hwnd.0 as _, DWMWA_WINDOW_CORNER_PREFERENCE as _, &round as *const u32 as *const _, 4);
-                    }
-                }
-            }
-            // Search panel: acrylic blur of the desktop behind it.
-            #[cfg(target_os = "windows")]
-            if let Some(window) = app.get_webview_window("search") {
-                let _ = window_vibrancy::apply_acrylic(&window, None);
-                if let Ok(hwnd) = window.hwnd() {
-                    use windows_sys::Win32::Graphics::Dwm::{
-                        DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE,
-                    };
-                    let round: u32 = 2; // DWMWCP_ROUND
-                    unsafe {
-                        DwmSetWindowAttribute(
-                            hwnd.0 as _,
-                            DWMWA_WINDOW_CORNER_PREFERENCE as _,
-                            &round as *const u32 as *const _,
-                            4,
-                        );
-                    }
+            for label in ["popover", "search"] {
+                if let Some(window) = app.get_webview_window(label) {
+                    let _ = window.set_shadow(false);
+                    glass::acrylic(&window, true);
+                    glass::no_dwm_rounding(&window);
                 }
             }
             Ok(())
@@ -2568,6 +2764,16 @@ fn main() {
             popover_toggle,
             popover_place,
             popover_hide,
+            popover_at,
+            dock_menu_pick,
+            glass_tint,
+            search_fit,
+            icons_system,
+            recent_items,
+            bin_empty,
+            topbar_go,
+            topbar_view,
+            media_control,
             controls_get,
             controls_set,
             dock_status,

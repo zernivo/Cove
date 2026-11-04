@@ -4,82 +4,77 @@ html, body {
   overflow: hidden;
   background: transparent;
   user-select: none;
-  font: 13px/1 "Segoe UI Variable Text", "Segoe UI", Inter, system-ui, sans-serif;
+  font: 500 13px/1 "Segoe UI Variable Text", "Segoe UI", Inter, system-ui, sans-serif;
   color: var(--c-bar-text);
   -webkit-font-smoothing: antialiased;
-  --bar-h: 25px;
+  --bar-h: 24px;
 }
-/* Menu bar: 25 DIP like macOS (24 pt), 13 DIP text, 16 DIP icons, a 21 DIP
-   hover pill. The AppBar strip Cove reserves is the same 25 DIP
-   (TOPBAR_HEIGHT in main.rs). Layers, bottom to top: an opaque base, the
-   blurred wallpaper plate, the Ink (or paper) tint and a hairline edge.
-   The base is opaque on purpose: the bar must never read as grey glass. */
+/* Menu bar: 24 DIP (macOS 24 pt), 13 DIP text at 500, 16 DIP glyphs in
+   28 x 20 hit boxes. Layers bottom to top: opaque base, wallpaper plate,
+   tint (alpha set from the plate so text keeps 4.5:1, never under the
+   guide's floor), hairline. The base is opaque: the bar never goes grey. */
+.glass { position: fixed; inset: 0; overflow: hidden; background: var(--c-bar-base); }
 .plate {
-  position: fixed;
-  inset: 0;
-  overflow: hidden;
-  background: var(--c-bar-base);
+  position: absolute; inset: 0; pointer-events: none;
+  background-repeat: no-repeat;
+  background-size: var(--mon-w, 100vw) var(--mon-h, 100vh);
+  background-position: 0 0;
+  opacity: 0; transition: opacity 0.25s ease;
+  contain: strict;
 }
-.plate img {
-  position: absolute;
-  /* Aligned to the screen (the bar sits at the main display's top-left);
-     40 DIP of bleed so the blur doesn't fade in from the edges. */
-  left: -40px;
-  top: -40px;
-  width: calc(var(--screen-w, 100vw) + 80px);
-  height: calc(var(--screen-h, 100vh) + 80px);
-  object-fit: cover;
-  filter: blur(22px) saturate(1.5);
-  opacity: 0;
-  transition: opacity 0.25s ease;
-}
-.plate img.ready { opacity: 1; }
+.plate.ready { opacity: 1; }
+/* CSS-blur fallback when the wallpaper can't be frosted on a canvas. */
+.plate.css-blur { inset: -40px; filter: blur(24px) saturate(1.6); background-position: 40px 40px; }
+.tint { position: absolute; inset: 0; background: rgba(var(--c-bar-tint), var(--bar-a, var(--c-bar-alpha))); box-shadow: inset 0 -1px 0 var(--c-bar-edge), inset 0 1px 0 rgba(255, 255, 255, 0.04); }
 .bar {
   position: relative;
   height: var(--bar-h);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 8px 0 6px;
-  background: var(--c-bar);
-  box-shadow: inset 0 -1px 0 var(--c-bar-edge);
+  padding: 0 8px 0 10px;
   box-sizing: border-box;
 }
-.left, .right { display: flex; align-items: center; gap: 4px; min-width: 0; }
-.right { gap: 6px; }
+.left, .right, .menus { display: flex; align-items: center; min-width: 0; }
+.left { overflow: hidden; flex: 1; }
+.right { flex: none; }
 button {
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  height: 21px;
-  padding: 0 6px;
-  border-radius: 5px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  cursor: default;
-  transition: background-color 0.08s ease;
+  border: 0; background: none; color: inherit; font: inherit;
+  height: 20px; padding: 0 10px; border-radius: 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: default; white-space: nowrap;
+  transition: background-color 0.12s ease, box-shadow 0.12s ease;
 }
-button:hover, button.open { background: var(--c-bar-hover); }
-button:active, button.open { background: var(--c-bar-press); }
-button:focus-visible { outline: 2px solid var(--c-teal); outline-offset: -2px; }
-svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-svg .dot { fill: currentColor; stroke: none; }
-/* Voxel mark B: a monochrome template image used as a mask, so it takes the bar's text colour. */
-.mark { padding: 0 6px; }
-.cove-mark { width: 16px; height: 16px; background: currentColor; -webkit-mask: url("/cove-menubar-16.png") center / 16px 16px no-repeat; mask: url("/cove-menubar-16.png") center / 16px 16px no-repeat; }
-@media (min-resolution: 1.5dppx) {
-  .cove-mark { -webkit-mask-image: url("/cove-menubar-24.png"); mask-image: url("/cove-menubar-24.png"); }
+/* Graphite pill for the open or pressed title: frosted, with a top sheen. */
+button:hover { background: rgba(255, 255, 255, 0.08); }
+:root:not([data-mode="dark"]) button:hover { background: rgba(0, 0, 0, 0.05); }
+button.open, button:active {
+  background: var(--c-hl);
+  box-shadow: var(--c-hl-sheen);
 }
-.app { font-weight: 700; padding: 0 7px; display: inline-block; line-height: 21px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; letter-spacing: 0.005em; }
-.clock { font-variant-numeric: tabular-nums; padding: 0 6px; white-space: pre; }
-.batt { width: 22px; height: 11px; border: 1.4px solid currentColor; border-radius: 3px; position: relative; box-sizing: border-box; margin-right: 3px; }
-.batt::after { content: ""; position: absolute; right: -3.6px; top: 2.6px; width: 1.8px; height: 3.4px; border-radius: 0 1px 1px 0; background: currentColor; }
+:root[data-mode="dark"] button.open, :root[data-mode="dark"] button:active { background: rgba(255, 255, 255, 0.16); }
+button:focus-visible { outline: 2px solid var(--c-focus); outline-offset: -2px; }
+svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.35; stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
+svg .solid { fill: currentColor; stroke: none; }
+/* Cove mark: the logo itself, 16 DIP (as in the approved mockups). */
+.mark { padding: 0 8px; }
+.cove-logo { width: 16px; height: 16px; object-fit: contain; display: block; }
+.title { font-weight: 500; letter-spacing: 0.003em; }
+.app { font-weight: 700; max-width: 34vw; overflow: hidden; text-overflow: ellipsis; display: inline-block; line-height: 20px; }
+/* Status items: one rhythm, a 28 x 20 box with a centred 16 DIP glyph. */
+.item { width: 28px; padding: 0; }
+.batt-item { width: 34px; }
+.clock { padding: 0 6px 0 8px; margin-left: 2px; font-variant-numeric: tabular-nums; white-space: pre; }
+#sound-btn .mx { display: none; }
+#sound-btn.muted .mx { display: inline; }
+#sound-btn.muted .w1, #sound-btn.muted .w2, #sound-btn.low .w2 { display: none; }
+.batt { width: 22px; height: 11px; border: 1.3px solid currentColor; border-radius: 3.2px; position: relative; box-sizing: border-box; margin-right: 2px; opacity: 0.95; }
+.batt::after { content: ""; position: absolute; right: -3.4px; top: 2.7px; width: 1.6px; height: 3.3px; border-radius: 0 1px 1px 0; background: currentColor; }
 .fill { position: absolute; left: 1.2px; top: 1.2px; bottom: 1.2px; border-radius: 1px; background: currentColor; }
-.fill.low { background: #ff5f57; }
+.fill.low { background: #ff6b5f; }
 .fill.charging { background: #34c759; }
 .hidden { display: none !important; }
 @media (prefers-reduced-transparency: reduce) {
-  .plate img { display: none; }
+  .plate { display: none; }
 }
+@media (prefers-reduced-motion: reduce) { .plate, button { transition: none; } }

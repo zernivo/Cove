@@ -5,7 +5,12 @@
 //! dock refresh never re-sends image data.
 //!
 //! A key is a file path, "shell:AppsFolder\\<AppID>" (Store and Start apps),
-//! or "hwnd:<n>" (the window's own icon, for apps Cove can't open).
+//! "hwnd:<n>" (the window's own icon, for apps Cove can't open),
+//! "pkglogo:<Family!AppId>" (a packaged app's own logo PNG, the largest
+//! unplated target size, read via its AppxManifest), or
+//! "stock:recycler" / "stock:recyclerfull" (Windows' stock bin icons).
+//! Anything that can't be drawn is logged (cove.log) and the caller falls
+//! back to the next key, ending at the letter tile.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -18,6 +23,19 @@ struct Cache {
 }
 
 static CACHE: Mutex<Option<Cache>> = Mutex::new(None);
+
+type Logger = Box<dyn Fn(&str) + Send + Sync>;
+static LOG: std::sync::OnceLock<Logger> = std::sync::OnceLock::new();
+
+/// Where icon failures are reported (cove.log).
+pub fn set_logger(f: impl Fn(&str) + Send + Sync + 'static) {
+    let _ = LOG.set(Box::new(f));
+}
+fn log(msg: &str) {
+    if let Some(f) = LOG.get() {
+        f(msg);
+    }
+}
 
 fn with<R>(f: impl FnOnce(&mut Cache) -> R) -> R {
     let mut g = CACHE.lock().unwrap_or_else(|e| e.into_inner());
@@ -72,7 +90,11 @@ pub fn fill(paths: Vec<String>) {
             } else if let Some(exe) = p.strip_prefix("exeicon:") {
                 imp::exe_icon(exe)
             } else if p == "stock:recycler" {
-                imp::stock_recycler()
+                imp::stock_icon(31) // SIID_RECYCLER
+            } else if p == "stock:recyclerfull" {
+                imp::stock_icon(32) // SIID_RECYCLERFULL
+            } else if let Some(aumid) = p.strip_prefix("pkglogo:") {
+                package_logo(aumid)
             } else if let Some(r) = p.strip_prefix("res:") {
                 // "file,index": the file itself renders as its first icon.
                 let file = r.rsplit_once(',').map(|(f, _)| f).unwrap_or(r).trim_matches('"');
@@ -80,7 +102,10 @@ pub fn fill(paths: Vec<String>) {
             } else {
                 imp::render(&p, SIZE)
             };
-            store(p, px.map(|(w, h, rgba)| normalise(w, h, rgba)).and_then(|(w, h, rgba)| encode(w, h, &rgba)));
+            if px.is_none() && (p.starts_with("pkglogo:") || p.starts_with("stock:") || p.starts_with("shell:") || p.starts_with("::")) {
+                log(&format!("icons: no picture for {p}; falling back to the next source"));
+            }
+            store(p, px.map(|(w, h, rgba)| shrink(w, h, rgba, SIZE as u32)).map(|(w, h, rgba)| normalise(w, h, rgba)).and_then(|(w, h, rgba)| encode(w, h, &rgba)));
         }
     });
 }
@@ -158,6 +183,157 @@ pub fn normalise(w: u32, h: u32, rgba: Vec<u8>) -> (u32, u32, Vec<u8>) {
         }
     }
     (out as u32, out as u32, dst)
+}
+
+// ---- Packaged apps' own logos (Settings, Store apps, MSIX) ----
+
+/// The logo an app's AppxManifest gives it: Square44x44Logo (the app-list
+/// icon, which ships unplated target sizes), else Square150x150Logo, else
+/// the package Logo. Relative to the package root, backslashes as written.
+pub fn manifest_logo(xml: &str, app_id: &str) -> Option<String> {
+    let lower = xml.to_ascii_lowercase();
+    let want = format!("id=\"{}\"", app_id.to_ascii_lowercase());
+    // The <Application ...> element for this app id, up to its end tag.
+    let mut from = 0;
+    let block = loop {
+        let at = lower[from..].find("<application ")? + from;
+        let end = lower[at..].find("</application>").map(|e| at + e).unwrap_or(lower.len());
+        let head_end = lower[at..].find('>').map(|e| at + e).unwrap_or(end);
+        if lower[at..head_end].contains(&want) {
+            break (at, end);
+        }
+        from = end.max(at + 1);
+    };
+    let attr = |name: &str| -> Option<String> {
+        let key = format!("{}=\"", name.to_ascii_lowercase());
+        let i = lower[block.0..block.1].find(&key)? + block.0 + key.len();
+        let j = xml[i..].find('"')? + i;
+        Some(xml[i..j].to_string()).filter(|v| !v.is_empty())
+    };
+    attr("Square44x44Logo").or_else(|| attr("Square150x150Logo")).or_else(|| {
+        let i = lower.find("<logo>")? + 6;
+        let j = lower[i..].find("</logo>")? + i;
+        Some(xml[i..j].trim().to_string())
+    })
+}
+
+/// Pick the sharpest file for `logo` ("Assets\\AppList.png") among the
+/// files in its folder: the largest target size up to 256 px, unplated
+/// preferred, then the largest scale. High-contrast and light-theme
+/// variants are skipped unless nothing else exists.
+pub fn best_logo(files: &[String], logo: &str) -> Option<String> {
+    let name = logo.rsplit(['\\', '/']).next()?;
+    let (stem, ext) = name.rsplit_once('.')?;
+    let (stem, ext) = (stem.to_ascii_lowercase(), ext.to_ascii_lowercase());
+    let base: u32 = if logo.to_ascii_lowercase().contains("150") { 150 } else { 44 };
+    let mut best: Option<((u32, u32, i64, u32), String)> = None;
+    for f in files {
+        let fl = f.to_ascii_lowercase();
+        let Some(rest) = fl.strip_prefix(&format!("{stem}.")) else { continue };
+        let Some(quals) = rest.strip_suffix(&format!(".{ext}")).map(Some).unwrap_or_else(|| (rest == ext).then_some("")) else { continue };
+        let q: Vec<&str> = quals.split('_').filter(|s| !s.is_empty()).collect();
+        let odd = q.iter().any(|x| x.starts_with("contrast-") || *x == "altform-lightunplated" || x.starts_with("theme-light"));
+        let unplated = q.iter().any(|x| *x == "altform-unplated");
+        let px = q.iter().find_map(|x| x.strip_prefix("targetsize-").and_then(|n| n.parse::<u32>().ok()))
+            .or_else(|| q.iter().find_map(|x| x.strip_prefix("scale-").and_then(|n| n.parse::<u32>().ok())).map(|sc| base * sc / 100))
+            .unwrap_or(base);
+        let key = (u32::from(!odd), px.min(256), -(px as i64 - 256).max(0), u32::from(unplated));
+        if best.as_ref().map_or(true, |(k, _)| key > *k) {
+            best = Some((key, f.clone()));
+        }
+    }
+    best.map(|(_, f)| f)
+}
+
+/// A packaged app's logo as RGBA, via its install folder and manifest.
+fn package_logo(aumid: &str) -> Option<(u32, u32, Vec<u8>)> {
+    let (family, app_id) = aumid.split_once('!')?;
+    let root = imp::package_root(family)?;
+    let xml = std::fs::read_to_string(root.join("AppxManifest.xml")).ok()?;
+    let logo = manifest_logo(&xml, app_id)?;
+    let rel = logo.replace('\\', std::path::MAIN_SEPARATOR_STR);
+    let dir = root.join(&rel).parent()?.to_path_buf();
+    let files: Vec<String> = std::fs::read_dir(&dir).ok()?.filter_map(|e| e.ok()?.file_name().into_string().ok()).collect();
+    let pick = best_logo(&files, &logo)?;
+    decode_png(&std::fs::read(dir.join(pick)).ok()?)
+}
+
+/// Any PNG as straight RGBA 8-bit.
+pub fn decode_png(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
+    let mut dec = png::Decoder::new(bytes);
+    dec.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+    let mut r = dec.read_info().ok()?;
+    let mut buf = vec![0u8; r.output_buffer_size()];
+    let info = r.next_frame(&mut buf).ok()?;
+    let (w, h) = (info.width, info.height);
+    let px = &buf[..info.buffer_size()];
+    let rgba: Vec<u8> = match info.color_type {
+        png::ColorType::Rgba => px.to_vec(),
+        png::ColorType::Rgb => px.chunks_exact(3).flat_map(|p| [p[0], p[1], p[2], 255]).collect(),
+        png::ColorType::GrayscaleAlpha => px.chunks_exact(2).flat_map(|p| [p[0], p[0], p[0], p[1]]).collect(),
+        png::ColorType::Grayscale => px.iter().flat_map(|&g| [g, g, g, 255]).collect(),
+        png::ColorType::Indexed => return None,
+    };
+    (rgba.len() == (w * h * 4) as usize).then_some((w, h, rgba))
+}
+
+/// Box-filter a picture down so its longer side is at most `max` px.
+pub fn shrink(w: u32, h: u32, rgba: Vec<u8>, max: u32) -> (u32, u32, Vec<u8>) {
+    if w <= max && h <= max || w == 0 || h == 0 {
+        return (w, h, rgba);
+    }
+    let k = w.max(h) as f32 / max as f32;
+    let (nw, nh) = (((w as f32 / k).round() as u32).max(1), ((h as f32 / k).round() as u32).max(1));
+    let mut out = vec![0u8; (nw * nh * 4) as usize];
+    for y in 0..nh {
+        for x in 0..nw {
+            let (x0, x1) = ((x as f32 * k) as u32, (((x + 1) as f32 * k) as u32).min(w).max((x as f32 * k) as u32 + 1));
+            let (y0, y1) = ((y as f32 * k) as u32, (((y + 1) as f32 * k) as u32).min(h).max((y as f32 * k) as u32 + 1));
+            let mut acc = [0f32; 4];
+            let mut n = 0f32;
+            for sy in y0..y1 {
+                for sx in x0..x1 {
+                    let i = ((sy * w + sx) * 4) as usize;
+                    let a = rgba[i + 3] as f32 / 255.0;
+                    acc[0] += rgba[i] as f32 * a;
+                    acc[1] += rgba[i + 1] as f32 * a;
+                    acc[2] += rgba[i + 2] as f32 * a;
+                    acc[3] += a;
+                    n += 1.0;
+                }
+            }
+            let o = ((y * nw + x) * 4) as usize;
+            if acc[3] > 0.0 {
+                out[o] = (acc[0] / acc[3]).round().min(255.0) as u8;
+                out[o + 1] = (acc[1] / acc[3]).round().min(255.0) as u8;
+                out[o + 2] = (acc[2] / acc[3]).round().min(255.0) as u8;
+            }
+            out[o + 3] = (acc[3] / n * 255.0).round().min(255.0) as u8;
+        }
+    }
+    (nw, nh, out)
+}
+
+/// Named system icons for menus, Search and Control Centre: the key to
+/// draw each from (first that works). Rendered on demand like any icon.
+pub fn system_keys() -> Vec<(&'static str, Vec<String>)> {
+    let win = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
+    let home = std::env::var("USERPROFILE").unwrap_or_default();
+    let known = |name: &str| format!(r"{home}\{name}");
+    vec![
+        ("settings", vec!["pkglogo:windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel".into(), r"shell:AppsFolder\windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel".into()]),
+        ("explorer", vec![r"shell:AppsFolder\Microsoft.Windows.Explorer".into(), format!(r"exeicon:{win}\explorer.exe")]),
+        ("taskmgr", vec![format!(r"exeicon:{win}\System32\Taskmgr.exe"), format!(r"{win}\System32\Taskmgr.exe")]),
+        ("controlpanel", vec!["::{26EE0668-A00A-44D7-9371-BEB064C98683}".into(), "shell:ControlPanelFolder".into()]),
+        ("thispc", vec!["::{20D04FE0-3AEA-1069-A2D8-08002B30309D}".into(), "shell:MyComputerFolder".into()]),
+        ("downloads", vec!["shell:Downloads".into(), known("Downloads")]),
+        ("documents", vec!["shell:Personal".into(), known("Documents")]),
+        ("desktop", vec!["shell:Desktop".into(), known("Desktop")]),
+        ("pictures", vec!["shell:My Pictures".into(), known("Pictures")]),
+        ("home", vec![home.clone()]),
+        ("recycler", vec!["stock:recycler".into(), "::{645FF040-5081-101B-9F08-08002B2CF60E}".into()]),
+        ("recyclerfull", vec!["stock:recyclerfull".into()]),
+    ]
 }
 
 fn encode(w: u32, h: u32, rgba: &[u8]) -> Option<Vec<u8>> {
@@ -240,21 +416,58 @@ mod imp {
         resource_icon(exe, 0).or_else(|| file_info_icon(exe))
     }
 
-    /// The Recycle Bin icon Windows itself draws (stock icon SIID_RECYCLER).
-    pub fn stock_recycler() -> Option<(u32, u32, Vec<u8>)> {
+    /// A stock shell icon (SIID_*) as Windows itself draws it, at 256 px.
+    pub fn stock_icon(siid: i32) -> Option<(u32, u32, Vec<u8>)> {
         use windows_sys::Win32::UI::Shell::{SHGetStockIconInfo, SHSTOCKICONINFO};
         unsafe {
             let mut si: SHSTOCKICONINFO = std::mem::zeroed();
             si.cbSize = std::mem::size_of::<SHSTOCKICONINFO>() as u32;
-            const SIID_RECYCLER: i32 = 31;
             const SHGSI_ICONLOCATION: u32 = 0;
-            if SHGetStockIconInfo(SIID_RECYCLER as _, SHGSI_ICONLOCATION as _, &mut si) < 0 {
+            if SHGetStockIconInfo(siid as _, SHGSI_ICONLOCATION as _, &mut si) < 0 {
                 return None;
             }
             let n = si.szPath.iter().position(|&c| c == 0).unwrap_or(si.szPath.len());
             let path = String::from_utf16_lossy(&si.szPath[..n]);
             resource_icon(&path, si.iIcon)
         }
+    }
+
+    /// Where a package family is installed: its newest registered package's
+    /// PackageRootFolder (the AppModel repository in HKCU, read-only).
+    pub fn package_root(family: &str) -> Option<std::path::PathBuf> {
+        use winreg::{enums::HKEY_CURRENT_USER, RegKey};
+        let (name, publisher) = family.rsplit_once('_')?;
+        let repo = RegKey::predef(HKEY_CURRENT_USER)
+            .open_subkey(r"Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages")
+            .ok();
+        let head = format!("{}_", name.to_ascii_lowercase());
+        let tail = format!("_{}", publisher.to_ascii_lowercase());
+        let mut found: Vec<(String, std::path::PathBuf)> = Vec::new();
+        if let Some(repo) = repo {
+            for k in repo.enum_keys().flatten() {
+                let kl = k.to_ascii_lowercase();
+                if kl.starts_with(&head) && kl.ends_with(&tail) {
+                    if let Ok(root) = repo.open_subkey(&k).and_then(|s| s.get_value::<String, _>("PackageRootFolder")) {
+                        let p = std::path::PathBuf::from(root);
+                        if p.join("AppxManifest.xml").is_file() {
+                            found.push((kl, p));
+                        }
+                    }
+                }
+            }
+        }
+        found.sort();
+        if let Some((_, p)) = found.pop() {
+            return Some(p);
+        }
+        // System apps that live in a fixed folder.
+        let win = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
+        let fixed = match name.to_ascii_lowercase().as_str() {
+            "windows.immersivecontrolpanel" => Some(format!(r"{win}\ImmersiveControlPanel")),
+            _ => None,
+        }?;
+        let p = std::path::PathBuf::from(fixed);
+        p.join("AppxManifest.xml").is_file().then_some(p)
     }
 
     /// Icon `index` (or resource id when negative) of a PE file at 256 px.
@@ -416,7 +629,10 @@ mod imp {
     pub fn exe_icon(_exe: &str) -> Option<(u32, u32, Vec<u8>)> {
         None
     }
-    pub fn stock_recycler() -> Option<(u32, u32, Vec<u8>)> {
+    pub fn stock_icon(_siid: i32) -> Option<(u32, u32, Vec<u8>)> {
+        None
+    }
+    pub fn package_root(_family: &str) -> Option<std::path::PathBuf> {
         None
     }
 }
@@ -455,6 +671,37 @@ mod tests {
         let src = square(256, 10, 246);
         let (_, _, v) = super::normalise(256, 256, src.clone());
         assert_eq!(v, src);
+    }
+
+    #[test]
+    fn reads_the_app_list_logo_from_a_manifest() {
+        let xml = r#"<Package><Properties><Logo>Images\StoreLogo.png</Logo></Properties><Applications>
+            <Application Id="Other"><uap:VisualElements Square44x44Logo="Other.png"/></Application>
+            <Application Id="microsoft.windows.immersivecontrolpanel" Executable="SystemSettings.exe">
+              <uap:VisualElements DisplayName="Settings" Square150x150Logo="Images\Logo.png" Square44x44Logo="Images\SmallLogo.png"/>
+            </Application></Applications></Package>"#;
+        assert_eq!(super::manifest_logo(xml, "microsoft.windows.immersivecontrolpanel").as_deref(), Some(r"Images\SmallLogo.png"));
+        assert_eq!(super::manifest_logo(xml, "Other").as_deref(), Some("Other.png"));
+        assert_eq!(super::manifest_logo(xml, "Missing"), None);
+    }
+    #[test]
+    fn picks_the_sharpest_unplated_logo() {
+        let files: Vec<String> = [
+            "SmallLogo.png", "SmallLogo.scale-200.png", "SmallLogo.targetsize-48.png", "SmallLogo.targetsize-256.png",
+            "SmallLogo.targetsize-256_altform-unplated.png", "SmallLogo.targetsize-256_altform-lightunplated.png",
+            "SmallLogo.contrast-black_targetsize-256.png", "Logo.scale-400.png",
+        ].iter().map(|s| s.to_string()).collect();
+        assert_eq!(super::best_logo(&files, r"Images\SmallLogo.png").as_deref(), Some("SmallLogo.targetsize-256_altform-unplated.png"));
+        let few: Vec<String> = ["SmallLogo.scale-100.png", "SmallLogo.scale-400.png"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(super::best_logo(&few, r"Images\SmallLogo.png").as_deref(), Some("SmallLogo.scale-400.png"));
+        assert_eq!(super::best_logo(&few, r"Images\Other.png"), None);
+    }
+    #[test]
+    fn shrinks_and_decodes() {
+        let (w, h, v) = super::shrink(512, 512, vec![255; 512 * 512 * 4], 256);
+        assert_eq!((w, h, v.len()), (256, 256, 256 * 256 * 4));
+        let png = super::encode(2, 1, &[1, 2, 3, 255, 4, 5, 6, 128]).unwrap();
+        assert_eq!(super::decode_png(&png), Some((2, 1, vec![1, 2, 3, 255, 4, 5, 6, 128])));
     }
 
     #[test]

@@ -1,247 +1,194 @@
+/* Cove dock, variant A (user pick 2026-11-04): 48 DIP icons, 66 DIP tall,
+   floating 6 DIP above the bottom edge, radius 18. Liquid Glass: the
+   pre-frosted wallpaper plate lined up with the screen, refracted on a
+   16 DIP edge band, a clear Ink (or paper) tint, rim and shadow. */
 html, body {
   margin: 0;
   height: 100%;
   background: transparent;
   overflow: hidden;
   user-select: none;
-  font-family: "Segoe UI Variable", "Segoe UI", Inter, system-ui, sans-serif;
+  font-family: "Segoe UI Variable Text", "Segoe UI", Inter, system-ui, sans-serif;
   --size: 48px;
-  --pill: var(--panel-tint);
-  --edge: rgba(255, 255, 255, 0.7);
-  --line: rgba(0, 0, 0, 0.12);
-  --label-bg: rgba(30, 32, 38, 0.86);
-  --label-fg: #fff;
-  --dot: rgba(20, 22, 28, 0.75);
-  --stack-bg: var(--menu-bg);
-  --stack-fg: var(--text);
 }
-html[data-mode="dark"], html[data-mode="dark"] body {
-    --pill: var(--panel-tint);
-    --edge: rgba(255, 255, 255, 0.14);
-    --line: rgba(255, 255, 255, 0.16);
-    --label-bg: rgba(240, 242, 246, 0.92);
-    --label-fg: #15171c;
-    --dot: rgba(255, 255, 255, 0.8);
-    --stack-bg: var(--menu-bg);
-    --stack-fg: var(--text);
-  }
 .stage {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  padding-bottom: 8px;
-  /* Slide away / back: ~150 ms, critically damped (no bounce). */
-  transition: transform 0.16s cubic-bezier(0.25, 1, 0.5, 1);
+  padding-bottom: 6px;
+  /* Slide away / back: critically damped, no bounce, same path both ways. */
+  transition: transform 0.18s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.18s ease;
 }
-body.tucked .stage { transform: translateY(calc(100% + 4px)); pointer-events: none; }
-@media (prefers-reduced-motion: reduce) { .stage { transition-duration: 0s; } }
+body.tucked .stage { transform: translateY(calc(100% + 4px)); opacity: 0; pointer-events: none; transition-duration: 0.16s; }
+@media (prefers-reduced-motion: reduce) { .stage { transition: opacity 0.15s ease; } body.tucked .stage { transform: none; } }
+
 .dock {
+  position: relative;
   display: flex;
   align-items: flex-end;
-  gap: 6px;
-  padding: 7px 10px 9px;
-  border-radius: var(--radius-dock);
-  background: var(--pill);
-  border: 1px solid var(--edge);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.25);
-  backdrop-filter: blur(24px) saturate(1.4);
-  transition: padding 0.15s ease;
+  gap: 10px;
+  height: 66px;
+  box-sizing: border-box;
+  padding: 8px 8px 10px;
+  border-radius: var(--r-dock);
 }
-/* Each icon owns a slot as wide as it is drawn (--w, set while magnifying),
-   so a swelling icon pushes its neighbours apart instead of covering them.
-   The slot stays --size tall: the swell rises above the dock. */
+/* The glass slab: its own layer, so icon motion never repaints the plate. */
+.glass {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--c-solid);
+  box-shadow: var(--c-dock-shadow);
+  transform-origin: center;
+  will-change: transform;
+}
+.glass .plate {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background-repeat: no-repeat;
+  background-size: var(--mon-w, 100vw) var(--mon-h, 100vh);
+  background-position: var(--px, 0) var(--py, 0);
+  opacity: 0; transition: opacity 0.25s ease;
+  contain: strict;
+}
+.glass .plate.ready { opacity: 1; }
+.glass .tint { position: absolute; inset: 0; z-index: 1; border-radius: inherit; background: var(--c-dock-tint); box-shadow: var(--c-dock-rim); }
+.glass:not(.has-plate) { background: rgba(17, 18, 21, 0.86); }
+:root:not([data-mode="dark"]) .glass:not(.has-plate) { background: rgba(247, 243, 239, 0.9); }
+@media (prefers-reduced-transparency: reduce) {
+  .glass .plate { display: none; }
+  .glass, .glass:not(.has-plate) { background: var(--c-solid); }
+}
+
+/* Items: a 48 DIP slot. Magnification (dock.ts) moves the slot sideways
+   (translateX) and scales + lifts the picture inside it; the running dot
+   only follows sideways. */
 .item {
-  --w: var(--size);
   position: relative;
-  width: var(--w);
+  width: var(--size);
   height: var(--size);
   flex: none;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  transition: width 0.09s cubic-bezier(0.2, 0.8, 0.2, 1);
   cursor: default;
+  z-index: 1;
+}
+.item .pic {
+  position: absolute; inset: 0;
+  transform-origin: 50% 100%;
+  will-change: transform;
 }
 .item img, .item .letter {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  width: min(var(--w), 100%);
-  height: auto;
-  aspect-ratio: 1;
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
   object-fit: contain;
   pointer-events: none;
-  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.18));
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.2));
+  transition: scale 0.1s ease-out, opacity 0.1s ease-out;
 }
 .item .letter {
-  border-radius: 22%;
-  background: rgba(255, 255, 255, 0.10);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-}
-/* No picture from Windows: the app's initial on an Ink tile, sized like a real icon. */
-.item .letter.tile {
-  display: grid;
-  place-items: center;
+  border-radius: var(--r-tile);
   box-sizing: border-box;
-  border: calc(var(--w) * 0.07) solid transparent;
-  background: #111215 padding-box;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.10);
+  display: grid; place-items: center;
+  background: #111215;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
   color: #ecebe8;
   font-weight: 600;
-  font-size: calc(var(--w) * 0.4);
+  font-size: 19px;
 }
-.item .letter.pending { animation: icon-wait 1.2s ease-in-out infinite alternate; }
+.item .letter.pending { background: rgba(255, 255, 255, 0.1); color: transparent; animation: icon-wait 1.2s ease-in-out infinite alternate; }
 @keyframes icon-wait { from { opacity: 0.45; } to { opacity: 0.8; } }
 .item img { animation: icon-in 0.22s ease-out; }
-@keyframes icon-in { from { opacity: 0; scale: 0.92; } }
-/* ---- Dock motion (v0.9.0). Uses `translate`, so it stacks with the
-   magnification `transform` instead of fighting it. ---- */
-.item:hover img, .item:hover .letter { filter: drop-shadow(0 5px 7px rgba(0, 0, 0, 0.24)); }
-.item img, .item .letter { transition: width 0.09s cubic-bezier(0.2, 0.8, 0.2, 1), scale 0.12s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.15s ease, opacity 0.12s ease; }
-.item img, .item .letter { transform-origin: bottom center; }
-.item.pressed img, .item.pressed .letter { scale: 0.9; opacity: 0.82; }
-/* Launch: soft bounces until the app's first window appears (max 6 s). */
-.item.launching { animation: launch 0.72s cubic-bezier(0.33, 0, 0.3, 1) infinite; }
-@keyframes launch {
-  0%, 100% { translate: 0 0; }
-  45% { translate: 0 -16px; }
-  70% { translate: 0 0; }
-  82% { translate: 0 -3px; }
-}
-/* Attention: an app flashed its window. Two tall hops, a pause, repeat. */
-.item.attention { animation: attention 2.4s cubic-bezier(0.33, 0, 0.3, 1) infinite; }
-.item.attention .dot { background: var(--accent); }
-@keyframes attention {
-  0%, 30%, 60%, 100% { translate: 0 0; }
-  12% { translate: 0 -22px; }
-  42% { translate: 0 -12px; }
-}
+@keyframes icon-in { from { opacity: 0; } }
+/* Press feedback on pointer-down. */
+.item.pressed img, .item.pressed .letter { scale: 0.94; opacity: 0.85; }
+
+/* Launch: soft hops until the app's first window appears (max 6 s). */
+.item.launching .pic { animation: launch 0.72s cubic-bezier(0.33, 0, 0.3, 1) infinite; }
+@keyframes launch { 0%, 100% { translate: 0 0; } 45% { translate: 0 -12px; } 70% { translate: 0 0; } 82% { translate: 0 -2px; } }
+/* Attention: an app flashed its window. Two hops, a pause, repeat. */
+.item.attention .pic { animation: attention 2.4s cubic-bezier(0.33, 0, 0.3, 1) infinite; }
+@keyframes attention { 0%, 30%, 60%, 100% { translate: 0 0; } 12% { translate: 0 -16px; } 42% { translate: 0 -8px; } }
 /* Nudge: one hop when Cove is opened again while already running. */
-.item.nudge { animation: nudge 0.62s cubic-bezier(0.33, 0, 0.3, 1); }
-@keyframes nudge {
-  0%, 100% { translate: 0 0; }
-  40% { translate: 0 -14px; }
-  72% { translate: 0 0; }
-  86% { translate: 0 -3px; }
-}
-/* Arrive: grow in from nothing; leave: shrink and close the gap. */
+.item.nudge .pic { animation: nudge 0.62s cubic-bezier(0.33, 0, 0.3, 1); }
+@keyframes nudge { 0%, 100% { translate: 0 0; } 40% { translate: 0 -10px; } 72% { translate: 0 0; } 86% { translate: 0 -2px; } }
+/* Arrive / leave: grow in and close the gap. */
 .item.arriving { animation: arrive 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
-@keyframes arrive {
-  from { width: 0; opacity: 0; scale: 0.4; }
-  to { width: var(--size); opacity: 1; scale: 1; }
-}
+@keyframes arrive { from { width: 0; opacity: 0; scale: 0.4; } to { width: var(--size); opacity: 1; scale: 1; } }
 .item.leaving { pointer-events: none; animation: leave 0.22s cubic-bezier(0.4, 0, 1, 1) forwards; }
 .item.leaving .label, .item.leaving .dot { display: none; }
-@keyframes leave {
-  from { width: var(--size); opacity: 1; scale: 1; }
-  to { width: 0; opacity: 0; scale: 0.4; margin: 0 -3px; }
-}
+@keyframes leave { from { width: var(--size); opacity: 1; scale: 1; } to { width: 0; opacity: 0; scale: 0.4; margin: 0 -5px; } }
+
+/* Running dot: 4 DIP, neutral, 4 DIP above the dock's bottom edge. */
 .item .dot {
-  position: absolute;
-  bottom: -7px;
-  width: 4px;
-  height: 4px;
+  position: absolute; left: 50%; bottom: -8px;
+  width: 4px; height: 4px; margin-left: -2px;
   border-radius: 50%;
-  background: var(--dot);
+  background: var(--c-dot);
 }
-.item.active .dot { width: 14px; border-radius: 3px; background: var(--accent); box-shadow: var(--glow); }
+.item.attention .dot { background: #ff9f43; }
+
+/* Tooltip: 12 / 500, solid, radius 6, just above the (lifted) icon; it
+   appears after ~300 ms with a soft fade. */
 .label {
   position: absolute;
-  bottom: calc(var(--w) + 10px);
   left: 50%;
-  translate: -50% 4px;
-  padding: 4px 10px;
-  border-radius: 7px;
-  background: var(--label-bg);
-  color: var(--label-fg);
+  bottom: 100%;
+  translate: -50% calc(var(--lift, 0px) * -1 - 8px);
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: var(--c-tooltip);
+  color: var(--c-tooltip-text);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2), inset 0 0 0 0.5px rgba(255, 255, 255, 0.08);
   font-size: 12px;
+  font-weight: 500;
+  line-height: 14px;
   white-space: nowrap;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.12s ease, translate 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: opacity 0.14s ease;
+  z-index: 3;
 }
-.item:hover .label { opacity: 1; translate: -50% 0; }
-.sep {
-  width: 1px;
-  align-self: stretch;
-  margin: 4px 4px;
-  background: var(--line);
-}
-.menu {
-  position: fixed;
-  min-width: 170px;
-  padding: 5px;
-  border-radius: 10px;
-  background: var(--label-bg);
-  color: var(--label-fg);
-  font-size: 13px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-  z-index: 10;
-}
-.menu button {
-  display: block;
-  width: 100%;
-  text-align: left;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  padding: 6px 10px;
-  border-radius: 6px;
-}
-.menu button:hover { background: rgba(127, 127, 127, 0.25); }
+.item.tip .label { opacity: 1; transition-duration: 0.18s; }
 .item.open .label { opacity: 0 !important; }
+
+/* One divider between the apps and Downloads + Bin. */
+.sep { width: 1px; height: 40px; align-self: center; margin: 0 -1px; background: var(--c-divider); flex: none; position: relative; z-index: 1; margin-top: -2px; }
+
+/* Folder stack: a solid thick panel above its icon. */
 .item.open::after {
-  content: "";
-  position: absolute;
-  bottom: calc(var(--w) + 6px);
-  left: 50%;
-  translate: -50% 0;
-  border: 7px solid transparent;
-  border-top-color: var(--stack-bg);
+  content: ""; position: absolute; bottom: calc(100% + 8px); left: 50%; translate: -50% 0;
+  border: 7px solid transparent; border-top-color: var(--c-tooltip);
 }
 .stack {
   position: fixed;
-  bottom: 85px;
+  bottom: 84px;
   width: 420px;
   max-height: 330px;
   display: flex;
   flex-direction: column;
-  border-radius: 16px;
-  background: var(--stack-bg);
-  color: var(--stack-fg);
-  border: 1px solid var(--edge);
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(30px) saturate(1.4);
-  animation: rise 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
+  border-radius: var(--r-cc);
+  background: var(--c-tooltip);
+  color: var(--c-tooltip-text);
+  box-shadow: var(--c-panel-rim), var(--c-shadow);
+  animation: rise 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
   z-index: 5;
 }
-@keyframes rise { from { opacity: 0; transform: translateY(10px) scale(0.98); } }
-.stack-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 6px; font-size: 13px; }
+@keyframes rise { from { opacity: 0; transform: translateY(4px) scale(0.97); } }
+.stack-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px 6px; font-size: 13px; }
 .stack-head button { border: 0; background: none; color: inherit; font: inherit; font-size: 12px; opacity: 0.75; border-radius: 6px; padding: 3px 6px; }
-.stack-head button:hover { opacity: 1; background: rgba(127, 127, 127, 0.2); }
+.stack-head button:hover { opacity: 1; background: var(--c-hover); }
 .stack-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; padding: 4px 10px 12px; overflow-y: auto; }
-.stack-file { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px 4px; border: 0; border-radius: 10px; background: none; color: inherit; font: inherit; font-size: 11px; min-width: 0; }
-.stack-file:hover { background: rgba(127, 127, 127, 0.2); }
+.stack-file { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px 4px; border: 0; border-radius: var(--r-search-row); background: none; color: inherit; font: inherit; font-size: 11px; min-width: 0; }
+.stack-file:hover { background: var(--c-hl); box-shadow: var(--c-hl-sheen); }
 .stack-file img, .stack-file .letter { width: 40px; height: 40px; object-fit: contain; }
-.stack-file .letter { display: grid; place-items: center; border-radius: 9px; background: rgba(127, 127, 127, 0.22); font-size: 10px; font-weight: 600; }
+.stack-file .letter { display: grid; place-items: center; border-radius: 9px; background: var(--c-chip-off); font-size: 10px; font-weight: 600; }
 .stack-file span { width: 100%; text-align: center; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; line-height: 1.25; }
 .stack-empty { grid-column: 1 / -1; text-align: center; opacity: 0.6; font-size: 12px; }
 .hidden { display: none; }
 @media (prefers-reduced-motion: reduce) {
-  .item, .dock, .label, .item img, .item .letter { transition: none; }
-  .item.launching, .item.attention, .item.arriving, .item.leaving { animation: none; }
+  .item img, .item .letter, .label { transition: none; }
+  .item.launching .pic, .item.attention .pic, .item.arriving, .item.leaving, .item.nudge .pic { animation: none; }
   .item.launching img, .item.launching .letter { opacity: 0.6; }
-  .item.attention::before {
-    content: "";
-    position: absolute;
-    top: -3px;
-    right: -3px;
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    background: var(--accent);
-  }
 }

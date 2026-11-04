@@ -1,6 +1,9 @@
-/* Menu bar popovers. The window is exactly the popover's size and Windows
-   acrylic is the glass; this adds the Ink (or paper) tint, a 1 px edge and
-   the content. DWM rounds the window to 8 px, so the corners match. */
+/* Menu bar and dock popovers: one Liquid Glass panel family.
+   On Windows the window is Windows acrylic (its tint baked in by the app,
+   so the glass reads as Ink even on the first frame) clipped by a rounded
+   window region to exactly the panels shown; this page adds the rest of the
+   tint, the rim and the content. Highlights are graphite: a frosted white
+   pill with a top sheen and white text. */
 * { box-sizing: border-box; }
 html, body {
   margin: 0;
@@ -10,91 +13,125 @@ html, body {
   font: 13px/1.25 "Segoe UI Variable Text", "Segoe UI", Inter, system-ui, sans-serif;
   color: var(--c-text);
   -webkit-font-smoothing: antialiased;
+  --panel: var(--c-panel);
 }
+/* Real acrylic underneath: the app baked ~0.59 of the tint into it. */
+html.acrylic { --panel: rgba(30, 31, 36, 0.28); }
+html.acrylic:not([data-mode="dark"]) { --panel: rgba(247, 243, 239, 0.42); }
+@media (prefers-reduced-transparency: reduce) { html, html.acrylic, html.acrylic:not([data-mode="dark"]) { --panel: var(--c-solid); } }
 .hidden { display: none !important; }
 button { border: 0; background: none; color: inherit; font: inherit; padding: 0; cursor: default; }
-button:focus-visible { outline: 2px solid var(--c-teal); outline-offset: -2px; }
-svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+button:focus-visible { outline: 2px solid var(--c-focus); outline-offset: -2px; }
+svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+svg .solid { fill: currentColor; stroke: none; }
 
-/* Shared surface: the popover itself. Thick Ink (or paper) over the
-   acrylic, so it reads as a deliberate dark panel even if Windows shows its
-   flat fallback instead of the blur. DWM rounds the window to 8 px. */
-.menu, .cc {
-  background: var(--c-panel);
-  border: 1px solid var(--c-stroke);
-  border-radius: 8px;
-  box-shadow: inset 0 1px 0 var(--c-rim);
-}
-/* Placed: the popover fills its window exactly (the window was sized from
-   it, rounded to device pixels), so nothing is ever clipped at an edge. */
+/* Sized to content while measuring; filling the window once placed. */
 html, body { width: max-content; height: max-content; }
+.stage { position: relative; width: max-content; height: max-content; }
 body.fit, html:has(body.fit) { width: 100vw; height: 100vh; }
-body.fit > .menu:not(.hidden), body.fit > .cc:not(.hidden) { width: 100vw; min-width: 0; max-width: none; height: 100vh; }
+body.fit .stage { width: 100vw; height: 100vh; }
 body.tick { outline: 1px solid transparent; }
 
-/* ---- Menus: 24 DIP rows, 13 DIP text, hairline separators aligned with
-   the text, a solid teal row under the pointer. ---- */
-.menu { width: max-content; min-width: 232px; max-width: 360px; padding: 5px; }
-.menu button {
-  display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 28px;
-  height: 24px; padding: 0 10px; border-radius: 5px; font-size: 13px; letter-spacing: 0.005em; white-space: nowrap; text-align: left;
+/* ---- The panel surface ---- */
+.menu, .cc {
+  background: var(--panel);
+  box-shadow: var(--c-panel-rim);
+  transform-origin: var(--origin, top left);
 }
-.menu button:hover:not(:disabled), .menu button:focus-visible { background: var(--c-teal); color: var(--c-on-teal); outline: none; }
-.menu button:disabled { opacity: 0.4; }
-.menu kbd, .menu .count { font: inherit; font-size: 12px; color: var(--c-faint); }
-.menu button:hover:not(:disabled) kbd, .menu button:hover:not(:disabled) .count, .menu button:focus-visible kbd { color: var(--c-on-teal-muted); }
-.menu hr { border: 0; height: 1px; background: var(--c-sep); margin: 5px 10px; }
-.confirm { width: 290px; padding: 12px; }
-.confirm p { margin: 0 0 12px; font-size: 13px; line-height: 1.4; white-space: normal; }
-.confirm-row { display: flex; justify-content: flex-end; gap: 6px; }
-.confirm-row button { width: auto; height: 26px; padding: 0 14px; background: var(--c-module); border: 1px solid var(--c-stroke); }
-.confirm-row button:hover:not(:disabled) { background: var(--c-module-hover); color: inherit; }
-.confirm-row button.primary, .confirm-row button.primary:hover:not(:disabled) { background: var(--c-teal); color: var(--c-on-teal); border-color: transparent; font-weight: 600; }
 
-/* ---- Control Centre: 322 DIP, 10 DIP padding and gaps, 8 px panel,
-   6 px modules, 28 DIP rounded-square glyphs (teal when on). ---- */
-.cc { width: 322px; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
-.row { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr); gap: 10px; }
-.col { display: flex; flex-direction: column; gap: 10px; }
-.module { background: var(--c-module); border: 1px solid var(--c-stroke); border-radius: 6px; }
-.stack { display: flex; flex-direction: column; justify-content: center; padding: 4px; gap: 2px; }
-.tog { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; padding: 6px 5px; border-radius: 5px; min-width: 0; }
-.col .tog { flex: 1; padding: 7px 8px; border-radius: 6px; }
-.tog:hover { background: var(--c-module-hover); }
-.ic { width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center; background: var(--c-icon-off); flex: none; }
-.ic svg { width: 15px; height: 15px; }
-.ic .solid { fill: currentColor; stroke: none; }
-.tog.on .ic { background: var(--c-teal); color: var(--c-on-teal); }
-.lab { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.lab b { font-weight: 600; font-size: 13px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.lab small { font-size: 11.5px; line-height: 14px; color: var(--c-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* ---- Menus: 24 DIP rows, 13 DIP text, 10 DIP text inset, highlight
+   inset 5 with radius 6 (concentric with the 11 DIP panel). ---- */
+.menu { position: relative; width: max-content; min-width: 200px; max-width: 380px; padding: 5px; border-radius: var(--r-menu); }
+.menu.wide { min-width: 264px; }
+.menu.dockmenu { min-width: 272px; }
+.menu.sub { position: absolute; top: 0; left: 0; min-width: 200px; }
+.menu .row {
+  display: flex; width: 100%; align-items: center; gap: 8px;
+  height: 24px; padding: 0 10px; border-radius: var(--r-row);
+  font-size: 13px; font-weight: 450; letter-spacing: 0.003em; white-space: nowrap; text-align: left;
+}
+.menu .row .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.menu .row .ic { width: 16px; height: 16px; flex: none; display: grid; place-items: center; margin-left: -2px; }
+.menu .row .ic img { width: 16px; height: 16px; object-fit: contain; }
+.menu .row .ic.blank { visibility: hidden; }
+.menu .row kbd, .menu .row .count, .menu .row .chev, .menu .row .check {
+  font: inherit; font-size: 13px; color: var(--c-faint); margin-left: 24px; flex: none;
+}
+.menu .row .chev { font-size: 15px; line-height: 1; margin-right: -2px; }
+.menu .row .check { margin-left: 24px; width: 12px; display: grid; place-items: center; }
+.menu .row .check svg { width: 12px; height: 12px; stroke-width: 1.6; }
+/* Graphite highlight: frosted pill, top sheen, white (dark ink in light) text. */
+.menu .row:hover:not(:disabled), .menu .row:focus-visible, .menu .row.on {
+  background: var(--c-hl); box-shadow: var(--c-hl-sheen); color: var(--c-hl-text); outline: none;
+}
+.menu .row:hover:not(:disabled) :is(kbd, .count, .chev, .check), .menu .row:focus-visible :is(kbd, .count, .chev, .check), .menu .row.on :is(kbd, .count, .chev, .check) { color: var(--c-hl-muted); }
+.menu .row:disabled { color: var(--c-faint); }
+.menu .row:disabled .ic img { opacity: 0.45; }
+.menu hr { border: 0; height: 1px; background: var(--c-sep); margin: 5px 9px; }
+.menu .header { height: 22px; display: flex; align-items: center; gap: 7px; padding: 0 10px; font-size: 11px; font-weight: 600; color: var(--c-faint); letter-spacing: 0.01em; white-space: nowrap; }
+.menu .header img { width: 14px; height: 14px; object-fit: contain; }
+.menu .row.danger { color: var(--c-danger); }
 
-.slider-mod { padding: 9px 10px 10px; }
-.head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; min-height: 18px; }
-.head b { font-weight: 600; font-size: 13px; }
-.link { font-size: 12px; color: var(--c-muted); padding: 1px 4px; margin-right: -4px; border-radius: 4px; }
+.confirm { width: 300px; padding: 14px; }
+.confirm p { margin: 0 0 14px; font-size: 13px; line-height: 1.42; white-space: normal; }
+.confirm-row { display: flex; justify-content: flex-end; gap: 8px; }
+.confirm-row button { height: 26px; padding: 0 14px; border-radius: var(--r-control); background: var(--c-module); box-shadow: var(--c-module-rim); }
+.confirm-row button:hover { background: var(--c-hover); }
+.confirm-row button.primary { background: var(--c-hl); box-shadow: var(--c-hl-sheen); color: var(--c-hl-text); font-weight: 600; }
+
+/* ---- Control Centre: 320 wide, padding 12, gutter 8, radius 20; modules
+   are fills (a child of glass paints no glass), radius 10. ---- */
+.cc { width: 320px; padding: 12px; display: flex; flex-direction: column; gap: 8px; border-radius: var(--r-cc); }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.module { background: var(--c-module); box-shadow: var(--c-module-rim); border-radius: var(--r-module); }
+.tog {
+  display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 10px; min-width: 0; text-align: left;
+  background: var(--c-module); box-shadow: var(--c-module-rim); border-radius: var(--r-module);
+  transition: background-color 0.15s ease;
+}
+.tog:hover { background: color-mix(in srgb, var(--c-module), var(--c-text) 6%); }
+.chip { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--c-chip-off); color: var(--c-text); transition: background-color 0.15s ease, color 0.15s ease; }
+.chip svg { width: 16px; height: 16px; }
+/* On: a solid light (graphite) chip with an ink glyph. Never teal. */
+.tog.on .chip { background: var(--c-chip-on); color: var(--c-chip-on-glyph); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5); }
+.lab { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.lab b { font-weight: 600; font-size: 13px; line-height: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lab small { font-size: 11px; line-height: 14px; color: var(--c-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.slider-mod { padding: 10px 12px 12px; }
+.head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; min-height: 18px; }
+.head b { font-weight: 600; font-size: 13px; flex: none; }
+.link { font-size: 11px; color: var(--c-muted); padding: 1px 4px; margin-right: -4px; border-radius: 4px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .link:hover { color: var(--c-text); background: var(--c-hover); }
-.note { font-size: 12px; color: var(--c-muted); }
+.note { margin: 0; font-size: 11px; color: var(--c-muted); }
 
-/* Slider: a 24 DIP dark track, a soft fill and a round white thumb. The
-   real <input type=range> sits on top, invisible, so keyboard and screen
-   readers work as usual. */
-.slider { position: relative; height: 24px; border-radius: 12px; background: var(--c-track); overflow: hidden; --n: 0.5; }
-/* The fill ends under the thumb's right edge. */
-.slider .fill { position: absolute; left: 0; top: 0; bottom: 0; width: calc(24px + (100% - 24px) * var(--n)); background: var(--c-fill); border-radius: 12px; }
-.slider .knob {
-  position: absolute; top: 2px; width: 20px; height: 20px; left: calc(2px + (100% - 24px) * var(--n, 0.5));
-  background: var(--c-knob); border-radius: 50%; box-shadow: 0 0 0 0.5px var(--c-knob-edge), 0 1px 3px rgba(0, 0, 0, 0.3);
-}
-.slider .glyph { position: absolute; left: 0; top: 0; bottom: 0; width: 28px; display: grid; place-items: center; color: var(--c-on-fill); z-index: 2; pointer-events: none; }
-.slider .glyph svg { width: 14px; height: 14px; }
-.slider .mute { pointer-events: auto; border-radius: 12px 0 0 12px; }
+/* Capsule slider: 28 DIP, a light fill from the left, no thumb, the glyph
+   in ink inside the track. The real <input type=range> sits on top,
+   invisible, for keyboard, wheel and screen readers. */
+.slider { position: relative; height: 28px; border-radius: 14px; background: var(--c-track); overflow: hidden; --n: 0.5; }
+.slider .fill { position: absolute; left: 0; top: 0; bottom: 0; width: calc(28px + (100% - 28px) * var(--n)); background: var(--c-fill); border-radius: 14px; }
+.slider .glyph { position: absolute; left: 0; top: 0; bottom: 0; width: 34px; display: grid; place-items: center; color: var(--c-fill-glyph); z-index: 2; pointer-events: none; }
+.slider .glyph svg { width: 15px; height: 15px; }
+.slider .mute { pointer-events: auto; border-radius: 14px 0 0 14px; }
 .slider .mute .x { display: none; }
 .slider .mute.on .x { display: inline; }
 .slider .mute.on .waves { display: none; }
-.slider .mute.on { color: #ff6b61; }
 .slider input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: default; z-index: 1; -webkit-appearance: none; appearance: none; }
-.slider:focus-within { outline: 2px solid var(--c-teal); outline-offset: 1px; }
+.slider:focus-within { outline: 2px solid var(--c-focus); outline-offset: 2px; }
 
-.foot { display: flex; justify-content: space-between; gap: 8px; min-width: 0; }
-.foot .link { margin: 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Now Playing: 60 DIP, 40 DIP art (the player's real icon), transport. */
+.media { display: flex; align-items: center; gap: 10px; height: 60px; padding: 0 12px 0 10px; }
+.art { width: 40px; height: 40px; border-radius: 8px; flex: none; display: grid; place-items: center; background: var(--c-chip-off); overflow: hidden; }
+.art img { width: 32px; height: 32px; object-fit: contain; }
+.art svg { width: 18px; height: 18px; color: var(--c-muted); }
+.media .lab { flex: 1; }
+.transport { display: flex; align-items: center; gap: 4px; flex: none; }
+.transport button { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; }
+.transport button:hover { background: var(--c-hover); }
+.transport svg { width: 16px; height: 16px; }
+#m-play .play { display: none; }
+#m-play.paused .play { display: inline; }
+#m-play.paused .pause { display: none; }
+
+.foot { display: flex; justify-content: space-between; gap: 8px; min-width: 0; padding: 2px 2px 0; }
+.foot .link { margin: 0; font-size: 12px; font-weight: 500; }
