@@ -120,7 +120,9 @@
    "url": "https://github.com/zernivo/Cove/releases/download/wallpapers-v1/anime-seaside-dusk-dark.jpg",
    "width": 3840,
    "height": 2160,
-   "thumb": "thumbs/anime-seaside-dusk-dark.jpg"
+   "thumb": "thumbs/anime-seaside-dusk-dark.jpg",
+   "sha256": "8678f60388a698e7b063f80939c3bd8e231d0948a79d9391ec0b5f8fec3f17a2",
+   "bytes": 1611202
   },
   {
    "id": "anime-crossing-night-dark",
@@ -135,7 +137,9 @@
    "url": "https://github.com/zernivo/Cove/releases/download/wallpapers-v1/anime-crossing-night-dark.jpg",
    "width": 3840,
    "height": 2160,
-   "thumb": "thumbs/anime-crossing-night-dark.jpg"
+   "thumb": "thumbs/anime-crossing-night-dark.jpg",
+   "sha256": "3e2fe819fdc3dc09fb08a92356f03b42408ca1f6ff4defd59ca8ec92e0594574",
+   "bytes": 1141777
   },
   {
    "id": "anime-lane-rain-dark",
@@ -150,7 +154,9 @@
    "url": "https://github.com/zernivo/Cove/releases/download/wallpapers-v1/anime-lane-rain-dark.jpg",
    "width": 3840,
    "height": 2160,
-   "thumb": "thumbs/anime-lane-rain-dark.jpg"
+   "thumb": "thumbs/anime-lane-rain-dark.jpg",
+   "sha256": "1cb00085dfa3ce6c646942fab027da527abbc92f403acc770ec34abeddf2aa1b",
+   "bytes": 2176142
   },
   {
    "id": "anime-platform-morning-light",
@@ -165,7 +171,9 @@
    "url": "https://github.com/zernivo/Cove/releases/download/wallpapers-v1/anime-platform-morning-light.jpg",
    "width": 3840,
    "height": 2160,
-   "thumb": "thumbs/anime-platform-morning-light.jpg"
+   "thumb": "thumbs/anime-platform-morning-light.jpg",
+   "sha256": "477bfd03383ec9bd6841052afc870e470b4e6aa692d585fb7a91d1c2884749b1",
+   "bytes": 1344781
   },
   {
    "id": "anime-hillside-summer-light",
@@ -180,7 +188,9 @@
    "url": "https://github.com/zernivo/Cove/releases/download/wallpapers-v1/anime-hillside-summer-light.jpg",
    "width": 3840,
    "height": 2160,
-   "thumb": "thumbs/anime-hillside-summer-light.jpg"
+   "thumb": "thumbs/anime-hillside-summer-light.jpg",
+   "sha256": "a533ce35c2871d2a7c4efa76a4d29335f296983e18b40dad0c69fdf89b56ea88",
+   "bytes": 2087710
   },
   {
    "id": "comic-rooftop-dark",
@@ -195,7 +205,9 @@
    "url": "https://github.com/zernivo/Cove/releases/download/wallpapers-v1/comic-rooftop-dark.jpg",
    "width": 3840,
    "height": 2160,
-   "thumb": "thumbs/comic-rooftop-dark.jpg"
+   "thumb": "thumbs/comic-rooftop-dark.jpg",
+   "sha256": "20e270fe8cca7fe017367acce03ba020419bed6941f0e480b222fb3d1f85728b",
+   "bytes": 594635
   },
   {
    "id": "comic-watertower-rain-dark",
@@ -210,7 +222,9 @@
    "url": "https://github.com/zernivo/Cove/releases/download/wallpapers-v1/comic-watertower-rain-dark.jpg",
    "width": 3840,
    "height": 2160,
-   "thumb": "thumbs/comic-watertower-rain-dark.jpg"
+   "thumb": "thumbs/comic-watertower-rain-dark.jpg",
+   "sha256": "5a580ab2b9b9404690f9c538ea4b93ce0c1d7d20c873ddbc319b935ea657c22c",
+   "bytes": 1651978
   },
   {
    "id": "comic-rooftop-light",
@@ -225,7 +239,9 @@
    "url": "https://github.com/zernivo/Cove/releases/download/wallpapers-v1/comic-rooftop-light.jpg",
    "width": 3840,
    "height": 2160,
-   "thumb": "thumbs/comic-rooftop-light.jpg"
+   "thumb": "thumbs/comic-rooftop-light.jpg",
+   "sha256": "1a69135ef7f026c4b2ad0272bc40046592c52c64f58e710cf3a95ece45091842",
+   "bytes": 1346564
   },
   {
    "id": "comic-bridge-morning-light",
@@ -240,7 +256,9 @@
    "url": "https://github.com/zernivo/Cove/releases/download/wallpapers-v1/comic-bridge-morning-light.jpg",
    "width": 3840,
    "height": 2160,
-   "thumb": "thumbs/comic-bridge-morning-light.jpg"
+   "thumb": "thumbs/comic-bridge-morning-light.jpg",
+   "sha256": "0d71064b90a764f63dc0230d331edf54935ce8abcf6c1a22fc692598b7366e64",
+   "bytes": 2367653
   },
   {
    "id": "f1-toro-rosso-under-the-singapore-lights",
@@ -511,7 +529,9 @@
    "url": "https://github.com/zernivo/Cove/releases/download/wallpapers-v1/coding-desk-evening-dark.jpg",
    "width": 3840,
    "height": 2160,
-   "thumb": "thumbs/coding-desk-evening-dark.jpg"
+   "thumb": "thumbs/coding-desk-evening-dark.jpg",
+   "sha256": "ee9f2333fcda280e0184c5c05cc26954f0fe94504e9c6f4c99ab5ad621d4f11f",
+   "bytes": 1030694
   },
   {
    "id": "coding-night-corner-dark",
@@ -526,7 +546,9 @@
    "url": "https://github.com/zernivo/Cove/releases/download/wallpapers-v1/coding-night-corner-dark.jpg",
    "width": 3840,
    "height": 2160,
-   "thumb": "thumbs/coding-night-corner-dark.jpg"
+   "thumb": "thumbs/coding-night-corner-dark.jpg",
+   "sha256": "ccfb5eea0ff8913803be3c7a63a233bb590a5ea8252acc5b4ffb142529e66311",
+   "bytes": 625566
   },
   {
    "id": "coding-desk-morning-light",
@@ -541,7 +563,9 @@
    "url": "https://github.com/zernivo/Cove/releases/download/wallpapers-v1/coding-desk-morning-light.jpg",
    "width": 3840,
    "height": 2160,
-   "thumb": "thumbs/coding-desk-morning-light.jpg"
+   "thumb": "thumbs/coding-desk-morning-light.jpg",
+   "sha256": "468ea0d94709c9d5224eba86d74d2330b05468c9e9aa1060036cdb00fe85cb72",
+   "bytes": 849614
   },
   {
    "id": "coding-flatlay-light",
@@ -556,7 +580,9 @@
    "url": "https://github.com/zernivo/Cove/releases/download/wallpapers-v1/coding-flatlay-light.jpg",
    "width": 3840,
    "height": 2160,
-   "thumb": "thumbs/coding-flatlay-light.jpg"
+   "thumb": "thumbs/coding-flatlay-light.jpg",
+   "sha256": "50edbff465859717dd47013455afad40c93696a8c62c562c264f6f90c18efebe",
+   "bytes": 1291383
   },
   {
    "id": "nature-light-through-the-forest",

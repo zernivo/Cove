@@ -148,7 +148,7 @@ h2 { font-size: 13.5px; font-weight: 550; }
 .wt .credit span { color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wt .credit a { color: var(--teal); text-decoration: none; justify-self: start; border-radius: 3px; }
 .wt .credit a:hover { text-decoration: underline; }
-.wt .credit em { font-style: normal; color: var(--fg-3); }
+.wt .credit em { font-style: normal; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Downloading: a real progress bar fed by the download. */
 .wt .load { position: absolute; inset: 0; display: grid; place-items: end stretch; background: rgba(12, 13, 16, 0.55); z-index: 4; }
 .wt .load .bar { height: 3px; margin: 0 8px 8px; border-radius: 2px; background: rgba(255, 255, 255, 0.14); overflow: hidden; }

@@ -264,7 +264,7 @@ function wallTile(it: WallItem, mode: "dark" | "light", on: boolean, cat: string
   cr.className = "credit";
   cr.append(Object.assign(document.createElement("b"), { textContent: it.title }));
   if (it.author === "Cove") {
-    cr.append(Object.assign(document.createElement("em"), { textContent: it.bundled ? "Cove original art \u00b7 ships with Cove" : "Cove original art \u00b7 made for Cove" }));
+    cr.append(Object.assign(document.createElement("em"), { textContent: it.bundled ? "Cove original art, ships with Cove" : "Cove original art" }));
   } else {
     cr.append(Object.assign(document.createElement("span"), { textContent: `${it.author} \u00b7 ${it.license}` }));
     const a = Object.assign(document.createElement("a"), { textContent: `${it.source} \u2197`, href: it.sourceUrl, title: it.sourceUrl });
@@ -325,6 +325,7 @@ async function pickWall(it: WallItem): Promise<void> {
     const st = inTauri ? await invoke<WallStatus>("wallpaper_pick", { id: it.id }) : await mockPick(it, needsDownload);
     if (!it.bundled) galCached.add(it.id);
     if (galBusy === it.id) galBusy = "";
+    if (!inTauri) $("mini-wall").style.backgroundImage = `url("${thumbUrl(it, galMode ?? "dark")}")`; // preview only
     galLoading.delete(it.id);
     renderWall(st);
   } catch (e) {
