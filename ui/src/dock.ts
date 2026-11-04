@@ -3,7 +3,7 @@ import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-interface DockItem { kind: "pin" | "running" | "stack" | "trash"; name: string; target: string; windows: number[]; active: boolean; attention?: boolean; icon?: string }
+interface DockItem { kind: "pin" | "running" | "cove" | "stack" | "trash"; name: string; target: string; windows: number[]; active: boolean; attention?: boolean; icon?: string }
 
 const inTauri = "__TAURI_INTERNALS__" in window;
 const MOCK: DockItem[] = [
@@ -63,9 +63,10 @@ function render(): void {
   items.forEach((it, i) => {
     const prev = i > 0 ? items[i - 1].kind : "";
     const firstStack = it.kind === "stack" && prev !== "stack" && prev !== "";
-    if ((it.kind === "running" && !sepDone && prev === "pin") || firstStack || (it.kind === "trash" && prev !== "stack" && i > 0)) {
+    const runs = it.kind === "running" || it.kind === "cove";
+    if ((runs && !sepDone && prev === "pin") || firstStack || (it.kind === "trash" && prev !== "stack" && i > 0)) {
       dock.appendChild(Object.assign(document.createElement("div"), { className: "sep" }));
-      if (it.kind === "running") sepDone = true;
+      if (runs) sepDone = true;
     }
     const el = document.createElement("div");
     const k = keyOf(it);
@@ -161,7 +162,8 @@ function showMenu(it: DockItem, x: number, y: number): void {
     }]);
   }
   if (it.kind === "trash") acts.push(["Open Recycle Bin", () => invoke("dock_open", { kind: "trash", target: it.target, windows: [], active: false })]);
-  if (it.windows.length) acts.push(["Show All Windows", () => invoke("expose_open", { name: it.name, windows: it.windows })]);
+  if (it.kind === "cove") acts.push(["Quit Cove", () => invoke("topbar_menu", { what: "quit" })]);
+  if (it.windows.length && it.kind !== "cove") acts.push(["Show All Windows", () => invoke("expose_open", { name: it.name, windows: it.windows })]);
   if (it.windows.length) acts.push([it.windows.length > 1 ? `Close ${it.windows.length} windows` : "Close window", () => invoke("dock_close", { windows: it.windows })]);
   if (it.kind === "running") acts.push(["Keep in Dock", () => invoke("dock_pin", { name: it.name, target: it.target })]);
   menu.innerHTML = "";
@@ -243,8 +245,20 @@ async function refresh(): Promise<void> {
   render();
 }
 
+// One short hop: Cove was opened again while it was already running.
+async function bounce(k: string): Promise<void> {
+  await refresh();
+  const el = dock.querySelector<HTMLElement>(`.item[data-k="${k}"]`);
+  if (!el || calm.matches) return;
+  el.classList.remove("nudge");
+  void el.offsetWidth; // restart the animation
+  el.classList.add("nudge");
+  el.addEventListener("animationend", () => el.classList.remove("nudge"), { once: true });
+}
+
 if (inTauri) {
   listen("dock-changed", refresh);
+  listen<string>("dock-bounce", (e) => bounce(`${e.payload}:${e.payload}`));
   // Moved to another display, or the screen changed size or scale.
   listen("dock-reflow", () => { lastWidth = 0; lastHeight = 0; place(); });
 }

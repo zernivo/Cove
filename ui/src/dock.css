@@ -93,6 +93,14 @@ html[data-mode="dark"], html[data-mode="dark"] body {
   12% { translate: 0 -22px; }
   42% { translate: 0 -12px; }
 }
+/* Nudge: one hop when Cove is opened again while already running. */
+.item.nudge { animation: nudge 0.62s cubic-bezier(0.33, 0, 0.3, 1); }
+@keyframes nudge {
+  0%, 100% { translate: 0 0; }
+  40% { translate: 0 -14px; }
+  72% { translate: 0 0; }
+  86% { translate: 0 -3px; }
+}
 /* Arrive: grow in from nothing; leave: shrink and close the gap. */
 .item.arriving { animation: arrive 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
 @keyframes arrive {

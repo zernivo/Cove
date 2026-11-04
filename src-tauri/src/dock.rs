@@ -276,6 +276,32 @@ pub fn state(pins: &[crate::settings::Pin], stacks: &[String]) -> DockState {
     DockState { items }
 }
 
+/// Cove's own Settings window, while it's open: Cove sits in the dock like
+/// any other app (the window list skips Cove's own process).
+pub fn cove_item(hwnd: isize) -> DockItem {
+    let exe = std::env::current_exe().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
+    let mut jobs = Vec::new();
+    let icon = icon_from(&[exe, format!("hwnd:{hwnd}")], &mut jobs);
+    if !jobs.is_empty() {
+        std::thread::spawn(move || crate::icons::fill(jobs));
+    }
+    DockItem {
+        kind: "cove",
+        name: "Cove".into(),
+        target: "cove".into(),
+        windows: vec![hwnd],
+        active: imp::foreground() == hwnd,
+        attention: false,
+        icon,
+    }
+}
+
+/// Where Cove goes: after the running apps, before folder stacks and the bin.
+pub fn insert_cove(items: &mut Vec<DockItem>, cove: DockItem) {
+    let at = items.iter().position(|i| i.kind == "stack" || i.kind == "trash").unwrap_or(items.len());
+    items.insert(at, cove);
+}
+
 pub use imp::{
     activate, close_windows, cursor, foreground, minimize, monitor_at, taskbar_autohide, taskbar_is_visible, taskbar_visible,
     windows, work_area,
@@ -691,6 +717,15 @@ mod tests {
         let mut b = vec![1, 2, 3];
         prune_attention(&mut b, &[1, 2], 2);
         assert_eq!(b, vec![1]);
+    }
+
+    #[test]
+    fn cove_sits_after_running_apps() {
+        use super::*;
+        let it = |kind: &'static str| DockItem { kind, name: kind.into(), target: kind.into(), windows: vec![], active: false, attention: false, icon: None };
+        let mut v = vec![it("pin"), it("running"), it("stack"), it("trash")];
+        insert_cove(&mut v, it("cove"));
+        assert_eq!(v.iter().map(|i| i.kind).collect::<Vec<_>>(), ["pin", "running", "cove", "stack", "trash"]);
     }
 
     #[test]

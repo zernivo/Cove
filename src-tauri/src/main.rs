@@ -138,6 +138,16 @@ fn show_main(app: &AppHandle) {
         keep_on_screen(app, &w);
         let _ = w.set_focus();
     }
+    dock_changed(app);
+}
+
+/// Cove was opened again while running: bring Settings forward at once and
+/// give a short bounce of Cove's dock icon, so the click visibly did something.
+fn second_launch(app: &AppHandle) {
+    show_main(app);
+    if let Some(d) = app.get_webview_window("dock") {
+        let _ = d.emit("dock-bounce", "cove");
+    }
 }
 
 #[derive(Serialize)]
@@ -533,13 +543,29 @@ fn dock_hide_taskbar_set(enabled: bool, app: AppHandle, state: tauri::State<'_, 
 }
 
 #[tauri::command]
-fn dock_state(state: tauri::State<'_, AppState>) -> dock::DockState {
+fn dock_state(app: AppHandle, state: tauri::State<'_, AppState>) -> dock::DockState {
     let (pins, stacks) = state
         .settings
         .lock()
         .map(|s| (s.data.dock_pins.clone(), s.data.dock_stacks.clone()))
         .unwrap_or_default();
-    dock::state(&pins, &stacks)
+    let mut st = dock::state(&pins, &stacks);
+    // Cove is in the dock while its window is open (minimised counts).
+    if let Some(w) = app.get_webview_window("main") {
+        if w.is_visible().unwrap_or(false) {
+            if let Ok(h) = w.hwnd() {
+                dock::insert_cove(&mut st.items, dock::cove_item(h.0 as isize));
+            }
+        }
+    }
+    st
+}
+
+/// Tell the dock to redraw now (Cove's window opened or closed).
+fn dock_changed(app: &AppHandle) {
+    if let Some(d) = app.get_webview_window("dock") {
+        let _ = d.emit("dock-changed", ());
+    }
 }
 
 // ---- App switcher (Alt+Tab, opt-in) ----
@@ -1527,9 +1553,16 @@ fn main() {
         }
         return;
     }
+    // A second copy (double-clicking Cove again) hands its right to take the
+    // foreground to the running copy, so Settings comes forward instead of
+    // just flashing.
+    #[cfg(windows)]
+    unsafe {
+        windows_sys::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow(u32::MAX); // ASFW_ANY
+    }
     let app = tauri::Builder::default()
         // Opening Cove again just brings the running copy forward.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| second_launch(app)))
         .plugin(tauri_plugin_notification::init())
         // Full-resolution app icons, served from memory (see icons.rs).
         .register_uri_scheme_protocol("coveicon", |_ctx, req| {
@@ -1762,6 +1795,9 @@ fn main() {
             WindowEvent::CloseRequested { api, .. } => {
                 let _ = window.hide();
                 api.prevent_close();
+                if window.label() == "main" {
+                    dock_changed(window.app_handle());
+                }
             }
             // Search disappears as soon as you click elsewhere.
             WindowEvent::Focused(false) if window.label() == "search" => {
