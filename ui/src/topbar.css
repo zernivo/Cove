@@ -9,10 +9,13 @@ html, body {
   --tint: var(--bar-tint);
   --hover: rgba(0, 0, 0, 0.08);
   --menu: var(--menu-bg);
+  --bar-h: 25px;
 }
 html[data-mode="dark"], html[data-mode="dark"] body { color: var(--text); --tint: var(--bar-tint); --hover: rgba(255, 255, 255, 0.12); --menu: var(--menu-bg); }
+/* Menu bar: 25 DIP like macOS (24 pt), 13 DIP text, 15 DIP icons. The
+   AppBar strip Cove reserves is the same 25 DIP (TOPBAR_HEIGHT in main.rs). */
 .bar {
-  height: 30px;
+  height: var(--bar-h);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -26,45 +29,68 @@ button {
   background: none;
   color: inherit;
   font: inherit;
-  height: 24px;
-  padding: 0 8px;
-  border-radius: 6px;
+  height: 21px;
+  padding: 0 7px;
+  border-radius: 5px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
 button:hover, button.open { background: var(--hover); }
-svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 /* Voxel mark B: a monochrome template image used as a mask, so it takes the bar's text colour. */
 .cove-mark { width: 16px; height: 16px; background: currentColor; -webkit-mask: url("/cove-menubar-16.png") center / 16px 16px no-repeat; mask: url("/cove-menubar-16.png") center / 16px 16px no-repeat; }
 @media (min-resolution: 1.5dppx) {
   .cove-mark { -webkit-mask-image: url("/cove-menubar-24.png"); mask-image: url("/cove-menubar-24.png"); }
 }
-.app { font-weight: 600; padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
+.app { font-weight: 600; padding: 0 8px; display: inline-block; line-height: 21px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
 .clock { font-variant-numeric: tabular-nums; }
-.batt { width: 22px; height: 11px; border: 1.5px solid currentColor; border-radius: 3px; position: relative; box-sizing: border-box; opacity: 0.9; }
-.batt::after { content: ""; position: absolute; right: -4px; top: 2.5px; width: 2px; height: 4px; border-radius: 0 1px 1px 0; background: currentColor; }
+.batt { width: 21px; height: 10px; border: 1.5px solid currentColor; border-radius: 3px; position: relative; box-sizing: border-box; opacity: 0.9; }
+.batt::after { content: ""; position: absolute; right: -4px; top: 2px; width: 2px; height: 3.5px; border-radius: 0 1px 1px 0; background: currentColor; }
 .fill { position: absolute; left: 1px; top: 1px; bottom: 1px; border-radius: 1px; background: currentColor; }
 .fill.low { background: #ff5f57; }
 .fill.charging { background: #34c759; }
+/* Menus: Ink, calm and compact, sharp 7 px corners. Always dark, in light
+   mode too, like the Settings window. */
 .menu {
   position: fixed;
-  top: 30px;
+  top: calc(var(--bar-h) + 1px);
   left: 6px;
-  min-width: 210px;
-  padding: 5px;
-  border-radius: 10px;
-  background: var(--menu);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+  min-width: 220px;
+  padding: 4px;
+  border-radius: 7px;
+  background: rgba(17, 18, 21, 0.94);
+  color: #ecebe8;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.32), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  animation: menu-in 0.12s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transform-origin: top left;
 }
-.menu button { width: 100%; justify-content: space-between; height: 28px; }
-.menu kbd { font: 11px inherit; opacity: 0.55; }
-.menu hr { border: 0; height: 1px; background: var(--hover); margin: 4px 6px; }
+@keyframes menu-in { from { opacity: 0; transform: scale(0.98) translateY(-2px); } }
+.menu button {
+  width: 100%;
+  justify-content: space-between;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+.menu button:hover:not(:disabled), .menu button:focus-visible { background: rgba(44, 201, 185, 0.24); outline: none; }
+.menu button:disabled { opacity: 0.38; }
+.menu kbd { font-family: inherit; font-size: 11.5px; opacity: 0.5; }
+.menu hr { border: 0; height: 1px; background: rgba(255, 255, 255, 0.09); margin: 4px 8px; }
+.confirm { width: 280px; padding: 12px; }
+.confirm p { margin: 0 0 12px; font-size: 13px; line-height: 1.4; }
+.confirm-row { display: flex; justify-content: flex-end; gap: 6px; }
+.confirm-row button { width: auto; height: 24px; padding: 0 12px; background: rgba(255, 255, 255, 0.08); }
+.confirm-row button.primary { background: #2cc9b9; color: #111215; font-weight: 600; }
+.confirm-row button.primary:hover { background: #3fd6c6 !important; }
+@media (prefers-reduced-motion: reduce) { .menu { animation: none; } }
 .hidden { display: none !important; }
 
 .panel {
   position: fixed;
-  top: 34px;
+  top: calc(var(--bar-h) + 4px);
   right: 8px;
   width: 300px;
   padding: 10px;

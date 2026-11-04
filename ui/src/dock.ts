@@ -3,7 +3,7 @@ import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-interface DockItem { kind: "pin" | "running" | "stack" | "trash"; name: string; target: string; windows: number[]; active: boolean; attention?: boolean; icon?: string }
+interface DockItem { kind: "pin" | "running" | "cove" | "stack" | "trash"; name: string; target: string; windows: number[]; active: boolean; attention?: boolean; icon?: string; no_icon?: boolean }
 
 const inTauri = "__TAURI_INTERNALS__" in window;
 const MOCK: DockItem[] = [
@@ -23,6 +23,15 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
 }
 
 const SIZE = 48, GAP = 6, MAX = 1.55, RANGE = 150, HEAD = 46; // magnification
+const PAD_X = 10, BORDER = 1, SEP_W = 9; // .dock padding / border, .sep width + margins (dock.css)
+const ICON_WAIT = 5000; // after this, a still-missing icon shows its letter tile
+const waitingSince = new Map<string, number>();
+function letterTile(name: string): HTMLElement {
+  const t = document.createElement("div");
+  t.className = "letter tile";
+  t.textContent = (name.trim()[0] ?? "?").toUpperCase();
+  return t;
+}
 const dock = document.getElementById("dock")!;
 const menu = document.getElementById("menu")!;
 const stack = document.getElementById("stack")!;
@@ -63,9 +72,10 @@ function render(): void {
   items.forEach((it, i) => {
     const prev = i > 0 ? items[i - 1].kind : "";
     const firstStack = it.kind === "stack" && prev !== "stack" && prev !== "";
-    if ((it.kind === "running" && !sepDone && prev === "pin") || firstStack || (it.kind === "trash" && prev !== "stack" && i > 0)) {
+    const runs = it.kind === "running" || it.kind === "cove";
+    if ((runs && !sepDone && prev === "pin") || firstStack || (it.kind === "trash" && prev !== "stack" && i > 0)) {
       dock.appendChild(Object.assign(document.createElement("div"), { className: "sep" }));
-      if (it.kind === "running") sepDone = true;
+      if (runs) sepDone = true;
     }
     const el = document.createElement("div");
     const k = keyOf(it);
@@ -82,11 +92,21 @@ function render(): void {
       const img = document.createElement("img");
       img.src = it.icon;
       img.alt = "";
+      // A picture that fails to load falls back to the letter tile.
+      img.addEventListener("error", () => img.replaceWith(letterTile(it.name)));
       el.appendChild(img);
+    } else if (it.no_icon || (waitingSince.get(k) ?? now) < now - ICON_WAIT) {
+      // Windows had no picture for it (or never answered): a letter tile.
+      el.appendChild(letterTile(it.name));
     } else {
       // The real icon is still being drawn by Windows: hold its place quietly.
+      if (!waitingSince.has(k)) {
+        waitingSince.set(k, now);
+        setTimeout(() => { sig = ""; refresh(); }, ICON_WAIT + 100);
+      }
       el.appendChild(Object.assign(document.createElement("div"), { className: "letter pending" }));
     }
+    if (it.icon || it.no_icon) waitingSince.delete(k);
     if (it.windows.length) el.appendChild(Object.assign(document.createElement("span"), { className: "dot" }));
     el.appendChild(Object.assign(document.createElement("span"), { className: "label", textContent: it.name }));
     el.addEventListener("click", (e) => open(it, el, e.shiftKey));
@@ -104,8 +124,7 @@ function render(): void {
       if (keep.has(k)) continue;
       const ghost = el.cloneNode(true) as HTMLElement;
       ghost.className = "item leaving";
-      ghost.style.transform = "";
-      ghost.style.margin = "";
+      ghost.style.removeProperty("--w");
       const at = dock.querySelectorAll(".item")[idx] ?? null;
       dock.insertBefore(ghost, at);
       ghost.addEventListener("animationend", () => { ghost.remove(); place(); });
@@ -117,19 +136,36 @@ function render(): void {
   place();
 }
 
-// Gentle magnification: icons swell by distance from the pointer.
-dock.addEventListener("mousemove", (e) => {
-  for (const el of dock.querySelectorAll<HTMLElement>(".item")) {
-    const r = el.getBoundingClientRect();
-    const d = Math.abs(e.clientX - (r.left + r.width / 2));
-    const s = 1 + (MAX - 1) * Math.max(0, Math.cos(Math.min(d / RANGE, 1) * (Math.PI / 2)));
-    el.style.transform = `scale(${s.toFixed(3)})`;
-    el.style.margin = `0 ${((s - 1) * SIZE) / 2}px`;
+// Gentle magnification: icons swell by distance from the pointer. Each icon
+// grows its own slot (width), so neighbours move apart instead of being
+// covered; the swell rises above the dock. Distances are measured on the
+// resting layout, so growing icons never feed back into the pointer maths.
+function magnify(clientX: number | null): void {
+  const kids = Array.from(dock.children) as HTMLElement[];
+  const slots: { el: HTMLElement; c: number }[] = [];
+  let x = PAD_X + BORDER;
+  for (const el of kids) {
+    if (el.classList.contains("leaving")) continue;
+    const w = el.classList.contains("sep") ? SEP_W : SIZE;
+    if (el.classList.contains("item")) slots.push({ el, c: x + w / 2 });
+    x += w + GAP;
   }
-});
-dock.addEventListener("mouseleave", () => {
-  for (const el of dock.querySelectorAll<HTMLElement>(".item")) { el.style.transform = ""; el.style.margin = ""; }
-});
+  const rest = x - GAP + PAD_X + BORDER;
+  const r = dock.getBoundingClientRect();
+  // Pointer in resting coordinates: same share of the way along the dock.
+  const px = clientX === null ? null : ((clientX - r.left) / Math.max(1, r.width)) * rest;
+  for (const { el, c } of slots) {
+    const d = px === null ? Infinity : Math.abs(px - c);
+    const s = 1 + (MAX - 1) * Math.max(0, Math.cos(Math.min(d / RANGE, 1) * (Math.PI / 2)));
+    if (s <= 1.001) {
+      el.style.removeProperty("--w");
+    } else {
+      el.style.setProperty("--w", `${(SIZE * s).toFixed(1)}px`);
+    }
+  }
+}
+dock.addEventListener("mousemove", (e) => magnify(calm.matches ? null : e.clientX));
+dock.addEventListener("mouseleave", () => magnify(null));
 
 async function open(it: DockItem, el: HTMLElement, fresh: boolean): Promise<void> {
   hideMenu();
@@ -161,7 +197,8 @@ function showMenu(it: DockItem, x: number, y: number): void {
     }]);
   }
   if (it.kind === "trash") acts.push(["Open Recycle Bin", () => invoke("dock_open", { kind: "trash", target: it.target, windows: [], active: false })]);
-  if (it.windows.length) acts.push(["Show All Windows", () => invoke("expose_open", { name: it.name, windows: it.windows })]);
+  if (it.kind === "cove") acts.push(["Quit Cove", () => invoke("topbar_menu", { what: "quit" })]);
+  if (it.windows.length && it.kind !== "cove") acts.push(["Show All Windows", () => invoke("expose_open", { name: it.name, windows: it.windows })]);
   if (it.windows.length) acts.push([it.windows.length > 1 ? `Close ${it.windows.length} windows` : "Close window", () => invoke("dock_close", { windows: it.windows })]);
   if (it.kind === "running") acts.push(["Keep in Dock", () => invoke("dock_pin", { name: it.name, target: it.target })]);
   menu.innerHTML = "";
@@ -172,11 +209,20 @@ function showMenu(it: DockItem, x: number, y: number): void {
     menu.appendChild(b);
   }
   menu.classList.remove("hidden");
+  busy();
   const r = menu.getBoundingClientRect();
   menu.style.left = `${Math.max(4, Math.min(x - r.width / 2, innerWidth - r.width - 4))}px`;
   menu.style.top = `${Math.max(4, y - r.height - 12)}px`;
 }
-function hideMenu(): void { menu.classList.add("hidden"); }
+function hideMenu(): void { menu.classList.add("hidden"); busy(); }
+// A menu or stack reaches above the dock's reserved strip: keep the whole
+// window clickable while one is open (otherwise its headroom lets clicks
+// through to the app below).
+let wasBusy = false;
+function busy(): void {
+  const now = !menu.classList.contains("hidden") || !!openStack;
+  if (now !== wasBusy) { wasBusy = now; invoke("dock_busy", { busy: now }); }
+}
 document.addEventListener("click", (e) => {
   const t = e.target as Node;
   if (!menu.contains(t)) hideMenu();
@@ -192,6 +238,7 @@ function closeStack(): void {
   if (!openStack) return;
   openStack = "";
   stack.classList.add("hidden");
+  busy();
   dock.querySelectorAll(".item.open").forEach((e) => e.classList.remove("open"));
   place();
 }
@@ -199,6 +246,7 @@ function closeStack(): void {
 async function toggleStack(it: DockItem, el: HTMLElement): Promise<void> {
   if (openStack === it.target) { closeStack(); return; }
   openStack = it.target;
+  busy();
   if (inTauri) getCurrentWindow().setFocus().catch(() => {}); // so clicking elsewhere closes it
   dock.querySelectorAll(".item.open").forEach((e) => e.classList.remove("open"));
   el.classList.add("open");
@@ -236,15 +284,27 @@ async function toggleStack(it: DockItem, el: HTMLElement): Promise<void> {
 async function refresh(): Promise<void> {
   const s = await invoke<{ items: DockItem[] }>("dock_state");
   if (!s) return;
-  const next = JSON.stringify(s.items.map((i) => [i.kind, i.target, i.windows, i.active, !!i.attention, !!i.icon]));
+  const next = JSON.stringify(s.items.map((i) => [i.kind, i.target, i.name, i.windows, i.active, !!i.attention, i.icon ?? "", !!i.no_icon]));
   if (next === sig || openStack) return; // don't reshuffle under an open stack
   sig = next;
   items = s.items;
   render();
 }
 
+// One short hop: Cove was opened again while it was already running.
+async function bounce(k: string): Promise<void> {
+  await refresh();
+  const el = dock.querySelector<HTMLElement>(`.item[data-k="${k}"]`);
+  if (!el || calm.matches) return;
+  el.classList.remove("nudge");
+  void el.offsetWidth; // restart the animation
+  el.classList.add("nudge");
+  el.addEventListener("animationend", () => el.classList.remove("nudge"), { once: true });
+}
+
 if (inTauri) {
   listen("dock-changed", refresh);
+  listen<string>("dock-bounce", (e) => bounce(`${e.payload}:${e.payload}`));
   // Moved to another display, or the screen changed size or scale.
   listen("dock-reflow", () => { lastWidth = 0; lastHeight = 0; place(); });
 }

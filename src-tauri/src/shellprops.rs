@@ -75,7 +75,7 @@ pub fn order_from_blob(blob: &[u8]) -> Vec<String> {
     out
 }
 
-pub use imp::{app_name, link_aumid, link_target, window_aumid, window_icon_resource};
+pub use imp::{app_name, file_description, link_aumid, link_target, window_aumid, window_icon_resource};
 
 #[cfg(windows)]
 mod imp {
@@ -89,6 +89,8 @@ mod imp {
         PROPERTYKEY { fmtid: GUID::from_u128(0x9F4C2855_9F79_4B39_A8D0_E1D42DE1D5F3), pid: 5 };
     const PKEY_APPUSERMODEL_RELAUNCHICON: PROPERTYKEY =
         PROPERTYKEY { fmtid: GUID::from_u128(0x9F4C2855_9F79_4B39_A8D0_E1D42DE1D5F3), pid: 3 };
+    const PKEY_FILE_DESCRIPTION: PROPERTYKEY =
+        PROPERTYKEY { fmtid: GUID::from_u128(0x0CEF7D53_FA64_11D1_A203_0000F81FEDEE), pid: 3 };
     const PKEY_LINK_TARGETPARSINGPATH: PROPERTYKEY =
         PROPERTYKEY { fmtid: GUID::from_u128(0xB9B4B3FC_2B51_4A42_B5D8_324146AFCF25), pid: 2 };
 
@@ -136,6 +138,12 @@ mod imp {
         item_string(lnk, &PKEY_APPUSERMODEL_ID)
     }
 
+    /// An exe's FileDescription (the name Task Manager shows), from the
+    /// shell's property system.
+    pub fn file_description(exe: &str) -> Option<String> {
+        item_string(exe, &PKEY_FILE_DESCRIPTION)
+    }
+
     /// A Start app's display name, from its AppID.
     pub fn app_name(appid: &str) -> Option<String> {
         use windows::Win32::UI::Shell::{IShellItem, SIGDN_NORMALDISPLAY};
@@ -173,6 +181,9 @@ mod imp {
         None
     }
     pub fn link_aumid(_lnk: &str) -> Option<String> {
+        None
+    }
+    pub fn file_description(_exe: &str) -> Option<String> {
         None
     }
     pub fn app_name(_appid: &str) -> Option<String> {

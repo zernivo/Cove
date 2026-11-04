@@ -12,7 +12,7 @@
         <button class="mark" id="mark" title="Cove">
           <span class="cove-mark" aria-hidden="true"></span>
         </button>
-        <span class="app" id="app">Cove</span>
+        <button class="app" id="app" title="App menu">Cove</button>
       </div>
       <div class="right">
         <button class="pill" id="search" title="Cove Search (Alt+Space)">
@@ -31,14 +31,28 @@
         <button class="pill clock" id="clock" title="Notifications and calendar"></button>
       </div>
     </div>
-    <div class="menu hidden" id="menu">
-      <button data-go="cove">Open Cove</button>
-      <button data-go="search">Cove Search <kbd>Alt Space</kbd></button>
+    <!-- The Cove menu, like the Apple menu. -->
+    <div class="menu hidden" id="menu" role="menu">
+      <button data-cove="about">About Cove</button>
       <hr />
-      <button data-go="settings">Windows Settings</button>
-      <button data-go="taskmgr">Task Manager</button>
+      <button data-cove="settings">Cove Settings…</button>
+      <button data-cove="wallpaper">Wallpaper…</button>
+      <button data-cove="desktop-off">Turn Cove desktop off</button>
       <hr />
-      <button data-go="lock">Lock screen</button>
+      <button data-cove="sleep">Sleep</button>
+      <button data-cove="restart">Restart…</button>
+      <button data-cove="shutdown">Shut Down…</button>
+      <hr />
+      <button data-cove="lock">Lock Screen <kbd>Win L</kbd></button>
+      <hr />
+      <button data-cove="quit">Quit Cove</button>
+    </div>
+    <!-- The app menu: click the name of the app in front. -->
+    <div class="menu hidden" id="appmenu" role="menu"></div>
+    <!-- Asked before Restart / Shut down when Windows can't ask itself. -->
+    <div class="menu confirm hidden" id="confirm" role="alertdialog">
+      <p id="confirm-text"></p>
+      <div class="confirm-row"><button id="confirm-no">Cancel</button><button class="primary" id="confirm-yes"></button></div>
     </div>
     <div class="panel hidden" id="panel">
       <div class="tiles">

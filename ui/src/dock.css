@@ -45,20 +45,28 @@ html[data-mode="dark"], html[data-mode="dark"] body {
   backdrop-filter: blur(24px) saturate(1.4);
   transition: padding 0.15s ease;
 }
+/* Each icon owns a slot as wide as it is drawn (--w, set while magnifying),
+   so a swelling icon pushes its neighbours apart instead of covering them.
+   The slot stays --size tall: the swell rises above the dock. */
 .item {
+  --w: var(--size);
   position: relative;
-  width: var(--size);
+  width: var(--w);
   height: var(--size);
+  flex: none;
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  transform-origin: bottom center;
-  transition: transform 0.12s cubic-bezier(0.2, 0.8, 0.2, 1), margin 0.12s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: width 0.09s cubic-bezier(0.2, 0.8, 0.2, 1);
   cursor: default;
 }
 .item img, .item .letter {
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: min(var(--w), 100%);
+  height: auto;
+  aspect-ratio: 1;
   object-fit: contain;
   pointer-events: none;
   filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.18));
@@ -68,6 +76,18 @@ html[data-mode="dark"], html[data-mode="dark"] body {
   background: rgba(255, 255, 255, 0.10);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
+/* No picture from Windows: the app's initial on an Ink tile, sized like a real icon. */
+.item .letter.tile {
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  border: calc(var(--w) * 0.07) solid transparent;
+  background: #111215 padding-box;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.10);
+  color: #ecebe8;
+  font-weight: 600;
+  font-size: calc(var(--w) * 0.4);
+}
 .item .letter.pending { animation: icon-wait 1.2s ease-in-out infinite alternate; }
 @keyframes icon-wait { from { opacity: 0.45; } to { opacity: 0.8; } }
 .item img { animation: icon-in 0.22s ease-out; }
@@ -75,7 +95,8 @@ html[data-mode="dark"], html[data-mode="dark"] body {
 /* ---- Dock motion (v0.9.0). Uses `translate`, so it stacks with the
    magnification `transform` instead of fighting it. ---- */
 .item:hover img, .item:hover .letter { filter: drop-shadow(0 5px 7px rgba(0, 0, 0, 0.24)); }
-.item img, .item .letter { transition: scale 0.12s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.15s ease, opacity 0.12s ease; }
+.item img, .item .letter { transition: width 0.09s cubic-bezier(0.2, 0.8, 0.2, 1), scale 0.12s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.15s ease, opacity 0.12s ease; }
+.item img, .item .letter { transform-origin: bottom center; }
 .item.pressed img, .item.pressed .letter { scale: 0.9; opacity: 0.82; }
 /* Launch: soft bounces until the app's first window appears (max 6 s). */
 .item.launching { animation: launch 0.72s cubic-bezier(0.33, 0, 0.3, 1) infinite; }
@@ -92,6 +113,14 @@ html[data-mode="dark"], html[data-mode="dark"] body {
   0%, 30%, 60%, 100% { translate: 0 0; }
   12% { translate: 0 -22px; }
   42% { translate: 0 -12px; }
+}
+/* Nudge: one hop when Cove is opened again while already running. */
+.item.nudge { animation: nudge 0.62s cubic-bezier(0.33, 0, 0.3, 1); }
+@keyframes nudge {
+  0%, 100% { translate: 0 0; }
+  40% { translate: 0 -14px; }
+  72% { translate: 0 0; }
+  86% { translate: 0 -3px; }
 }
 /* Arrive: grow in from nothing; leave: shrink and close the gap. */
 .item.arriving { animation: arrive 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
@@ -116,7 +145,7 @@ html[data-mode="dark"], html[data-mode="dark"] body {
 .item.active .dot { width: 14px; border-radius: 3px; background: var(--accent); box-shadow: var(--glow); }
 .label {
   position: absolute;
-  bottom: calc(100% + 10px);
+  bottom: calc(var(--w) + 10px);
   left: 50%;
   translate: -50% 4px;
   padding: 4px 10px;
@@ -163,7 +192,7 @@ html[data-mode="dark"], html[data-mode="dark"] body {
 .item.open::after {
   content: "";
   position: absolute;
-  bottom: calc(100% + 6px);
+  bottom: calc(var(--w) + 6px);
   left: 50%;
   translate: -50% 0;
   border: 7px solid transparent;

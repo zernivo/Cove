@@ -64,7 +64,6 @@ pub fn apps() -> Vec<SwitchApp> {
     let mut jobs = Vec::new();
     let mut keys: Vec<String> = Vec::new();
     for w in crate::dock::windows() {
-        let st = crate::dock::stem(&w.exe);
         let key = w.app_key();
         if let Some(i) = keys.iter().position(|k| *k == key) {
             out[i].windows.push(w.hwnd);
@@ -72,7 +71,7 @@ pub fn apps() -> Vec<SwitchApp> {
         }
         keys.push(key);
         let icon = crate::dock::icon_from(&w.icon_keys(), &mut jobs);
-        let name = if w.is_uwp_frame() || st.is_empty() { w.title.clone() } else { crate::topbar::nice_name(&st) };
+        let name = crate::appnames::friendly(&w.exe, w.aumid.as_deref(), &w.title);
         out.push(SwitchApp { name, exe: w.exe.clone(), windows: vec![w.hwnd], icon });
     }
     // The app in front comes first even if a tool window sorted above it.

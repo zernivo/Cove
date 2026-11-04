@@ -19,6 +19,10 @@ pub struct DockItem {
     pub attention: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    /// Every icon source has been tried and none gave a picture: the dock
+    /// draws a letter tile instead of waiting for ever.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub no_icon: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -71,16 +75,22 @@ impl Win {
 
 /// The first ready icon among `keys`; queues the first untried one.
 pub fn icon_from(keys: &[String], jobs: &mut Vec<String>) -> Option<String> {
+    icon_or_none(keys, jobs).0
+}
+
+/// As `icon_from`, plus whether every key has been tried without a picture
+/// (then nothing more will come: show a letter tile).
+pub fn icon_or_none(keys: &[String], jobs: &mut Vec<String>) -> (Option<String>, bool) {
     for k in keys {
         if let Some(u) = crate::icons::get(k) {
-            return Some(u);
+            return (Some(u), false);
         }
         if !crate::icons::known(k) {
             jobs.push(k.clone());
-            return None;
+            return (None, false);
         }
     }
-    None
+    (None, true)
 }
 
 pub fn stem(exe: &str) -> String {
@@ -120,18 +130,6 @@ pub fn matches(pin_target: &str, pin_name: &str, exe: &str) -> bool {
     let t = pin_target.to_lowercase();
     let n = pin_name.to_lowercase().replace(' ', "");
     t.contains(&s) || n.contains(&s) || (s == "code" && t.contains("visualstudiocode"))
-}
-
-fn pretty(exe: &str, title: &str) -> String {
-    let s = std::path::Path::new(exe).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-    if s.eq_ignore_ascii_case("applicationframehost") || s.is_empty() {
-        return title.to_string();
-    }
-    let mut c = s.chars();
-    match c.next() {
-        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-        None => title.to_string(),
-    }
 }
 
 /// Pins are Start AppIDs, or a path (an exe kept from the running list, or
@@ -210,14 +208,20 @@ pub fn state(pins: &[crate::settings::Pin], stacks: &[String]) -> DockState {
                 hw.push(w.hwnd);
             }
         }
+        // The pin's own icon, then its program, then (when it's running)
+        // whatever its window offers: exe, then the window's own icon.
         let mut keys = vec![pin_icon_path(&p.target)];
         if let Some(e) = &p.exe {
             keys.push(e.clone());
         }
-        if let Some(&h) = hw.first() {
-            keys.push(format!("hwnd:{h}"));
+        if let Some(w) = hw.first().and_then(|h| wins.iter().find(|w| w.hwnd == *h)) {
+            for k in w.icon_keys() {
+                if !keys.contains(&k) {
+                    keys.push(k);
+                }
+            }
         }
-        let icon = icon_from(&keys, &mut icon_jobs);
+        let (icon, no_icon) = icon_or_none(&keys, &mut icon_jobs);
         items.push(DockItem {
             kind: "pin",
             name: p.name.clone(),
@@ -226,6 +230,7 @@ pub fn state(pins: &[crate::settings::Pin], stacks: &[String]) -> DockState {
             attention: wants(&hw),
             windows: hw,
             icon,
+            no_icon,
         });
     }
 
@@ -244,10 +249,10 @@ pub fn state(pins: &[crate::settings::Pin], stacks: &[String]) -> DockState {
             continue;
         }
         keys.push(key);
-        let icon = icon_from(&w.icon_keys(), &mut icon_jobs);
+        let (icon, no_icon) = icon_or_none(&w.icon_keys(), &mut icon_jobs);
         groups.push(DockItem {
             kind: "running",
-            name: pretty(&w.exe, &w.title),
+            name: crate::appnames::friendly(&w.exe, w.aumid.as_deref(), &w.title),
             // Store apps relaunch through their AppID; others through the exe.
             target: match (&w.aumid, w.is_uwp_frame()) {
                 (Some(a), true) => a.clone(),
@@ -257,6 +262,7 @@ pub fn state(pins: &[crate::settings::Pin], stacks: &[String]) -> DockState {
             active: w.hwnd == fg,
             attention: false,
             icon,
+            no_icon,
         });
     }
     for g in groups.iter_mut() {
@@ -268,24 +274,45 @@ pub fn state(pins: &[crate::settings::Pin], stacks: &[String]) -> DockState {
     for key in stacks {
         let (Some(label), Some(dir)) = (crate::stacks::label(key), crate::stacks::folder(key)) else { continue };
         let path = dir.to_string_lossy().to_string();
-        let icon = crate::icons::get(&path);
-        if icon.is_none() {
-            icon_jobs.push(path);
-        }
-        items.push(DockItem { kind: "stack", name: label.into(), target: key.clone(), windows: vec![], active: false, attention: false, icon });
+        let (icon, no_icon) = icon_or_none(&[path], &mut icon_jobs);
+        items.push(DockItem { kind: "stack", name: label.into(), target: key.clone(), windows: vec![], active: false, attention: false, icon, no_icon });
     }
 
     let trash = "::{645FF040-5081-101B-9F08-08002B2CF60E}".to_string();
-    let icon = crate::icons::get(&trash);
-    if icon.is_none() {
-        icon_jobs.push(trash.clone());
-    }
-    items.push(DockItem { kind: "trash", name: "Recycle Bin".into(), target: trash, windows: vec![], active: false, attention: false, icon });
+    let (icon, no_icon) = icon_or_none(&[trash.clone()], &mut icon_jobs);
+    items.push(DockItem { kind: "trash", name: "Recycle Bin".into(), target: trash, windows: vec![], active: false, attention: false, icon, no_icon });
 
     if !icon_jobs.is_empty() {
         std::thread::spawn(move || crate::icons::fill(icon_jobs));
     }
     DockState { items }
+}
+
+/// Cove's own Settings window, while it's open: Cove sits in the dock like
+/// any other app (the window list skips Cove's own process).
+pub fn cove_item(hwnd: isize) -> DockItem {
+    let exe = std::env::current_exe().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
+    let mut jobs = Vec::new();
+    let (icon, no_icon) = icon_or_none(&[exe, format!("hwnd:{hwnd}")], &mut jobs);
+    if !jobs.is_empty() {
+        std::thread::spawn(move || crate::icons::fill(jobs));
+    }
+    DockItem {
+        kind: "cove",
+        name: "Cove".into(),
+        target: "cove".into(),
+        windows: vec![hwnd],
+        active: imp::foreground() == hwnd,
+        attention: false,
+        icon,
+        no_icon,
+    }
+}
+
+/// Where Cove goes: after the running apps, before folder stacks and the bin.
+pub fn insert_cove(items: &mut Vec<DockItem>, cove: DockItem) {
+    let at = items.iter().position(|i| i.kind == "stack" || i.kind == "trash").unwrap_or(items.len());
+    items.insert(at, cove);
 }
 
 pub use imp::{
@@ -299,9 +326,11 @@ pub use imp::{
 pub static TASKBAR_GONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Watchdog side of the takeover: after Cove's process `pid` ends, for any
-/// reason, the taskbar comes back. Runs as `cove --watchdog <pid> <settings>`.
+/// reason, the taskbar comes back and Cove's reserved strips are released. Runs as `cove --watchdog <pid> <settings>`.
 pub fn watchdog(pid: u32, settings: &std::path::Path) {
     imp::wait_for_exit(pid);
+    // The space the menu bar and dock reserved goes back to the apps.
+    crate::appbar::release_recorded(settings);
     taskbar_visible(true);
     let mut s = crate::settings::Store::load(settings.to_path_buf());
     if let Some(prev) = s.data.taskbar_prev_autohide.take() {
@@ -703,6 +732,15 @@ mod tests {
         let mut b = vec![1, 2, 3];
         prune_attention(&mut b, &[1, 2], 2);
         assert_eq!(b, vec![1]);
+    }
+
+    #[test]
+    fn cove_sits_after_running_apps() {
+        use super::*;
+        let it = |kind: &'static str| DockItem { kind, name: kind.into(), target: kind.into(), windows: vec![], active: false, attention: false, icon: None, no_icon: false };
+        let mut v = vec![it("pin"), it("running"), it("stack"), it("trash")];
+        insert_cove(&mut v, it("cove"));
+        assert_eq!(v.iter().map(|i| i.kind).collect::<Vec<_>>(), ["pin", "running", "cove", "stack", "trash"]);
     }
 
     #[test]
