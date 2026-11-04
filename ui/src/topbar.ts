@@ -16,14 +16,17 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
 }
 const $ = (id: string) => document.getElementById(id)!;
 
-// The menu needs room below the 30px bar, so the window grows while it's open.
+// Bar height in DIP; must match TOPBAR_HEIGHT in main.rs (the reserved strip).
+const BAR_H = 25;
+// Menus need room below the bar, so the window grows while one is open
+// (the reserved strip stays BAR_H: only the window grows, over the apps).
 async function setTall(tall: boolean): Promise<void> {
   if (!inTauri) return;
   const w = getCurrentWindow();
   const size = await w.innerSize();
   const sf = await w.scaleFactor();
   const { PhysicalSize } = await import("@tauri-apps/api/dpi");
-  await w.setSize(new PhysicalSize(size.width, Math.round((tall ? 400 : 30) * sf)));
+  await w.setSize(new PhysicalSize(size.width, Math.round((tall ? 400 : BAR_H) * sf)));
 }
 
 // ---- Control Centre ----
@@ -132,7 +135,7 @@ async function refresh(): Promise<void> {
   if (b) {
     $("batt-text").textContent = `${b.percent}%`;
     const f = $("batt-fill");
-    f.style.width = `${Math.max(2, Math.round((b.percent / 100) * 17))}px`;
+    f.style.width = `${Math.max(2, Math.round((b.percent / 100) * 16))}px`;
     f.className = `fill${b.charging ? " charging" : b.percent <= 20 ? " low" : ""}`;
     $("battery").title = b.charging ? `Charging, ${b.percent}%` : `Battery ${b.percent}%`;
   }

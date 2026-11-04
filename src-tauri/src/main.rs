@@ -263,7 +263,9 @@ fn restore_all(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<Rest
 
 // ---- Cove top bar ----
 
-const TOPBAR_HEIGHT: f64 = 30.0;
+/// Menu bar height in DIP (macOS: 24 pt). The reserved AppBar strip is
+/// exactly this, scaled to the main display; topbar.css/ts use the same 25.
+const TOPBAR_HEIGHT: f64 = 25.0;
 
 fn topbar_apply(app: &AppHandle, on: bool) {
     let on = on && !safe();

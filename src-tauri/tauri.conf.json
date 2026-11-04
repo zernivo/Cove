@@ -61,7 +61,7 @@
         "title": "Cove Top Bar",
         "url": "topbar.html",
         "width": 1200,
-        "height": 30,
+        "height": 25,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
