@@ -49,6 +49,9 @@ impl Win {
     }
     /// What windows of the same app share.
     pub fn app_key(&self) -> String {
+        if is_explorer_win(self) {
+            return EXPLORER_ID.to_lowercase();
+        }
         match (&self.aumid, self.exe.is_empty() || self.is_uwp_frame()) {
             (Some(a), _) => a.to_lowercase(),
             (None, false) => self.exe.to_lowercase(),
@@ -67,6 +70,9 @@ impl Win {
         }
         if !self.exe.is_empty() && !self.is_uwp_frame() {
             k.push(self.exe.clone());
+            // The exe's own icon resource (SHGetFileInfo / PrivateExtractIcons),
+            // for apps whose shell item gives no picture.
+            k.push(format!("exeicon:{}", self.exe));
         }
         k.push(format!("hwnd:{}", self.hwnd));
         k
@@ -107,6 +113,12 @@ pub fn stem(exe: &str) -> String {
 /// AppUserModelID when either side has one (so two Chrome profiles stay two
 /// icons), otherwise the same program.
 pub fn matches_win(pin: &crate::settings::Pin, w: &Win) -> bool {
+    // File Explorer: its windows carry the AppID Microsoft.Windows.Explorer
+    // (or none), while the pin is often a shortcut or explorer.exe. The
+    // taskbar treats them as one app, and so does the dock.
+    if is_explorer_win(w) {
+        return is_explorer_pin(pin);
+    }
     let pin_id = pin.aumid.as_deref().or((!is_exe_pin(&pin.target)).then_some(pin.target.as_str()));
     if let (Some(p), Some(a)) = (pin_id, &w.aumid) {
         if p.eq_ignore_ascii_case(a) {
@@ -120,6 +132,31 @@ pub fn matches_win(pin: &crate::settings::Pin, w: &Win) -> bool {
         return !w.exe.is_empty() && e.eq_ignore_ascii_case(&w.exe);
     }
     matches(&pin.target, &pin.name, &w.exe)
+}
+
+pub const EXPLORER_ID: &str = "Microsoft.Windows.Explorer";
+
+/// A File Explorer window (folder windows of explorer.exe).
+pub fn is_explorer_win(w: &Win) -> bool {
+    w.aumid.as_deref().is_some_and(|a| a.eq_ignore_ascii_case(EXPLORER_ID)) || stem(&w.exe) == "explorer"
+}
+
+/// A pin that opens File Explorer: its AppID, explorer.exe, or the
+/// "File Explorer" shortcut the taskbar keeps.
+pub fn is_explorer_pin(pin: &crate::settings::Pin) -> bool {
+    let id = |s: &str| s.eq_ignore_ascii_case(EXPLORER_ID);
+    if pin.aumid.as_deref().is_some_and(id) || id(&pin.target) {
+        return true;
+    }
+    if pin.aumid.is_some() {
+        return false; // some other app's shortcut
+    }
+    let exe_is = |p: &str| stem(p) == "explorer" && p.to_lowercase().ends_with(".exe");
+    if pin.exe.as_deref().is_some_and(exe_is) || exe_is(&pin.target) {
+        return true;
+    }
+    let t = pin.target.to_lowercase();
+    t.ends_with(".lnk") && matches!(stem(&t).as_str(), "file explorer" | "explorer" | "windows explorer")
 }
 
 pub fn matches(pin_target: &str, pin_name: &str, exe: &str) -> bool {
@@ -279,7 +316,10 @@ pub fn state(pins: &[crate::settings::Pin], stacks: &[String]) -> DockState {
     }
 
     let trash = "::{645FF040-5081-101B-9F08-08002B2CF60E}".to_string();
-    let (icon, no_icon) = icon_or_none(&[trash.clone()], &mut icon_jobs);
+    // The bin's shell item, then the same through its shell: name, then the
+    // stock Recycle Bin icon Windows draws on the desktop.
+    let bin_keys = [trash.clone(), "shell:RecycleBinFolder".to_string(), "stock:recycler".to_string()];
+    let (icon, no_icon) = icon_or_none(&bin_keys, &mut icon_jobs);
     items.push(DockItem { kind: "trash", name: "Recycle Bin".into(), target: trash, windows: vec![], active: false, attention: false, icon, no_icon });
 
     if !icon_jobs.is_empty() {
@@ -750,6 +790,34 @@ mod tests {
         assert!(e.feed(1079, Some(m), 2).is_none());
         assert_eq!(e.feed(1079, Some(m), 2), Some(m));
         assert!(e.feed(500, Some(m), 2).is_none());
+    }
+
+    #[test]
+    fn explorer_windows_join_the_explorer_pin() {
+        use super::*;
+        use crate::settings::Pin;
+        let win = |exe: &str, aumid: Option<&str>| Win { hwnd: 1, exe: exe.into(), title: "Downloads".into(), aumid: aumid.map(Into::into), icon_res: None };
+        let ex = win(r"C:\Windows\explorer.exe", Some("Microsoft.Windows.Explorer"));
+        let ex_noid = win(r"C:\Windows\explorer.exe", None);
+        let pin = |target: &str, exe: Option<&str>, aumid: Option<&str>| Pin { name: "File Explorer".into(), target: target.into(), exe: exe.map(Into::into), aumid: aumid.map(Into::into) };
+        let lnk = pin(r"C:\Users\k\AppData\Roaming\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\File Explorer.lnk", None, None);
+        let exe = pin(r"C:\Windows\explorer.exe", Some(r"C:\Windows\explorer.exe"), None);
+        let id = pin("Microsoft.Windows.Explorer", None, None);
+        let lnk_id = pin(r"C:\x\File Explorer.lnk", Some(r"C:\Windows\explorer.exe"), Some("Microsoft.Windows.Explorer"));
+        for p in [&lnk, &exe, &id, &lnk_id] {
+            assert!(matches_win(p, &ex), "{}", p.target);
+            assert!(matches_win(p, &ex_noid), "{}", p.target);
+        }
+        assert_eq!(ex.app_key(), ex_noid.app_key());
+        // Chrome profiles still stay apart, and Chrome never joins Explorer.
+        let chrome = r"C:\Program Files\Google\Chrome\Application\chrome.exe";
+        let work = pin(r"C:\x\Work - Chrome.lnk", Some(chrome), Some("Chrome.AB12"));
+        let me = pin(r"C:\x\Google Chrome.lnk", Some(chrome), Some("Chrome"));
+        let w_work = win(chrome, Some("Chrome.AB12"));
+        let w_me = win(chrome, Some("Chrome"));
+        assert!(matches_win(&work, &w_work) && !matches_win(&work, &w_me));
+        assert!(matches_win(&me, &w_me) && !matches_win(&me, &w_work));
+        assert!(!matches_win(&lnk, &w_me) && !matches_win(&me, &ex));
     }
 
     #[test]

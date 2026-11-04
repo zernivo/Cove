@@ -69,6 +69,10 @@ pub fn fill(paths: Vec<String>) {
             }
             let px = if let Some(h) = p.strip_prefix("hwnd:") {
                 h.parse::<isize>().ok().and_then(imp::window_icon)
+            } else if let Some(exe) = p.strip_prefix("exeicon:") {
+                imp::exe_icon(exe)
+            } else if p == "stock:recycler" {
+                imp::stock_recycler()
             } else if let Some(r) = p.strip_prefix("res:") {
                 // "file,index": the file itself renders as its first icon.
                 let file = r.rsplit_once(',').map(|(f, _)| f).unwrap_or(r).trim_matches('"');
@@ -179,10 +183,6 @@ mod imp {
     use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
     use windows::Win32::UI::Shell::{IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF_BIGGERSIZEOK, SIIGBF_ICONONLY};
     use windows::Win32::Graphics::Gdi::HBITMAP;
-    use windows::Win32::UI::WindowsAndMessaging::{
-        GetClassLongPtrW, GetIconInfo, SendMessageTimeoutW, GCLP_HICON, HICON, ICONINFO, ICON_BIG, SMTO_ABORTIFHUNG, WM_GETICON,
-    };
-    use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 
     pub fn with_com(f: impl FnOnce()) {
         let ok = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }.is_ok();
@@ -202,27 +202,154 @@ mod imp {
         }
     }
 
-    /// The icon a window shows in its own title bar (fallback for apps
-    /// whose exe Cove can't read, such as ones running as admin).
+    /// The icon a window shows (fallback for apps whose exe Cove can't
+    /// read, such as ones running as admin, and Electron apps whose shell
+    /// item has no picture): WM_GETICON big, then small, then the class
+    /// icons. These belong to the app: never destroyed here.
     pub fn window_icon(h: isize) -> Option<(u32, u32, Vec<u8>)> {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            GetClassLongPtrW, SendMessageTimeoutW, GCLP_HICON, GCLP_HICONSM, ICON_BIG, ICON_SMALL, ICON_SMALL2, SMTO_ABORTIFHUNG,
+            WM_GETICON,
+        };
         unsafe {
-            let hwnd = HWND(h as *mut _);
-            let mut res = 0usize;
-            let _ = SendMessageTimeoutW(hwnd, WM_GETICON, WPARAM(ICON_BIG as usize), LPARAM(0), SMTO_ABORTIFHUNG, 200, Some(&mut res));
-            let mut hi = res as isize;
-            if hi == 0 {
-                hi = GetClassLongPtrW(hwnd, GCLP_HICON) as isize;
+            let hwnd = h as windows_sys::Win32::Foundation::HWND;
+            for which in [ICON_BIG, ICON_SMALL2, ICON_SMALL] {
+                let mut res = 0usize;
+                SendMessageTimeoutW(hwnd, WM_GETICON, which as usize, 0, SMTO_ABORTIFHUNG, 200, &mut res);
+                if res != 0 {
+                    if let Some(px) = hicon_rgba(res as isize) {
+                        return Some(px);
+                    }
+                }
             }
-            if hi == 0 {
+            for which in [GCLP_HICON, GCLP_HICONSM] {
+                let hi = GetClassLongPtrW(hwnd, which) as isize;
+                if hi != 0 {
+                    if let Some(px) = hicon_rgba(hi) {
+                        return Some(px);
+                    }
+                }
+            }
+            None
+        }
+    }
+
+    /// The exe's own icon resource at full size (PrivateExtractIcons), then
+    /// the shell's file icon (SHGetFileInfo).
+    pub fn exe_icon(exe: &str) -> Option<(u32, u32, Vec<u8>)> {
+        resource_icon(exe, 0).or_else(|| file_info_icon(exe))
+    }
+
+    /// The Recycle Bin icon Windows itself draws (stock icon SIID_RECYCLER).
+    pub fn stock_recycler() -> Option<(u32, u32, Vec<u8>)> {
+        use windows_sys::Win32::UI::Shell::{SHGetStockIconInfo, SHSTOCKICONINFO};
+        unsafe {
+            let mut si: SHSTOCKICONINFO = std::mem::zeroed();
+            si.cbSize = std::mem::size_of::<SHSTOCKICONINFO>() as u32;
+            const SIID_RECYCLER: i32 = 31;
+            const SHGSI_ICONLOCATION: u32 = 0;
+            if SHGetStockIconInfo(SIID_RECYCLER as _, SHGSI_ICONLOCATION as _, &mut si) < 0 {
                 return None;
             }
-            let mut ii = ICONINFO::default();
-            GetIconInfo(HICON(hi as *mut _), &mut ii).ok()?;
-            let out = pixels(ii.hbmColor, true);
-            if !ii.hbmMask.is_invalid() {
-                let _ = DeleteObject(HGDIOBJ(ii.hbmMask.0));
+            let n = si.szPath.iter().position(|&c| c == 0).unwrap_or(si.szPath.len());
+            let path = String::from_utf16_lossy(&si.szPath[..n]);
+            resource_icon(&path, si.iIcon)
+        }
+    }
+
+    /// Icon `index` (or resource id when negative) of a PE file at 256 px.
+    fn resource_icon(file: &str, index: i32) -> Option<(u32, u32, Vec<u8>)> {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{DestroyIcon, PrivateExtractIconsW};
+        let w: Vec<u16> = file.encode_utf16().chain(std::iter::once(0)).collect();
+        if w.len() > 260 {
+            return None;
+        }
+        unsafe {
+            let mut hi: windows_sys::Win32::UI::WindowsAndMessaging::HICON = std::ptr::null_mut();
+            let mut id = 0u32;
+            let got = PrivateExtractIconsW(w.as_ptr(), index, super::SIZE, super::SIZE, &mut hi, &mut id, 1, 0);
+            if got == 0 || got == u32::MAX || hi.is_null() {
+                return None;
             }
-            out
+            let px = hicon_rgba(hi as isize);
+            DestroyIcon(hi);
+            px
+        }
+    }
+
+    fn file_info_icon(file: &str) -> Option<(u32, u32, Vec<u8>)> {
+        use windows_sys::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON};
+        use windows_sys::Win32::UI::WindowsAndMessaging::DestroyIcon;
+        let w: Vec<u16> = file.encode_utf16().chain(std::iter::once(0)).collect();
+        unsafe {
+            let mut fi: SHFILEINFOW = std::mem::zeroed();
+            let ok = SHGetFileInfoW(w.as_ptr(), 0, &mut fi, std::mem::size_of::<SHFILEINFOW>() as u32, SHGFI_ICON | SHGFI_LARGEICON);
+            if ok == 0 || fi.hIcon.is_null() {
+                return None;
+            }
+            let px = hicon_rgba(fi.hIcon as isize);
+            DestroyIcon(fi.hIcon);
+            px
+        }
+    }
+
+    /// An HICON as straight-alpha RGBA. Old icons without an alpha channel
+    /// take their transparency from the icon's mask.
+    fn hicon_rgba(hicon: isize) -> Option<(u32, u32, Vec<u8>)> {
+        use windows_sys::Win32::Graphics::Gdi::DeleteObject;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GetIconInfo, ICONINFO};
+        unsafe {
+            let mut ii: ICONINFO = std::mem::zeroed();
+            if GetIconInfo(hicon as _, &mut ii) == 0 {
+                return None;
+            }
+            let color = HBITMAP(ii.hbmColor as *mut _);
+            let mask = ii.hbmMask;
+            let out = if ii.hbmColor.is_null() {
+                None
+            } else {
+                let had_alpha = has_alpha(color);
+                let px = pixels(color, true);
+                match (px, had_alpha) {
+                    (Some((w, h, mut rgba)), false) if !mask.is_null() => {
+                        if let Some((mw, _mh, m)) = pixels(HBITMAP(mask as *mut _), false) {
+                            if mw == w {
+                                for (i, p) in rgba.chunks_exact_mut(4).enumerate() {
+                                    // Mask: black = opaque, white = transparent.
+                                    if m.get(i * 4).is_some_and(|&v| v > 127) {
+                                        p[3] = 0;
+                                    }
+                                }
+                            }
+                        }
+                        Some((w, h, rgba))
+                    }
+                    (px, _) => px,
+                }
+            };
+            if !mask.is_null() {
+                DeleteObject(mask);
+            }
+            out.filter(|(w, h, _)| *w > 0 && *h > 0)
+        }
+    }
+
+    /// Does a 32-bit bitmap carry any alpha (checked without freeing it)?
+    unsafe fn has_alpha(hbmp: HBITMAP) -> bool {
+        unsafe {
+            let obj = HGDIOBJ(hbmp.0);
+            let mut bm = BITMAP::default();
+            if GetObjectW(obj, std::mem::size_of::<BITMAP>() as i32, Some(&mut bm as *mut _ as *mut _)) == 0 {
+                return false;
+            }
+            let (w, h) = (bm.bmWidth, bm.bmHeight);
+            let mut info = BITMAPINFO::default();
+            info.bmiHeader = BITMAPINFOHEADER { biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32, biWidth: w, biHeight: -h, biPlanes: 1, biBitCount: 32, biCompression: BI_RGB.0, ..Default::default() };
+            let mut px = vec![0u8; (w * h * 4).max(0) as usize];
+            let dc = CreateCompatibleDC(None);
+            let lines = GetDIBits(dc, hbmp, 0, h as u32, Some(px.as_mut_ptr() as *mut _), &mut info, DIB_RGB_COLORS);
+            let _ = DeleteDC(dc);
+            lines != 0 && px.chunks_exact(4).any(|p| p[3] != 0)
         }
     }
 
@@ -284,6 +411,12 @@ mod imp {
         None
     }
     pub fn window_icon(_h: isize) -> Option<(u32, u32, Vec<u8>)> {
+        None
+    }
+    pub fn exe_icon(_exe: &str) -> Option<(u32, u32, Vec<u8>)> {
+        None
+    }
+    pub fn stock_recycler() -> Option<(u32, u32, Vec<u8>)> {
         None
     }
 }
