@@ -1,10 +1,16 @@
 """Apply voxel logo option B (sharp edges, chosen 2026-11-04) across the app.
 
-Run from the repo root after `python brand/voxel_logo.py brand/out` and
-`npx tauri icon brand/out/option-B-icon-1024.png
--o src-tauri/icons`:
+Run from the repo root (needs numpy + Pillow):
 
-    python brand/logo_b.py
+    python brand/logo_b.py master          # writes brand/cove-icon-b.png (1024)
+    npx tauri icon brand/cove-icon-b.png -o src-tauri/icons
+    rm -rf src-tauri/icons/android src-tauri/icons/ios
+    python brand/logo_b.py                 # pixel-exact small sizes + the rest
+
+Icon proportions (2026-11-04, "icon too small" feedback): standard Windows
+app icons fill ~90% of their canvas, so the Ink tile fills the canvas with a
+4% margin and the C fills 76% of the tile. 16-48 px stay hand-drawn on the
+pixel grid (tile = canvas minus 1 px).
 
 Writes
   ui/public/cove-mark.png          512 px bare mark (transparent), in-app brand
@@ -17,6 +23,7 @@ Writes
 import os
 import sys
 
+MODE = sys.argv[1] if len(sys.argv) > 1 else ""
 sys.argv = sys.argv[:1] + ["brand/out"]  # voxel_logo writes nothing on import; OUT only
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import voxel_logo as V  # noqa: E402
@@ -31,6 +38,23 @@ def mark(h):
     if h < 64:
         return V.pixel_logo(4, 1, unit=max(1, h // 8))
     return V.iso_logo(4, 1, round(h * 0.866), h, seam=SEAM)
+
+
+TILE = 0.92   # tile body / canvas at >= 256 px (4% margin each side)
+MARK = 0.76   # C box / tile body at >= 64 px
+
+
+def app_icon(size):
+    """The app icon at `size` px: Ink tile + C, small sizes pixel-exact."""
+    body = round(size * TILE) if size >= 256 else size - 2
+    t = V.tile(size, body)
+    if size >= 64:
+        box = round(body * MARK)
+        m = V.iso_logo(4, 1, box, box, seam=SEAM, seam_a=1.0)
+    else:
+        m = V.pixel_logo(4, 1, unit=max(1, round(size * 0.66 / 8)))
+    t.alpha_composite(m, ((size - m.width) // 2, (size - m.height) // 2))
+    return t
 
 
 def ink(w, h):
@@ -62,9 +86,9 @@ def main():
     V.menu_mark("B", 16).save("ui/public/cove-menubar-16.png")
     V.menu_mark("B", 24).save("ui/public/cove-menubar-24.png")
     # 3. small app icons drawn pixel-exact instead of downscaled
-    V.app_icon("B", 32).save("src-tauri/icons/32x32.png")
+    app_icon(32).save("src-tauri/icons/32x32.png")
     sizes = [16, 24, 32, 48, 64, 128, 256]
-    layers = [V.app_icon("B", s) for s in sizes]
+    layers = [app_icon(s) for s in sizes]
     layers[-1].save("src-tauri/icons/icon.ico", sizes=[(s, s) for s in sizes],
                     append_images=layers[:-1])
     # 4. installer art, same sizes as before
@@ -79,7 +103,7 @@ def main():
     # WiX banner: dialog title text is drawn over its left side in black, so the
     # field stays white and the mark sits on an Ink tile at the right.
     bn = Image.new("RGBA", (493, 58), (255, 255, 255, 255))
-    bn.alpha_composite(V.app_icon("B", 48), (493 - 48 - 8, 5))
+    bn.alpha_composite(app_icon(48), (493 - 48 - 8, 5))
     bmp(bn, f"{d}/wix-banner.bmp")
     dg = Image.new("RGBA", (493, 312), (255, 255, 255, 255))  # WiX welcome: text on the right
     dg.alpha_composite(ink(164, 312), (0, 0))
@@ -90,4 +114,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if MODE == "master":
+        app_icon(1024).save("brand/cove-icon-b.png")
+        print("brand/cove-icon-b.png")
+    else:
+        main()
