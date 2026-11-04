@@ -65,7 +65,40 @@ pub fn register(hwnd: isize, edge: u32, monitor: (i32, i32, i32, i32), thickness
         b.push((hwnd, edge, rc));
     }
     save();
+    // The work area changed: windows that are already maximised re-fit it
+    // (once Explorer has applied the new work area).
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        imp::refit_maximized(monitor);
+    });
     rc
+}
+
+/// Put a bar's window exactly on the rectangle ABM_SETPOS gave it, in
+/// screen coordinates, straight through SetWindowPos. Never derived from the
+/// work area: once a bar is reserved the work area already excludes it, so
+/// "work area top" is the bar's *bottom* (the classic AppBar double offset).
+/// Also marks the window as a tool window, whose placement is kept in screen
+/// coordinates (a normal window's restore placement is in workspace
+/// coordinates, which shift down by the menu bar's height once it reserves
+/// the top edge).
+pub fn place(hwnd: isize, rc: (i32, i32, i32, i32)) {
+    imp::place(hwnd, rc)
+}
+
+/// The window's rectangle on screen now (physical px).
+pub fn window_rect(hwnd: isize) -> Option<(i32, i32, i32, i32)> {
+    imp::window_rect(hwnd)
+}
+
+/// The rectangle a maximised window should have on a monitor whose work
+/// area is `work`: the work area grown by the window's own invisible frame
+/// `frame` on every side (pure: unit-tested). None when it already fits.
+pub fn refit_rect(have: (i32, i32, i32, i32), work: (i32, i32, i32, i32)) -> Option<(i32, i32, i32, i32)> {
+    let f = (work.0 - have.0).clamp(0, 32);
+    let want = (work.0 - f, work.1 - f, work.2 + f, work.3 + f);
+    let off = (have.0 - want.0).abs().max((have.1 - want.1).abs()).max((have.2 - want.2).abs()).max((have.3 - want.3).abs());
+    (off > 1).then_some(want)
 }
 
 /// Same monitor span and thickness: Explorer may have nudged the outer edge
@@ -151,6 +184,71 @@ mod imp {
             SHAppBarMessage(ABM_REMOVE, &mut d);
         }
     }
+
+    use windows_sys::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+    use windows_sys::Win32::Foundation::{BOOL, LPARAM};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetWindowLongPtrW, GetWindowRect, IsWindowVisible, IsZoomed, SetWindowLongPtrW, SetWindowPos,
+        GWL_EXSTYLE, HWND_TOPMOST, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOZORDER, WS_EX_APPWINDOW,
+        WS_EX_TOOLWINDOW,
+    };
+
+    pub fn place(hwnd: isize, rc: (i32, i32, i32, i32)) {
+        unsafe {
+            let h = hwnd as HWND;
+            let ex = GetWindowLongPtrW(h, GWL_EXSTYLE);
+            let want = (ex | WS_EX_TOOLWINDOW as isize) & !(WS_EX_APPWINDOW as isize);
+            if want != ex {
+                SetWindowLongPtrW(h, GWL_EXSTYLE, want);
+            }
+            SetWindowPos(h, HWND_TOPMOST, rc.0, rc.1, (rc.2 - rc.0).max(1), (rc.3 - rc.1).max(1), SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+        }
+    }
+
+    pub fn window_rect(hwnd: isize) -> Option<(i32, i32, i32, i32)> {
+        let mut r = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+        (unsafe { GetWindowRect(hwnd as HWND, &mut r) } != 0).then_some((r.left, r.top, r.right, r.bottom))
+    }
+
+    fn mon_info(h: HWND) -> Option<((i32, i32, i32, i32), (i32, i32, i32, i32))> {
+        unsafe {
+            let hm = MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST);
+            let mut mi: MONITORINFO = std::mem::zeroed();
+            mi.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+            if GetMonitorInfoW(hm, &mut mi) == 0 {
+                return None;
+            }
+            let r = |r: RECT| (r.left, r.top, r.right, r.bottom);
+            Some((r(mi.rcMonitor), r(mi.rcWork)))
+        }
+    }
+
+    unsafe extern "system" fn collect(h: HWND, l: LPARAM) -> BOOL {
+        let v = &mut *(l as *mut Vec<HWND>);
+        if IsWindowVisible(h) != 0 && IsZoomed(h) != 0 {
+            v.push(h);
+        }
+        1
+    }
+
+    /// Re-fit every maximised window on `monitor` to its current work area.
+    /// Asynchronous moves only, so a hung app can't stall Cove.
+    pub fn refit_maximized(monitor: (i32, i32, i32, i32)) {
+        let mut hs: Vec<HWND> = Vec::new();
+        unsafe { EnumWindows(Some(collect), &mut hs as *mut Vec<HWND> as LPARAM) };
+        for h in hs {
+            let Some((mon, work)) = mon_info(h) else { continue };
+            if mon != monitor {
+                continue;
+            }
+            let Some(have) = window_rect(h as isize) else { continue };
+            if let Some(r) = super::refit_rect(have, work) {
+                unsafe {
+                    SetWindowPos(h, std::ptr::null_mut(), r.0, r.1, r.2 - r.0, r.3 - r.1, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_ASYNCWINDOWPOS);
+                }
+            }
+        }
+    }
 }
 
 #[cfg(not(windows))]
@@ -159,6 +257,11 @@ mod imp {
         want
     }
     pub fn unregister(_h: isize) {}
+    pub fn place(_h: isize, _rc: (i32, i32, i32, i32)) {}
+    pub fn window_rect(_h: isize) -> Option<(i32, i32, i32, i32)> {
+        None
+    }
+    pub fn refit_maximized(_m: (i32, i32, i32, i32)) {}
 }
 
 #[cfg(test)]
@@ -171,6 +274,15 @@ mod tests {
         assert_eq!(proposed(BOTTOM, m, 111), (0, 1689, 2880, 1800));
         // A second display to the left of the main one.
         assert_eq!(proposed(BOTTOM, (-1920, 0, 0, 1080), 74), (-1920, 1006, 0, 1080));
+    }
+    #[test]
+    fn maximised_windows_refit_the_work_area() {
+        // Maximised under the old work area (no menu bar), 8 px frame.
+        let work = (0, 38, 1920, 1080);
+        assert_eq!(refit_rect((-8, -8, 1928, 1088), work), Some((-8, 30, 1928, 1088)));
+        // Already fits (with or without an invisible frame).
+        assert_eq!(refit_rect((-8, 30, 1928, 1088), work), None);
+        assert_eq!(refit_rect((0, 38, 1920, 1080), work), None);
     }
     #[test]
     fn same_reservation_is_recognised() {

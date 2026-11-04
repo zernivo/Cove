@@ -293,10 +293,13 @@ fn topbar_apply(app: &AppHandle, on: bool) {
             .flatten()
             .map(|m| m.scale_factor())
             .unwrap_or_else(|| w.scale_factor().unwrap_or(1.0));
-        let (l, t, r, b) = topbar::register(h, (TOPBAR_HEIGHT * sf).round() as i32);
-        let _ = w.set_size(tauri::PhysicalSize::new((r - l).max(1) as u32, (b - t).max(1) as u32));
-        let _ = w.set_position(PhysicalPosition::new(l, t));
+        // The bar sits on exactly the strip ABM_SETPOS returned: the
+        // monitor's top edge. Placed with a synchronous SetWindowPos after
+        // showing (tao's own moves are asynchronous and in its coordinates),
+        // and checked again by display_watch.
+        let rc = topbar::register(h, (TOPBAR_HEIGHT * sf).round() as i32);
         let _ = w.show();
+        appbar::place(h, rc);
     } else {
         topbar::unregister(h);
         let _ = w.hide();
@@ -1313,6 +1316,36 @@ fn display_watch(app: AppHandle) {
             }
         }
 
+        // The bars must stay exactly on their reserved strips: if anything
+        // moved a bar window (a DPI change, a show, Windows keeping it out
+        // of the work area), put it back on the ABM_SETPOS rectangle.
+        if tick % 3 == 2 {
+            let h_of = |label: &str| app.get_webview_window(label).and_then(|w| w.hwnd().ok()).map(|h| h.0 as isize);
+            if bar_on {
+                if let Some(h) = h_of("topbar") {
+                    if let (Some(rc), Some(now)) = (appbar::held(h), appbar::window_rect(h)) {
+                        if now != rc {
+                            let _ = app.run_on_main_thread(move || appbar::place(h, rc));
+                        }
+                    }
+                }
+            }
+            if dock_on {
+                if let Some(h) = h_of("dock") {
+                    if let (Some(rc), Some(now)) = (appbar::held(h), appbar::window_rect(h)) {
+                        if now.3 != rc.3 {
+                            let a = app.clone();
+                            let _ = app.run_on_main_thread(move || {
+                                if let Some(w) = a.get_webview_window("dock") {
+                                    dock_layout(&a, &w, None);
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
         // Top bar: main display geometry or scale changed (checked each second).
         if bar_on && tick % 3 == 0 {
             if let Some(p) = dock::primary() {
@@ -1532,6 +1565,11 @@ fn dock_layout(app: &AppHandle, w: &tauri::WebviewWindow, size: Option<(f64, f64
     let _ = w.set_position(pos);
     let _ = w.set_size(tauri::PhysicalSize::new(pw as u32, ph as u32));
     let _ = w.set_position(pos);
+    // Bottom edge on the reserved strip's bottom (the monitor's edge), in
+    // screen coordinates, synchronously: never derived from the work area.
+    if hwnd != 0 && reserve {
+        appbar::place(hwnd, (pos.x, pos.y, pos.x + pw, pos.y + ph));
+    }
 }
 
 /// Give the dock's strip back (dock off, safe mode, quitting).
