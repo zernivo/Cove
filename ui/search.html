@@ -11,11 +11,12 @@
     <div class="panel" id="panel">
       <div class="field">
         <svg class="mag" viewBox="0 0 22 22" aria-hidden="true"><circle cx="9.3" cy="9.3" r="6.6" /><path d="M14.2 14.2l5.4 5.4" /></svg>
-        <input id="q" type="text" placeholder="Search" autocomplete="off" spellcheck="false" autofocus />
-        <span class="scope hidden" id="scope"></span>
+        <input id="q" type="text" placeholder="Search" autocomplete="off" spellcheck="false" autofocus role="combobox" aria-label="Search apps, files and settings" aria-autocomplete="list" aria-controls="results" aria-expanded="false" />
+        <span class="scope hidden" id="scope" aria-live="polite"></span>
       </div>
-      <ul class="results" id="results"></ul>
-      <footer class="foot" id="foot">
+      <ul class="results" id="results" role="listbox" aria-label="Results"></ul>
+      <p class="sr" id="announce" role="status" aria-live="polite"></p>
+      <footer class="foot" id="foot" aria-hidden="true">
         <span class="not-clip"><kbd>↵</kbd> Open</span>
         <span class="not-clip"><kbd>Ctrl ↵</kbd> Show in folder</span>
         <span class="only-clip"><kbd>↵</kbd> Paste</span>

@@ -2,6 +2,7 @@ import { applyTheme, type ThemeState } from "./theme";
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getVersion } from "@tauri-apps/api/app";
 
 interface Status { version: string; journal_entries: number; windows: boolean }
 interface Tweak { id: string; title: string; description: string; settings_uri: string; applied: boolean | null }
@@ -72,30 +73,50 @@ function toast(text: string): void {
 const SCENES = ["desktop", "dock", "menubar", "windows", "keys", "quiet"];
 // Older names (tray menu, tour) still land on the right scene.
 const SCENE_ALIAS: Record<string, string> = { calm: "quiet", habits: "keys", look: "desktop", restore: "quiet", topbar: "menubar" };
-function showScene(name: string): void {
+// Switching scenes swaps already-rendered content: nothing is cleared and
+// re-fetched on the way in (that was the blank flash between scenes). The
+// refresh after a switch only repaints what actually changed.
+function showScene(name: string, focusHeading = false): void {
   const sc = SCENE_ALIAS[name] ?? name;
   if (name === "updates") return openAbout();
   if (!SCENES.includes(sc)) return;
-  document.querySelectorAll<HTMLElement>(".scene").forEach((el) => el.classList.toggle("hidden", el.id !== `scene-${sc}`));
-  document.querySelectorAll<HTMLElement>("#scenes button").forEach((b) => b.classList.toggle("on", b.dataset.scene === sc));
+  const was = $("stage").dataset.scene;
+  document.querySelectorAll<HTMLElement>(".scene").forEach((el) => {
+    const on = el.id === `scene-${sc}`;
+    el.classList.toggle("hidden", !on);
+    el.classList.toggle("enter", on && was !== sc);
+  });
+  document.querySelectorAll<HTMLElement>("#scenes button").forEach((b) => {
+    const on = b.dataset.scene === sc;
+    b.classList.toggle("on", on);
+    if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+  });
   $("stage").dataset.scene = sc;
   localStorage.setItem("cove.scene", sc);
+  if (focusHeading) document.querySelector<HTMLElement>(`#scene-${sc} h1`)?.focus();
   if (sc === "desktop") loadLook();
   if (sc === "dock") renderPins();
 }
 document.querySelectorAll<HTMLElement>("[data-scene]").forEach((el) =>
-  el.addEventListener("click", () => showScene(el.dataset.scene!)),
+  // A keyboard press (detail 0) moves focus to the scene, so Tab continues there.
+  el.addEventListener("click", (e) => showScene(el.dataset.scene!, (e as MouseEvent).detail === 0 && el.closest("#scenes") !== null)),
 );
+document.querySelectorAll<HTMLElement>(".scene").forEach((el) => el.addEventListener("animationend", () => el.classList.remove("enter")));
 
 // ---- status ----
+// The version label never shows a placeholder: "About Cove" until the version
+// is known (the app's own version answers at once; cove_status confirms it).
+if (inTauri) getVersion().then((v) => { $("status").textContent = `Cove ${v}`; }).catch(() => {});
 async function refreshStatus(): Promise<void> {
   const s = await invoke<Status>("cove_status");
-  $("status").textContent = `v${s.version}${s.windows ? "" : " · preview"}`;
+  $("status").textContent = `Cove ${s.version}${s.windows ? "" : " · preview"}`;
   $("journal-count").textContent =
     s.journal_entries === 0 ? "Nothing to put back." : `${s.journal_entries} change${s.journal_entries === 1 ? "" : "s"} recorded.`;
 }
 
 // ---- Quiet (calm tweaks): one switch each, applied at once ----
+// Tweaks Windows currently write-protects: shown as "Coming later", never ticked.
+const LATER = new Set(["calm.taskbar-widgets"]);
 async function renderCalm(): Promise<void> {
   const tweaks = await invoke<Tweak[]>("calm_list");
   const list = $("calm-list");
@@ -109,10 +130,28 @@ async function renderCalm(): Promise<void> {
     row.className = "row";
     row.innerHTML = `<div class="label"><h2></h2><p class="note"></p></div>`;
     row.querySelector("h2")!.textContent = t.title;
-    row.querySelector("p")!.textContent = t.applied ? "Done. Restore everything puts it back." : t.description;
+    if (LATER.has(t.id)) {
+      // Windows locks this setting on current builds, so Cove can't change it
+      // yet. Say so plainly: unticked, no switch, a way to do it by hand.
+      row.querySelector("p")!.textContent = "Windows locks this one for now. You can turn it off in Taskbar settings.";
+      row.insertAdjacentHTML("beforeend", `<span class="later">Coming later</span>`);
+      const open = Object.assign(document.createElement("button"), { className: "btn link", textContent: "Taskbar settings" });
+      open.addEventListener("click", () => invoke("open_settings", { uri: t.settings_uri || "ms-settings:taskbar" }));
+      row.appendChild(open);
+      list.appendChild(row);
+      continue;
+    }
+    if (t.applied) {
+      // Done: a plain state, not a greyed-out ticked switch.
+      row.querySelector("p")!.textContent = "Done. Restore everything puts it back.";
+      row.insertAdjacentHTML("beforeend", `<span class="done"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.2l2.3 2.3 4.7-5"/></svg>Done</span>`);
+      list.appendChild(row);
+      continue;
+    }
+    row.querySelector("p")!.textContent = t.description;
     const sw = document.createElement("label");
     sw.className = "switch";
-    sw.innerHTML = `<input type="checkbox" ${t.applied ? "checked disabled" : ""} /><span></span>`;
+    sw.innerHTML = `<input type="checkbox" role="switch" /><span aria-hidden="true"></span>`;
     const input = sw.querySelector("input")!;
     input.addEventListener("change", async () => {
       input.disabled = true;
@@ -127,6 +166,7 @@ async function renderCalm(): Promise<void> {
     row.appendChild(sw);
     list.appendChild(row);
   }
+  labelSwitches(list);
 }
 
 // ---- habits ----
@@ -200,19 +240,46 @@ function thumbUrl(it: WallItem, mode: "dark" | "light"): string {
   return "/wallpapers/" + it.thumb.replace("{mode}", mode);
 }
 function fmtMB(n: number): string { return (n / 1048576).toFixed(1); }
+const thumbsSeen = new Set<string>();
+
+/** The wallpaper grid is one tab stop; arrows move between tiles. */
+function rovingTiles(grid: HTMLElement, focusId?: string): void {
+  const tiles = [...grid.querySelectorAll<HTMLElement>(".wt[data-id]")];
+  const start = tiles.find((t) => t.dataset.id === focusId) ?? tiles.find((t) => t.classList.contains("on")) ?? tiles[0];
+  tiles.forEach((t) => { t.tabIndex = t === start ? 0 : -1; });
+  if (focusId && start) start.focus();
+}
+$("walls").addEventListener("keydown", (e) => {
+  const tiles = [...$("walls").querySelectorAll<HTMLElement>(".wt[data-id]")];
+  const i = tiles.indexOf(e.target as HTMLElement);
+  if (i < 0) return;
+  const cols = getComputedStyle($("walls")).gridTemplateColumns.split(" ").length || 3;
+  const step: Record<string, number> = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols, ArrowUp: -cols };
+  let j = i;
+  if (e.key in step) j = Math.min(tiles.length - 1, Math.max(0, i + step[e.key]));
+  else if (e.key === "Home") j = 0;
+  else if (e.key === "End") j = tiles.length - 1;
+  else return;
+  e.preventDefault();
+  tiles[i].tabIndex = -1;
+  tiles[j].tabIndex = 0;
+  tiles[j].focus();
+});
 
 function renderWall(w: WallStatus): void {
   wall = w;
   const mode = galMode ?? ((document.documentElement.dataset.mode === "dark") ? "dark" : "light");
   chipGroup("gal-mode", [["dark", "Dark"], ["light", "Light"]], mode, (k) => { galMode = k as "dark" | "light"; renderWall(wall); });
   const chips = $("gal-chips");
+  const chipFocus = chips.contains(document.activeElement) ? document.activeElement?.textContent : null;
   chips.innerHTML = "";
   const cats = [{ id: "all", name: "All" }, ...(gallery?.categories ?? [])];
   for (const c of cats) {
     const b = document.createElement("button");
     b.className = `chip${galCat === c.id ? " on" : ""}`;
-    b.setAttribute("role", "tab");
-    b.setAttribute("aria-selected", String(galCat === c.id));
+    b.setAttribute("role", "radio");
+    b.setAttribute("aria-checked", String(galCat === c.id));
+    b.tabIndex = galCat === c.id ? 0 : -1;
     b.textContent = c.name;
     if ("soon" in c && c.soon) {
       b.disabled = true;
@@ -222,29 +289,39 @@ function renderWall(w: WallStatus): void {
       b.addEventListener("click", () => { galCat = c.id; localStorage.setItem("cove.wall.cat", c.id); renderWall(wall); });
     }
     chips.appendChild(b);
+    if (chipFocus && b.textContent === chipFocus) b.focus();
   }
   const grid = $("walls");
+  // Rebuild the grid only when what it shows changed. Re-rendering identical
+  // tiles reloaded every thumbnail (the flash when coming back to Desktop).
+  const gridKey = JSON.stringify([!!gallery, galCat, mode, currentId(w), [...galLoading.keys()], [...galErrors]]);
+  if (grid.dataset.key !== gridKey) {
+  const focusId = (document.activeElement as HTMLElement | null)?.closest?.<HTMLElement>(".wt")?.dataset.id;
+  grid.dataset.key = gridKey;
   grid.innerHTML = "";
   if (!gallery) {
-    for (let i = 0; i < 6; i++) grid.insertAdjacentHTML("beforeend", '<div class="wt"><div class="im"></div><span class="wcap"><b>&nbsp;</b></span></div>');
+    for (let i = 0; i < 6; i++) grid.insertAdjacentHTML("beforeend", '<div class="wt skel" aria-hidden="true"><div class="im"></div><span class="wcap"><b>&nbsp;</b></span></div>');
   } else {
     const on = currentId(w);
     const list = gallery.items.filter((it) => (galCat === "all" || it.category === galCat) && (it.mode === "both" || it.mode === mode));
     if (!list.length) grid.innerHTML = '<p class="gal-empty">Nothing here in this mode yet.</p>';
     const catName = new Map(gallery.categories.map((c) => [c.id, c.name]));
     for (const it of list) grid.appendChild(wallTile(it, mode, it.id === on, catName.get(it.category) ?? ""));
+    rovingTiles(grid, focusId);
+  }
   }
   $("wall-restore").classList.toggle("hidden", !w.has_prev);
   chipGroup("sched-mode", [["off", "Off"], ["times", "On"]], w.schedule, (k) => saveSched(k));
   ($("sched-light") as HTMLInputElement).value = w.light_at;
   ($("sched-dark") as HTMLInputElement).value = w.dark_at;
+  timeSync.forEach((f) => f());
   $("sched-times").classList.toggle("off", w.schedule !== "times");
 }
 
 function wallTile(it: WallItem, mode: "dark" | "light", on: boolean, cat: string): HTMLElement {
   const b = document.createElement("div");
   b.className = `wt${on ? " on" : ""}`;
-  b.tabIndex = 0;
+  b.tabIndex = -1;
   b.setAttribute("role", "option");
   b.setAttribute("aria-selected", String(on));
   b.dataset.id = it.id;
@@ -254,8 +331,9 @@ function wallTile(it: WallItem, mode: "dark" | "light", on: boolean, cat: string
   const img = new Image();
   img.alt = "";
   img.decoding = "async";
-  img.onload = () => img.classList.add("ready");
+  img.onload = () => { img.classList.add("ready"); thumbsSeen.add(img.src); };
   img.src = thumbUrl(it, mode);
+  if (img.complete || thumbsSeen.has(img.src)) img.classList.add("ready", "now"); // cached: no fade
   im.appendChild(img);
   if (on) im.insertAdjacentHTML("beforeend", '<span class="tick"><svg viewBox="0 0 12 12"><path d="M2.5 6.2l2.3 2.3 4.7-5"/></svg></span>');
   if (it.mode === "both") im.insertAdjacentHTML("beforeend", '<span class="pair" title="Has a light and a dark version and follows Cove\'s appearance"></span>');
@@ -267,7 +345,7 @@ function wallTile(it: WallItem, mode: "dark" | "light", on: boolean, cat: string
     cr.append(Object.assign(document.createElement("em"), { textContent: it.bundled ? "Cove original art, ships with Cove" : "Cove original art" }));
   } else {
     cr.append(Object.assign(document.createElement("span"), { textContent: `${it.author} \u00b7 ${it.license}` }));
-    const a = Object.assign(document.createElement("a"), { textContent: `${it.source} \u2197`, href: it.sourceUrl, title: it.sourceUrl });
+    const a = Object.assign(document.createElement("a"), { textContent: `${it.source} \u2197`, href: it.sourceUrl, title: it.sourceUrl, tabIndex: -1 });
     a.addEventListener("click", (e) => {
       e.preventDefault(); e.stopPropagation();
       if (inTauri) invoke("wallpaper_open_source", { id: it.id }).catch(() => {});
@@ -374,6 +452,104 @@ $("wall-own-file").addEventListener("change", async (e) => {
 });
 if (inTauri) listen<WallProgress>("wallpaper-progress", (e) => showProgress(e.payload));
 
+// ---- Time fields (light/dark schedule) ----
+// Cove's own control instead of the native <input type="time">, whose parts
+// can't be styled to Ink and graphite. Hour, minute (and AM/PM where the
+// locale uses it) are spinbuttons: arrows step, digits type, Left/Right move,
+// and the small stepper does the same for the mouse. The value lives in a
+// hidden input that fires "change" once you stop adjusting.
+const timeSync: (() => void)[] = [];
+const hour12 = new Intl.DateTimeFormat(undefined, { hour: "numeric" }).resolvedOptions().hour12 ?? false;
+const pad2 = (n: number) => String(n).padStart(2, "0");
+function timeField(hostId: string, inputId: string): void {
+  const host = $(hostId);
+  const input = $(inputId) as HTMLInputElement;
+  host.setAttribute("role", "group");
+  host.setAttribute("aria-labelledby", `${hostId}-l`);
+  const seg = (label: string) => {
+    const s = document.createElement("span");
+    s.className = "ts";
+    s.tabIndex = 0;
+    s.setAttribute("role", "spinbutton");
+    s.setAttribute("aria-label", label);
+    return s;
+  };
+  const h = seg("Hour"), m = seg("Minutes"), ap = hour12 ? seg("AM or PM") : null;
+  const segs = [h, m, ...(ap ? [ap] : [])];
+  const colon = Object.assign(document.createElement("span"), { className: "tc", textContent: ":" });
+  colon.setAttribute("aria-hidden", "true");
+  const stepper = document.createElement("span");
+  stepper.className = "tstep";
+  stepper.setAttribute("aria-hidden", "true");
+  stepper.innerHTML = '<button tabindex="-1" data-d="1"><svg viewBox="0 0 10 6"><path d="M1.5 4.5L5 1.5l3.5 3"/></svg></button><button tabindex="-1" data-d="-1"><svg viewBox="0 0 10 6"><path d="M1.5 1.5L5 4.5l3.5-3"/></svg></button>';
+  host.append(h, colon, m, ...(ap ? [ap] : []), stepper);
+  let last: HTMLElement = h;
+  let typed = "";
+  let timer = 0;
+  const get = () => { const [H, M] = (input.value || "00:00").split(":").map(Number); return { H: H || 0, M: M || 0 }; };
+  const paint = () => {
+    const { H, M } = get();
+    h.textContent = hour12 ? String(H % 12 || 12) : pad2(H);
+    h.setAttribute("aria-valuemin", hour12 ? "1" : "0");
+    h.setAttribute("aria-valuemax", hour12 ? "12" : "23");
+    h.setAttribute("aria-valuenow", hour12 ? String(H % 12 || 12) : String(H));
+    m.textContent = pad2(M);
+    m.setAttribute("aria-valuemin", "0");
+    m.setAttribute("aria-valuemax", "59");
+    m.setAttribute("aria-valuenow", String(M));
+    if (ap) { ap.textContent = H < 12 ? "AM" : "PM"; ap.setAttribute("aria-valuetext", ap.textContent); }
+  };
+  const flush = () => { if (timer) { clearTimeout(timer); timer = 0; input.dispatchEvent(new Event("change")); } };
+  const set = (H: number, M: number) => {
+    input.value = `${pad2(((H % 24) + 24) % 24)}:${pad2(((M % 60) + 60) % 60)}`;
+    paint();
+    clearTimeout(timer);
+    timer = window.setTimeout(flush, 700);
+  };
+  const step = (el: HTMLElement, d: number) => {
+    const { H, M } = get();
+    if (el === h) set(H + d, M);
+    else if (el === m) set(H, M + d);
+    else set(H + 12, M);
+  };
+  const typeDigit = (el: HTMLElement, digit: string) => {
+    const { H, M } = get();
+    typed = (typed + digit).slice(-2);
+    const n = Number(typed);
+    if (el === h) {
+      if (hour12) { const v = Math.min(12, Math.max(1, n || 12)); set((v % 12) + (H >= 12 ? 12 : 0), M); }
+      else set(Math.min(23, n), M);
+      if (typed.length === 2 || n * 10 > (hour12 ? 12 : 23)) { typed = ""; m.focus(); }
+    } else if (el === m) {
+      set(H, Math.min(59, n));
+      if (typed.length === 2 || n * 10 > 59) { typed = ""; (ap ?? m).focus(); }
+    }
+  };
+  segs.forEach((el, i) => {
+    el.addEventListener("focus", () => { last = el; typed = ""; });
+    el.addEventListener("keydown", (e) => {
+      const k = e.key;
+      if (k === "ArrowUp" || k === "ArrowDown") step(el, k === "ArrowUp" ? 1 : -1);
+      else if (k === "PageUp" || k === "PageDown") step(el, (k === "PageUp" ? 1 : -1) * (el === m ? 10 : 1));
+      else if (k === "ArrowRight" && i < segs.length - 1) segs[i + 1].focus();
+      else if (k === "ArrowLeft" && i > 0) segs[i - 1].focus();
+      else if (/^[0-9]$/.test(k) && el !== ap) typeDigit(el, k);
+      else if (el === ap && /^[ap]$/i.test(k)) { const { H, M } = get(); if ((k.toLowerCase() === "p") !== (H >= 12)) set(H + 12, M); }
+      else if (k === "Enter") flush();
+      else return;
+      e.preventDefault();
+    });
+  });
+  stepper.addEventListener("pointerdown", (e) => e.preventDefault()); // keep focus where it is
+  stepper.querySelectorAll<HTMLButtonElement>("button").forEach((b) =>
+    b.addEventListener("click", () => { step(last, Number(b.dataset.d)); last.focus(); }));
+  host.addEventListener("focusout", (e) => { if (!host.contains(e.relatedTarget as Node)) flush(); });
+  timeSync.push(paint);
+  paint();
+}
+timeField("tf-light", "sched-light");
+timeField("tf-dark", "sched-dark");
+
 // ---- Look (Cove Glass) ----
 async function saveSched(mode?: string): Promise<void> {
   try {
@@ -400,16 +576,65 @@ const LOOK_NOTES: Record<string, string> = {
   tidepool: "Clear, lets your wallpaper's colour through.",
   slate: "Mostly solid graphite. Quieter.",
 };
-function chipGroup(id: string, opts: [string, string][], on: string, pick: (k: string) => void): void {
-  $(id).innerHTML = "";
-  for (const [k, label] of opts) {
-    const b = document.createElement("button");
-    b.className = `chip${on === k ? " on" : ""}`;
-    b.textContent = label;
-    b.addEventListener("click", () => pick(k));
-    $(id).appendChild(b);
+/** A segmented control. Single choice: a radio group (one tab stop, arrows
+ *  move and pick). Multiple choice (`on` is a list): toggle buttons. Focus
+ *  stays on the same option when the group re-renders. */
+function chipGroup(id: string, opts: [string, string][], on: string | string[], pick: (k: string) => void): void {
+  const box = $(id);
+  const multi = Array.isArray(on);
+  const had = box.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.k : undefined;
+  box.innerHTML = "";
+  box.setAttribute("role", multi ? "group" : "radiogroup");
+  if (!box.hasAttribute("aria-label") && !box.hasAttribute("aria-labelledby")) {
+    const h = box.closest(".row, .gal-head")?.querySelector("h2");
+    if (h) { h.id ||= `${id}-h`; box.setAttribute("aria-labelledby", h.id); }
   }
+  const isOn = (k: string) => (multi ? (on as string[]).includes(k) : on === k);
+  const anyOn = opts.some(([k]) => isOn(k));
+  opts.forEach(([k, label], i) => {
+    const b = document.createElement("button");
+    b.className = `chip${isOn(k) ? " on" : ""}`;
+    b.textContent = label;
+    b.dataset.k = k;
+    if (multi) b.setAttribute("aria-pressed", String(isOn(k)));
+    else {
+      b.setAttribute("role", "radio");
+      b.setAttribute("aria-checked", String(isOn(k)));
+      b.tabIndex = isOn(k) || (!anyOn && i === 0) ? 0 : -1;
+    }
+    b.addEventListener("click", () => pick(k));
+    box.appendChild(b);
+  });
+  if (had) box.querySelector<HTMLElement>(`[data-k="${had}"]`)?.focus();
 }
+// Arrow keys inside any radio group (chips and the wallpaper categories).
+document.addEventListener("keydown", (e) => {
+  const t = e.target as HTMLElement;
+  const group = t.closest<HTMLElement>('[role="radiogroup"]');
+  if (!group || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) return;
+  const items = [...group.querySelectorAll<HTMLButtonElement>('[role="radio"]:not(:disabled)')];
+  const i = items.indexOf(t as HTMLButtonElement);
+  if (i < 0) return;
+  e.preventDefault();
+  const n = items.length;
+  const j = e.key === "Home" ? 0 : e.key === "End" ? n - 1 : (i + (e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : n - 1)) % n;
+  items[j].focus();
+  items[j].click();
+});
+
+/** Give each switch the name of its row (its h2) and the row's note. */
+let swSeq = 0;
+function labelSwitches(root: ParentNode = document): void {
+  root.querySelectorAll<HTMLInputElement>(".row .switch input").forEach((input) => {
+    const row = input.closest(".row")!;
+    const h = row.querySelector("h2");
+    const note = row.querySelector(".note");
+    const base = input.id || `sw${++swSeq}`;
+    if (h) { h.id ||= `${base}-h`; input.setAttribute("aria-labelledby", h.id); }
+    if (note) { note.id ||= `${base}-n`; input.setAttribute("aria-describedby", note.id); }
+  });
+}
+labelSwitches();
 async function setLook(p: Partial<{ theme: string; mode: string; accent: string }>): Promise<void> {
   const args = { theme: look.theme, mode: look.mode, accent: look.accent_source, ...p };
   renderLook(await invoke<ThemeState>("theme_set", args));
@@ -437,33 +662,14 @@ const STACKS: [string, string][] = [["downloads", "Downloads"], ["documents", "D
 let dockStacks: string[] = [];
 function renderDock(d: DockStatus): void {
   dockStacks = d.stacks;
-  $("dock-display").innerHTML = "";
-  for (const [k, label] of [["main", "Main screen"], ["follow", "Follows the pointer"]]) {
-    const b = document.createElement("button");
-    b.className = `chip${d.display === k ? " on" : ""}`;
-    b.textContent = label;
-    b.addEventListener("click", async () => renderDock(await invoke<DockStatus>("dock_display_set", { display: k })));
-    $("dock-display").appendChild(b);
-  }
-  $("dock-hide").innerHTML = "";
-  for (const [k, label] of [["smart", "When a window touches it"], ["always", "Always"], ["never", "Never"]]) {
-    const b = document.createElement("button");
-    b.className = `chip${(d.hide ?? "smart") === k ? " on" : ""}`;
-    b.textContent = label;
-    b.addEventListener("click", async () => renderDock(await invoke<DockStatus>("dock_hide_set", { mode: k })));
-    $("dock-hide").appendChild(b);
-  }
-  $("dock-stacks").innerHTML = "";
-  for (const [k, label] of STACKS) {
-    const b = document.createElement("button");
-    b.className = `chip${d.stacks.includes(k) ? " on" : ""}`;
-    b.textContent = label;
-    b.addEventListener("click", async () => {
-      const keys = dockStacks.includes(k) ? dockStacks.filter((x) => x !== k) : [...dockStacks, k];
-      renderDock(await invoke<DockStatus>("dock_stacks_set", { keys }));
-    });
-    $("dock-stacks").appendChild(b);
-  }
+  chipGroup("dock-display", [["main", "Main screen"], ["follow", "Follows the pointer"]], d.display,
+    async (k) => renderDock(await invoke<DockStatus>("dock_display_set", { display: k })));
+  chipGroup("dock-hide", [["smart", "When a window touches it"], ["always", "Always"], ["never", "Never"]], d.hide ?? "smart",
+    async (k) => renderDock(await invoke<DockStatus>("dock_hide_set", { mode: k })));
+  chipGroup("dock-stacks", STACKS, d.stacks, async (k) => {
+    const keys = dockStacks.includes(k) ? dockStacks.filter((x) => x !== k) : [...dockStacks, k];
+    renderDock(await invoke<DockStatus>("dock_stacks_set", { keys }));
+  });
   ($("dock-toggle") as HTMLInputElement).checked = d.enabled;
   ($("dock-taskbar") as HTMLInputElement).checked = d.hide_taskbar;
   ($("dock-taskbar") as HTMLInputElement).disabled = !d.enabled;
@@ -617,6 +823,7 @@ if (inTauri) {
     const [done, total] = e.payload;
     const pct = total ? Math.round((done / total) * 100) : 0;
     ($("up-bar") as HTMLElement).style.width = `${pct}%`;
+    $("up-progress").setAttribute("aria-valuenow", String(pct));
     $("up-install").textContent = `Downloading… ${pct}%`;
   });
   listen("update-installing", () => {
@@ -676,7 +883,7 @@ const PRESETS: [Preset, string, string][] = [
 async function applyPreset(p: Preset): Promise<void> {
   if (p === "none") return;
   const tweaks = await invoke<Tweak[]>("calm_list");
-  const ids = tweaks.filter((t) => t.applied === false).map((t) => t.id);
+  const ids = tweaks.filter((t) => t.applied === false && !LATER.has(t.id)).map((t) => t.id);
   if (ids.length) await invoke("calm_apply", { ids });
   await invoke("search_set", { enabled: true });
   if (p === "mac") {
@@ -695,10 +902,15 @@ const TOUR: TourStep[] = [
     extra: () => PRESETS.map(([k, name, desc]) => {
       const b = document.createElement("button");
       b.className = `tour-preset${tourPreset === k ? " on" : ""}`;
+      b.setAttribute("aria-pressed", String(tourPreset === k));
       b.innerHTML = `<b></b><span></span>`;
       (b.querySelector("b") as HTMLElement).textContent = name;
       (b.querySelector("span") as HTMLElement).textContent = desc;
-      b.addEventListener("click", () => { tourPreset = k; tourShow(); });
+      b.addEventListener("click", async () => {
+        tourPreset = k;
+        await tourShow();
+        $("tour-extra").querySelectorAll<HTMLElement>(".tour-preset")[PRESETS.findIndex((p) => p[0] === k)]?.focus();
+      });
       return b;
     }),
   },
@@ -755,6 +967,7 @@ async function tourShow(): Promise<void> {
     else if (tourDone.has(t.id) || i < tourIdx) d.className = "done";
     $("tour-dots").appendChild(d);
   });
+  $("tour-dots").setAttribute("aria-label", `Step ${tourIdx + 1} of ${TOUR.length}`);
   $("tour-keys").innerHTML = "";
   for (const k of st.keys ?? []) {
     const e = document.createElement("kbd");
@@ -775,7 +988,9 @@ async function tourShow(): Promise<void> {
     if (TOUR[tourIdx] === st) $("tour-enable").classList.toggle("hidden", on);
   }
 }
+let tourOpener: HTMLElement | null = null;
 function tourOpen(): void {
+  tourOpener = document.activeElement as HTMLElement | null;
   tourIdx = 0;
   tourDone = new Set();
   $("tour").classList.remove("hidden");
@@ -784,6 +999,7 @@ function tourOpen(): void {
 }
 async function tourClose(): Promise<void> {
   $("tour").classList.add("hidden");
+  tourOpener?.focus?.();
   await invoke("tour_done_set", { done: true });
   if (tourChanged) location.reload();
 }
@@ -848,6 +1064,7 @@ async function renderDisplays(): Promise<void> {
     .forEach((d, i) => {
       const chip = document.createElement("span");
       chip.className = "chip" + (d.main ? " on" : "");
+      chip.setAttribute("role", "listitem");
       chip.textContent = `${d.main ? "Main" : `Screen ${i + 1}`}  ${d.width}×${d.height}  ${d.scale}%`;
       chip.title = d.name;
       box.appendChild(chip);
@@ -909,16 +1126,36 @@ $("desk-toggle").addEventListener("change", async (e) => {
 });
 
 // ---- About sheet ----
+let aboutOpener: HTMLElement | null = null;
 function openAbout(): void {
+  aboutOpener = document.activeElement as HTMLElement | null;
   $("about").classList.remove("hidden");
+  ($("about-close") as HTMLButtonElement).focus();
   checkUpdates(true);
 }
-$("about-open").addEventListener("click", openAbout);
-$("about-close").addEventListener("click", () => $("about").classList.add("hidden"));
-$("about").addEventListener("click", (e) => { if (e.target === $("about")) $("about").classList.add("hidden"); });
-addEventListener("keydown", (e) => { if (e.key === "Escape") $("about").classList.add("hidden"); });
-$("intro-replay").addEventListener("click", () => {
+function closeAbout(): void {
+  if ($("about").classList.contains("hidden")) return;
   $("about").classList.add("hidden");
+  aboutOpener?.focus?.();
+}
+$("about-open").addEventListener("click", openAbout);
+$("about-close").addEventListener("click", closeAbout);
+$("about").addEventListener("click", (e) => { if (e.target === $("about")) closeAbout(); });
+addEventListener("keydown", (e) => { if (e.key === "Escape") closeAbout(); });
+// Modal sheets keep Tab inside themselves.
+addEventListener("keydown", (e) => {
+  if (e.key !== "Tab") return;
+  const modal = [$("tour"), $("about")].find((m) => !m.classList.contains("hidden"));
+  if (!modal) return;
+  const f = [...modal.querySelectorAll<HTMLElement>("button:not(:disabled), [tabindex='0']")].filter((el) => el.offsetParent !== null);
+  if (!f.length) return;
+  const first = f[0], last = f[f.length - 1];
+  if (!modal.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+  else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
+$("intro-replay").addEventListener("click", () => {
+  closeAbout();
   // The intro plays in its own full-screen window, over everything.
   if (inTauri) invoke("intro_play").catch(() => {});
   else window.open("/intro.html?full=1", "_blank");
@@ -927,24 +1164,63 @@ $("tour-open").addEventListener("click", () => $("about").classList.add("hidden"
 
 // ---- The miniature desktop ----
 interface DockItemLite { kind: string; name: string; icon?: string; windows: number[] }
+// The dock rows keep their skeleton tiles until every icon has loaded, then
+// swap in all at once; a refresh with the same apps changes nothing (no
+// flash of empty or greyed tiles each time the window gains focus).
+const preloaded = new Map<string, Promise<boolean>>();
+function preload(src: string): Promise<boolean> {
+  let p = preloaded.get(src);
+  if (!p) {
+    p = new Promise<boolean>((done) => {
+      const img = new Image();
+      img.onload = () => { img.decode().then(() => done(true), () => done(true)); };
+      img.onerror = () => done(false);
+      img.src = src;
+    });
+    preloaded.set(src, p);
+  }
+  return p;
+}
+async function fillIcons(box: HTMLElement, items: DockItemLite[], size: string): Promise<void> {
+  const key = JSON.stringify(items.map((i) => [i.name, i.icon ?? "", i.windows.length > 0]));
+  if (box.dataset.key === key) return;
+  box.dataset.want = key;
+  const ok = await Promise.race([
+    Promise.all(items.map((i) => (i.icon ? preload(i.icon) : Promise.resolve(false)))),
+    new Promise<boolean[]>((done) => setTimeout(() => done(items.map(() => true)), 2500)),
+  ]);
+  if (box.dataset.want !== key) return; // a newer render won
+  const frag = document.createDocumentFragment();
+  items.forEach((it, n) => {
+    const el = document.createElement("span");
+    el.className = `pi ${size}${it.windows.length ? " open" : ""}`;
+    el.title = it.name;
+    el.setAttribute("role", "listitem");
+    el.setAttribute("aria-label", it.windows.length ? `${it.name}, open` : it.name);
+    if (it.icon && ok[n]) el.appendChild(Object.assign(document.createElement("img"), { src: it.icon, alt: "" }));
+    else el.classList.add("noicon"); // a quiet neutral tile, not a pulsing placeholder
+    frag.appendChild(el);
+  });
+  box.replaceChildren(frag);
+  box.dataset.key = key;
+  box.removeAttribute("aria-busy");
+  if (!items.length && box.id === "dock-pins") box.insertAdjacentHTML("beforeend", '<p class="note">No pinned apps yet.</p>');
+}
+let pinsBusy = false;
 async function renderPins(): Promise<void> {
-  const st = inTauri
-    ? await invoke<{ items: DockItemLite[] }>("dock_state").catch(() => ({ items: [] as DockItemLite[] }))
-    : { items: ((window as any).__mockItems ?? []) as DockItemLite[] }; // browser preview only
-  const apps = st.items.filter((i) => i.kind === "pin" || i.kind === "running");
-  const fill = (box: HTMLElement, items: DockItemLite[], size: string) => {
-    box.innerHTML = "";
-    for (const it of items) {
-      const el = document.createElement("span");
-      el.className = `pi ${size}${it.windows.length ? " open" : ""}`;
-      el.title = it.name;
-      if (it.icon) el.appendChild(Object.assign(document.createElement("img"), { src: it.icon, alt: "" }));
-      else el.classList.add("pending");
-      box.appendChild(el);
-    }
-  };
-  fill($("mini-dock"), apps.slice(0, 14), "s");
-  fill($("dock-pins"), st.items.filter((i) => i.kind === "pin"), "m");
+  if (pinsBusy) return;
+  pinsBusy = true;
+  try {
+    const st = inTauri
+      ? await invoke<{ items: DockItemLite[] }>("dock_state").catch(() => null)
+      : { items: ((window as any).__mockItems ?? []) as DockItemLite[] }; // browser preview only
+    if (!st) return; // keep what's shown (or the skeleton) rather than blanking it
+    const apps = st.items.filter((i) => i.kind === "pin" || i.kind === "running");
+    await Promise.all([
+      fillIcons($("mini-dock"), apps.slice(0, 14), "s"),
+      fillIcons($("dock-pins"), st.items.filter((i) => i.kind === "pin"), "m"),
+    ]);
+  } finally { pinsBusy = false; }
 }
 function miniClock(): void {
   const d = new Date();

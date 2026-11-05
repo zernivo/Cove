@@ -152,10 +152,11 @@ function rows(box: HTMLElement, items: MItem[], isSub: boolean): void {
   box.innerHTML = "";
   const withIcons = items.some((i) => i.icon !== undefined && !i.sep && !i.header);
   for (const it of items) {
-    if (it.sep) { box.appendChild(document.createElement("hr")); continue; }
+    if (it.sep) { box.appendChild(document.createElement("hr")).setAttribute("role", "separator"); continue; }
     if (it.header !== undefined) {
       const h = document.createElement("div");
       h.className = "header";
+      h.setAttribute("role", "presentation");
       if (it.headerIcon) h.appendChild(Object.assign(document.createElement("img"), { src: it.headerIcon, alt: "" }));
       h.appendChild(document.createTextNode(it.header));
       box.appendChild(h);
@@ -163,7 +164,10 @@ function rows(box: HTMLElement, items: MItem[], isSub: boolean): void {
     }
     const b = document.createElement("button");
     b.className = `row${it.danger ? " danger" : ""}`;
-    b.setAttribute("role", "menuitem");
+    b.setAttribute("role", it.check !== undefined ? "menuitemcheckbox" : "menuitem");
+    if (it.check !== undefined) b.setAttribute("aria-checked", String(!!it.check));
+    if (it.sub) { b.setAttribute("aria-haspopup", "menu"); b.setAttribute("aria-expanded", "false"); }
+    if (it.kbd) b.setAttribute("aria-keyshortcuts", it.kbd.replace(/Win/g, "Meta"));
     if (withIcons) {
       const ic = document.createElement("span");
       ic.className = `ic${it.icon ? "" : " blank"}`;
@@ -180,6 +184,7 @@ function rows(box: HTMLElement, items: MItem[], isSub: boolean): void {
     if (it.check !== undefined) { const c = document.createElement("span"); c.className = "check"; if (it.check) c.innerHTML = CHECK; b.appendChild(c); }
     if (it.sub) b.appendChild(Object.assign(document.createElement("span"), { className: "chev", textContent: "›" }));
     b.disabled = !!it.disabled;
+    if (it.disabled) b.setAttribute("aria-disabled", "true");
     if (it.sub) {
       const open = () => openSub(b, it.sub!);
       b.addEventListener("pointerenter", open);
@@ -204,6 +209,7 @@ function openSub(row: HTMLElement, items: MItem[]): void {
   if (subFor === row && !subEl.classList.contains("hidden")) return;
   menuEl.querySelectorAll(".row.on").forEach((r) => r.classList.remove("on"));
   row.classList.add("on");
+  row.setAttribute("aria-expanded", "true");
   subFor = row;
   rows(subEl, items, true);
   subEl.classList.remove("hidden");
@@ -213,6 +219,7 @@ function openSub(row: HTMLElement, items: MItem[]): void {
 function closeSub(replace: boolean): void {
   if (!subFor && subEl.classList.contains("hidden")) return;
   subFor?.classList.remove("on");
+  subFor?.setAttribute("aria-expanded", "false");
   subFor = null;
   subEl.classList.add("hidden");
   if (replace) place();
@@ -365,7 +372,10 @@ function windowMenu(s: TopState | null): MItem[] {
 // ---- Control Centre ----
 const vol = $("vol") as HTMLInputElement;
 const bright = $("bright") as HTMLInputElement;
-const paint = (input: HTMLInputElement) => (input.parentElement as HTMLElement).style.setProperty("--n", String(Number(input.value) / 100));
+const paint = (input: HTMLInputElement) => {
+  (input.parentElement as HTMLElement).style.setProperty("--n", String(Number(input.value) / 100));
+  input.setAttribute("aria-valuetext", `${input.value}%`);
+};
 const MUSIC = `<svg viewBox="0 0 16 16"><path d="M6 12V3.6l7-1.4v8.2"/><circle cx="4.4" cy="12" r="1.7"/><circle cx="11.4" cy="10.4" r="1.7"/></svg>`;
 
 function renderControls(c: Controls): void {
@@ -377,6 +387,7 @@ function renderControls(c: Controls): void {
   $("t-focus").classList.toggle("on", !!c.focus);
   $("focus-state").textContent = c.focus ? "Do not disturb" : "Off";
   $("t-dark").classList.toggle("on", c.dark);
+  $("t-dark").setAttribute("aria-checked", String(c.dark));
   $("dark-state").textContent = c.dark ? "On" : "Off";
   // Desktop monitors set their brightness themselves: keep Night light.
   $("bright-slider").classList.toggle("hidden", c.brightness === null);
@@ -386,6 +397,7 @@ function renderControls(c: Controls): void {
   if (c.volume !== null) { vol.value = String(c.volume); paint(vol); }
   $("device").textContent = c.device ?? "Sound settings";
   $("mute").classList.toggle("on", c.muted);
+  $("mute").setAttribute("aria-pressed", String(c.muted));
   const m = c.media;
   $("media").classList.toggle("hidden", !m);
   if (m) {
@@ -420,11 +432,12 @@ throttled("volume", vol, 80);
 throttled("brightness", bright, 300);
 $("mute").addEventListener("click", () => {
   invoke("controls_set", { what: "mute", value: 0 }).catch(() => {});
-  $("mute").classList.toggle("on");
+  $("mute").setAttribute("aria-pressed", String($("mute").classList.toggle("on")));
 });
 $("t-dark").addEventListener("click", async () => {
   const on = !$("t-dark").classList.contains("on");
   $("t-dark").classList.toggle("on", on);
+  $("t-dark").setAttribute("aria-checked", String(on));
   $("dark-state").textContent = on ? "On" : "Off";
   await invoke("controls_set", { what: "dark", value: on ? 1 : 0 }).catch(() => {});
 });
@@ -504,6 +517,9 @@ document.addEventListener("keydown", (e) => {
   const n = items.length;
   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
     items[(i + (e.key === "ArrowDown" ? 1 : n - 1) + n) % n]?.focus();
+    e.preventDefault();
+  } else if (e.key === "Home" || e.key === "End") {
+    items[e.key === "Home" ? 0 : n - 1]?.focus();
     e.preventDefault();
   } else if (e.key === "ArrowRight" && box === menuEl && i >= 0 && items[i].querySelector(".chev")) {
     items[i].click();

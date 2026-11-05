@@ -19,8 +19,9 @@
 
   /* Light (paper). */
   --c-text: #1b1c20;
-  --c-muted: rgba(27, 28, 32, 0.6);
-  --c-faint: rgba(27, 28, 32, 0.45);
+  /* Secondary text: >= 4.5:1 on the paper panel (0.6/0.45 measured 4.3/2.8). */
+  --c-muted: rgba(27, 28, 32, 0.72);
+  --c-faint: rgba(27, 28, 32, 0.66);
   /* Menu bar: opaque base + wallpaper plate + paper tint (>= 0.51 for dark text). */
   --c-bar-base: #ecebe7;
   --c-bar-tint: 247, 243, 239;
@@ -63,8 +64,9 @@
 }
 :root[data-mode="dark"] {
   --c-text: #f4f2ef;
-  --c-muted: rgba(244, 242, 239, 0.62);
-  --c-faint: rgba(244, 242, 239, 0.42);
+  /* Secondary text: >= 4.5:1 on the Ink panel (0.42 measured 3.7). */
+  --c-muted: rgba(244, 242, 239, 0.7);
+  --c-faint: rgba(244, 242, 239, 0.58);
   --c-bar-base: #111215;
   --c-bar-tint: 17, 18, 21;
   --c-bar-alpha: 0.59;

@@ -9,7 +9,7 @@
   --hair: rgba(255, 255, 255, 0.07);
   --fg: #ecebe8;
   --fg-2: #a3a3ab;
-  --fg-3: #6f7078;
+  --fg-3: #8e8f97;       /* >= 5:1 on Ink, ink-1 and ink-2 (was #6f7078, 3.3-3.8:1) */
   --teal: #e9e8e4; /* graphite state colour (was teal; user pick 2026-11-04) */
   --teal-ink: #111215;
   --danger-fg: #ff8a80;
@@ -64,8 +64,11 @@ h2 { font-size: 13.5px; font-weight: 550; }
   padding: 6px 28px 0; min-height: 0;
 }
 .panel { overflow-y: auto; padding: 4px 4px 24px 0; scrollbar-width: thin; scrollbar-color: var(--ink-3) transparent; }
-.scene { animation: scene-in 0.32s var(--spring); }
-@keyframes scene-in { from { opacity: 0; transform: translateY(6px); } }
+/* Scene switch: content is already rendered, so it only settles 4 px into
+   place. No fade from transparent (that read as a blank flash). */
+.scene.enter { animation: scene-in 0.22s var(--spring); }
+@keyframes scene-in { from { transform: translateY(4px); } }
+.scene h1:focus { outline: none; } /* a landing spot for keyboard focus, not a control */
 .scene h1 { margin-top: 6px; }
 .lede { color: var(--fg-2); margin: 6px 0 18px; max-width: 44ch; }
 
@@ -77,6 +80,10 @@ h2 { font-size: 13.5px; font-weight: 550; }
 .row.col { flex-direction: column; align-items: stretch; gap: 10px; }
 .label { flex: 1; min-width: 0; }
 .row.busy { opacity: 0.6; }
+.row .done, .row .later { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 550; padding: 4px 10px; border-radius: 999px; }
+.row .done { color: var(--fg); background: rgba(233, 232, 228, 0.1); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08); }
+.row .done svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.row .later { color: var(--fg-2); box-shadow: inset 0 0 0 1px var(--hair); }
 .dim { opacity: 0.45; }
 
 /* Switch */
@@ -102,12 +109,12 @@ h2 { font-size: 13.5px; font-weight: 550; }
 .row.col .seg { align-self: flex-start; }
 
 /* Buttons */
-.btn { height: 30px; padding: 0 14px; border-radius: 8px; border: 0; font-weight: 550; cursor: pointer; transition: transform 0.12s var(--spring), filter 0.15s; }
+.btn { height: 32px; min-width: 32px; padding: 0 14px; border-radius: 8px; border: 0; font-weight: 550; cursor: pointer; transition: transform 0.12s var(--spring), filter 0.15s; }
 .btn:active { transform: scale(0.97); }
 .btn.primary { background: var(--teal); color: var(--teal-ink); }
 .btn.ghost { background: var(--ink-2); box-shadow: inset 0 0 0 1px var(--hair); }
 .btn.danger { background: rgba(255, 110, 100, 0.12); color: var(--danger-fg); }
-.btn.link { background: none; color: var(--teal); height: 26px; padding: 0 8px; font-size: 12.5px; }
+.btn.link { background: none; color: var(--teal); height: 32px; padding: 0 10px; font-size: 12.5px; }
 .btn.link:hover { background: color-mix(in srgb, var(--teal) 10%, transparent); }
 .btn:disabled { opacity: 0.45; cursor: default; }
 
@@ -129,9 +136,12 @@ h2 { font-size: 13.5px; font-weight: 550; }
 .gal-empty { grid-column: 1 / -1; color: var(--fg-3); font-size: 12.5px; padding: 18px 0; text-align: center; }
 .wt { border: 0; padding: 0; background: none; cursor: pointer; text-align: left; min-width: 0; color: inherit; }
 .wt:focus-visible { outline: none; }
-.wt:focus-visible .im { box-shadow: 0 0 0 2px var(--fg-2); }
+.wt:focus-visible .im { box-shadow: 0 0 0 2px var(--ink-1), 0 0 0 4px var(--teal); }
 .wt .im { position: relative; aspect-ratio: 16 / 10; border-radius: 6px; background: #0c0d10 center / cover no-repeat; box-shadow: 0 0 0 1px var(--hair); overflow: hidden; transition: box-shadow 0.18s ease, transform 0.2s var(--spring); }
 .wt .im img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.2s ease; }
+.wt .im img.now { transition: none; }
+.wt.skel { cursor: default; }
+.wt.skel .im { animation: wait 1.1s ease-in-out infinite alternate; }
 .wt .im img.ready { opacity: 1; }
 .wt:hover .im { transform: translateY(-1px); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22), 0 8px 18px rgba(0, 0, 0, 0.45); }
 .wt.on .im { box-shadow: 0 0 0 2px var(--teal); }
@@ -165,19 +175,41 @@ h2 { font-size: 13.5px; font-weight: 550; }
 @media (prefers-reduced-motion: reduce) { .wt .im, .wt .credit { transition: none; } .wt .load.indet .bar i { animation: none; width: 100%; opacity: 0.5; } }
 .sched-times { gap: 18px; color: var(--fg-2); font-size: 12.5px; }
 .sched-times.off { display: none; }
-.sched-times input {
-  font: inherit; color: var(--fg); background: var(--ink); border: 0; box-shadow: inset 0 0 0 1px var(--hair);
-  border-radius: 7px; padding: 4px 8px; margin-left: 6px; color-scheme: dark;
+/* Time fields (main.ts timeField): Ink field, each part a graphite glass
+   pill when focused, a small stepper for the mouse. */
+.time { display: inline-flex; align-items: center; gap: 8px; }
+.tbox {
+  display: inline-flex; align-items: center; height: 32px; padding: 0 2px 0 5px; border-radius: var(--r-ctl);
+  background: var(--ink); box-shadow: inset 0 0 0 1px var(--hair); color: var(--fg);
+  font: 550 13px/1 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; font-variant-numeric: tabular-nums;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
 }
+.tbox:hover { background: var(--ink-2); }
+.tbox:focus-within { box-shadow: inset 0 0 0 1px rgba(233, 232, 228, 0.32); }
+.tbox .ts { min-width: 22px; padding: 4px 3px; border-radius: 5px; text-align: center; cursor: default; }
+.tbox .ts:focus { outline: none; }
+.tbox .ts:focus-visible, .tbox .ts:focus {
+  background: rgba(233, 232, 228, 0.18); color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 0 0 0.5px rgba(255, 255, 255, 0.1);
+}
+.tbox .ts + .ts { margin-left: 3px; }
+.tbox .tc { color: var(--fg-3); padding: 0 1px; }
+.tstep { display: inline-grid; grid-template-rows: 1fr 1fr; margin-left: 4px; height: 26px; }
+.tstep button { width: 18px; border: 0; padding: 0; background: none; border-radius: 4px; display: grid; place-items: center; cursor: pointer; color: var(--fg-2); }
+.tstep button:hover { background: var(--ink-3); color: var(--fg); }
+.tstep svg { width: 9px; height: 6px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 
 /* Pinned apps (real icons) */
 .pins { display: flex; flex-wrap: wrap; gap: 8px; }
 .pi { position: relative; display: grid; place-items: center; flex: none; }
-.pi img { width: 100%; height: 100%; object-fit: contain; animation: pop 0.25s var(--spring); }
-@keyframes pop { from { opacity: 0; transform: scale(0.9); } }
+.pi img { width: 100%; height: 100%; object-fit: contain; }
 .pi.m { width: 34px; height: 34px; }
 .pi.s { width: 18px; height: 18px; }
-.pi.pending { border-radius: 24%; background: var(--ink-3); animation: wait 1.1s ease-in-out infinite alternate; }
+/* Before the first answer: skeleton tiles the size of real icons (no layout
+   jump when they swap). An app with no icon gets a quiet static tile. */
+.pi.skel { border-radius: 24%; background: var(--ink-3); animation: wait 1.1s ease-in-out infinite alternate; }
+.mini-dock .pi.skel { background: rgba(255, 255, 255, 0.14); }
+.pi.noicon { border-radius: 24%; background: var(--ink-2); box-shadow: inset 0 0 0 1px var(--hair); }
 @keyframes wait { from { opacity: 0.4; } to { opacity: 0.8; } }
 .pi.open::after { content: ""; position: absolute; bottom: -4px; width: 3px; height: 3px; border-radius: 50%; background: rgba(255, 255, 255, 0.75); }
 .pi.m.open::after { bottom: -6px; width: 4px; height: 4px; }
@@ -325,12 +357,16 @@ kbd {
 .tour-preset.on { box-shadow: inset 0 0 0 2px var(--teal); }
 .tour-done { margin-top: 14px; color: var(--teal); font-weight: 600; }
 .tour-actions { display: flex; align-items: center; gap: 8px; margin-top: 22px; }
+.tour-actions .btn { height: 36px; padding: 0 16px; font-size: 13.5px; }
+.tour-actions .btn.skip { min-width: 96px; }
 .tour-spacer { flex: 1; }
 
 /* Keyboard focus: one clear ring, never on mouse clicks. */
 :focus { outline: none; }
 :focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 .switch input:focus-visible + span { outline: 2px solid var(--teal); outline-offset: 2px; }
+.chip:focus-visible, .scenes button:focus-visible, .cap:focus-visible { outline-offset: -2px; }
+.wt:focus-visible { outline: none; }
 
 /* Launch intro (intro.ts): flat Ink, fades out over the app */
 .intro { position: fixed; inset: 0; z-index: 100; background: var(--ink); transition: opacity 0.3s ease; cursor: default; }
@@ -342,8 +378,17 @@ kbd {
   .stage { max-height: 40vh; justify-self: center; width: auto; height: 40vh; }
 }
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
+/* Reduced transparency: every see-through surface in the window goes solid. */
+@media (prefers-reduced-transparency: reduce) {
+  .z-menubar, .mini-dock { backdrop-filter: none; background: var(--ink-1); }
+  .mini-search, .tag, .wt .credit, .wt .err { background: var(--ink-1); }
+  .wt .load { background: rgba(12, 13, 16, 0.9); }
+  .sheet, .tour { background: var(--ink); }
 }
 @media (forced-colors: active) {
   .group, .seg, .stage { border: 1px solid CanvasText; }
+  .chip.on, .scenes button.on { outline: 2px solid Highlight; }
+  .switch span { border: 1px solid CanvasText; }
 }

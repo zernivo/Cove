@@ -62,3 +62,8 @@ body.clip-tab .only-clip { display: flex !important; }
 body.clip-tab .not-clip { display: none !important; }
 body.empty-q .foot { display: none; }
 .hidden { display: none !important; }
+
+/* Accessibility: screen-reader-only text; the selected row also carries a
+   graphite ring when it was reached from the keyboard (the field keeps focus). */
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (forced-colors: active) { .row.sel { outline: 2px solid Highlight; } .panel { border: 1px solid CanvasText; } }

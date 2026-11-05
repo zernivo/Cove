@@ -1,0 +1,32 @@
+# Draft winget manifest (default locale). Not submitted yet: see README.md here.
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: zernivo.Cove
+PackageVersion: 0.9.0
+PackageLocale: en-US
+Publisher: zernivo
+PublisherUrl: https://github.com/zernivo
+PublisherSupportUrl: https://github.com/zernivo/Cove/issues
+Author: Khubaib Nazeer
+PackageName: Cove
+PackageUrl: https://github.com/zernivo/Cove
+License: MIT
+LicenseUrl: https://github.com/zernivo/Cove/blob/main/LICENSE
+Copyright: Copyright (c) 2026 Khubaib Nazeer (zernivo)
+ShortDescription: Windows, made calm. A Mac-style dock, Spotlight search, Control Centre and Liquid Glass for Windows 11, fully reversible.
+Description: |-
+  Cove gives Windows 11 a calm, Mac-inspired desktop: a Liquid Glass dock with a status island,
+  Spotlight-style Search (Alt+Space), Control Centre, Mac window buttons on hover, App Exposé,
+  an app-grouped switcher, window snapping and a wallpaper gallery. It uses documented,
+  per-user settings only, journals every change, and turning it off puts Windows back exactly.
+Moniker: cove
+Tags:
+  - dock
+  - launcher
+  - macos
+  - spotlight
+  - taskbar
+  - customization
+  - productivity
+ReleaseNotesUrl: https://github.com/zernivo/Cove/releases/tag/v0.9.0
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

@@ -176,15 +176,21 @@ function render(): void {
     const { query, scope } = parse();
     if (scope === "clip" || query) {
       const msg = scope === "clip" ? (clips.length ? "No matches" : "Nothing copied yet. Text you copy shows up here while Cove runs.") : index.length ? "No results" : "Loading your apps…";
-      list.innerHTML = `<li class="empty"></li>`;
+      list.innerHTML = `<li class="empty" role="presentation"></li>`;
       list.firstElementChild!.textContent = msg;
+      announce(msg);
     }
+    q.setAttribute("aria-expanded", "false");
+    q.removeAttribute("aria-activedescendant");
     fit();
     return;
   }
   shown.forEach((it, i) => {
     const li = document.createElement("li");
     li.className = `row${i === sel ? " sel" : ""}`;
+    li.id = `r${i}`;
+    li.setAttribute("role", "option");
+    li.setAttribute("aria-selected", String(i === sel));
     li.innerHTML = `<span class="tile"></span><span class="txt"><b></b><small></small></span><span class="tag"></span>`;
     const tile = li.querySelector(".tile") as HTMLElement;
     const icon = it.icon ?? (it.kind === "setting" ? sysIcons.settings : null);
@@ -203,11 +209,21 @@ function render(): void {
     list.appendChild(li);
   });
   list.children[sel]?.scrollIntoView({ block: "nearest" });
+  q.setAttribute("aria-expanded", "true");
+  q.setAttribute("aria-activedescendant", `r${sel}`);
+  announce(`${shown.length} result${shown.length === 1 ? "" : "s"}`);
   fit();
 }
 function mark(): void {
-  [...list.children].forEach((li, i) => li.classList.toggle("sel", i === sel));
+  [...list.children].forEach((li, i) => { li.classList.toggle("sel", i === sel); li.setAttribute("aria-selected", String(i === sel)); });
   list.children[sel]?.scrollIntoView({ block: "nearest" });
+  q.setAttribute("aria-activedescendant", `r${sel}`);
+}
+/** Result counts for screen readers, settled so typing doesn't chatter. */
+let announceTimer = 0;
+function announce(text: string): void {
+  clearTimeout(announceTimer);
+  announceTimer = window.setTimeout(() => { const a = document.getElementById("announce"); if (a) a.textContent = text; }, 500);
 }
 
 /** Size (and shape) the window to the panel: field only, or with results. */
