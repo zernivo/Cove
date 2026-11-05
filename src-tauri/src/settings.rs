@@ -82,6 +82,13 @@ pub struct Settings {
     /// Snapped windows glide (~200 ms) instead of jumping.
     #[serde(default = "yes")]
     pub snap_animate: bool,
+    /// Mac window buttons: close/minimise/zoom dots at the left of the
+    /// focused window's title bar, shown when the pointer comes near.
+    #[serde(default = "yes")]
+    pub traffic: bool,
+    /// Programs (lower-case file names) that never get the window buttons.
+    #[serde(default)]
+    pub traffic_skip: Vec<String>,
     /// Last version that ran (to refresh icons once after an update).
     pub last_version: String,
     /// Show other apps' tray icons (Control Centre's "Other apps") while
@@ -182,6 +189,8 @@ impl Default for Settings {
             light_at: light_at(),
             dark_at: dark_at(),
             snap_animate: true,
+            traffic: true,
+            traffic_skip: Vec::new(),
             last_version: String::new(),
             tray_icons: true,
             tray_pins: Vec::new(),

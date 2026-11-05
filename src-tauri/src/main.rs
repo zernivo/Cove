@@ -26,6 +26,7 @@ mod theme;
 mod wallpaper;
 mod topbar;
 mod tray;
+mod traffic;
 mod tweaks;
 mod updater;
 
@@ -106,6 +107,7 @@ fn apply_features(app: &AppHandle) {
     clipboard::set_enabled(on && d.clipboard);
     switcher::set_enabled(on && d.switcher);
     snap::configure(on && d.snap, d.snap_animate);
+    traffic::refresh();
     topbar_apply(app, d.topbar);
     dock_apply(app, &state);
     tray_sync(app);
@@ -1488,6 +1490,7 @@ fn open_expose(app: &AppHandle, name: String, windows: Vec<isize>) {
     };
     let (mp, ms) = (*m.position(), *m.size());
     EXPOSE_PREV.store(dock::foreground(), std::sync::atomic::Ordering::SeqCst);
+    traffic::hold(traffic::Hold::Expose, true);
     let _ = w.set_position(mp);
     let _ = w.set_size(ms);
     let _ = w.set_position(mp);
@@ -1502,6 +1505,7 @@ fn open_expose(app: &AppHandle, name: String, windows: Vec<isize>) {
 
 fn close_expose(app: &AppHandle) {
     expose::close();
+    traffic::hold(traffic::Hold::Expose, false);
     if let Some(w) = app.get_webview_window("expose") {
         let _ = w.hide();
     }
@@ -1895,6 +1899,7 @@ fn log_stamp(t: u64) -> String {
 /// The window stays hidden until the page has rendered its sprites and
 /// calls intro_ready, so nothing on screen ever waits on a half-ready page.
 fn intro_show(app: &AppHandle, full: bool, startup: bool) {
+    traffic::hold(traffic::Hold::Intro, true);
     let Some(w) = app.get_webview_window("intro") else {
         let run = intro_next_run(full, startup);
         cove_log(app, "intro: no intro window; skipping");
@@ -1974,6 +1979,7 @@ fn intro_finish(app: &AppHandle, why: &str, run: u32) {
     if let Some(w) = app.get_webview_window("intro") {
         let _ = w.hide();
     }
+    traffic::hold(traffic::Hold::Intro, false);
     cove_log(app, &format!("intro: finished ({why})"));
     if startup {
         reveal_desktop(app);
@@ -2639,6 +2645,8 @@ fn main() {
                 );
                 intro_show(&h, full, true);
             }
+            // Mac window buttons on the focused window (held until the intro ends).
+            traffic::init(app.handle());
             {
                 let h = app.handle().clone();
                 std::thread::spawn(move || display_watch(h));
@@ -2770,6 +2778,7 @@ fn main() {
             // Exposé closes if you switch away some other way.
             WindowEvent::Focused(false) if window.label() == "expose" => {
                 expose::close();
+                traffic::hold(traffic::Hold::Expose, false);
                 let _ = window.hide();
             }
             _ => {}
@@ -2869,7 +2878,13 @@ fn main() {
             tray::tray_set,
             tray::tray_pin,
             tray::tray_click,
-            tray::tray_open_windows
+            tray::tray_open_windows,
+            traffic::traffic_status,
+            traffic::traffic_set,
+            traffic::traffic_skip_set,
+            traffic::traffic_click,
+            traffic::traffic_hover,
+            traffic::traffic_hello
         ])
         .build(tauri::generate_context!())
         .expect("error while building Cove");
@@ -2880,6 +2895,7 @@ fn main() {
         if let RunEvent::Exit = event {
             safe_marker_clear(handle);
             hotkeys::stop();
+            traffic::stop();
             switcher::set_enabled(false);
             snap::configure(false, true);
             // Give the menu bar's and the dock's space back.

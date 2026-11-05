@@ -19,6 +19,7 @@ export default defineConfig({
         switcher: resolve(__dirname, "ui/switcher.html"),
         expose: resolve(__dirname, "ui/expose.html"),
         intro: resolve(__dirname, "ui/intro.html"),
+        traffic: resolve(__dirname, "ui/traffic.html"),
       },
     },
   },

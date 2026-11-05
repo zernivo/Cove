@@ -10,7 +10,8 @@
     "popover",
     "switcher",
     "expose",
-    "intro"
+    "intro",
+    "traffic"
   ],
   "permissions": [
     "core:default",
