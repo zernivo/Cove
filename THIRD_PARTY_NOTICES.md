@@ -378,6 +378,11 @@ downloaded on request from free-licence libraries (Wikimedia Commons, NASA)
 and each one is credited in the app with its author and licence. Cove ships no
 Apple fonts, symbols, wallpapers or artwork.
 
+- **Inter** (Rasmus Andersson), SIL Open Font License 1.1: a small subset
+  (the intro's wordmark and tagline only) is bundled as
+  `ui/public/fonts/inter-intro.woff2`; licence text in
+  `ui/public/fonts/Inter-LICENSE.txt`.
+
 ## Code adapted from other projects
 
 Not dependencies: techniques Cove reimplemented in its own source, credited here.
