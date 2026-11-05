@@ -107,7 +107,7 @@ fn apply_features(app: &AppHandle) {
     clipboard::set_enabled(on && d.clipboard);
     switcher::set_enabled(on && d.switcher);
     snap::configure(on && d.snap, d.snap_animate);
-traffic::refresh();
+    traffic::refresh();
     topbar_apply(app, &d.menu_bar);
     dock_apply(app, &state);
     tray_sync(app);
