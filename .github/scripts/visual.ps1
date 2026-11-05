@@ -93,9 +93,13 @@ Focus $np
 Start-Sleep 2
 Shot "01-notepad-focused"
 
+# Warm the popover page once (its first load is slow on a fresh runner).
+Start-Process $exe.FullName -ArgumentList "--cove-open=cal"; Start-Sleep 4
+Start-Process $exe.FullName -ArgumentList "--cove-open=cal"; Start-Sleep 2
+Focus $np; Start-Sleep 1
 foreach ($k in @("cc", "menu", "wifi")) {
   Start-Process $exe.FullName -ArgumentList "--cove-open=$k"
-  Start-Sleep 3
+  Start-Sleep 4
   Shot "02-$k"
   # Toggle it closed again (same item), then make sure.
   Start-Process $exe.FullName -ArgumentList "--cove-open=$k"

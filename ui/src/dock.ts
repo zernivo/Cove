@@ -442,7 +442,7 @@ if (inTauri) {
     const k = e.payload;
     const cove = dock.querySelector<HTMLElement>('.item[data-k^="cove:"]');
     const first = items.findIndex((i) => i.kind === "pin" || i.kind === "running");
-    const firstEl = first >= 0 ? dock.querySelector<HTMLElement>(`.item[data-k="${keyOf(items[first])}"]`) : null;
+    const firstEl = first >= 0 ? Array.from(dock.querySelectorAll<HTMLElement>(".item")).find((e) => e.dataset.k === keyOf(items[first])) ?? null : null;
     if (k === "cc") popDock("cc", st("cc"));
     else if (k === "wifi") popDock("cc", st("wifi"));
     else if (k === "cal") popDock("cal", st("clock"));

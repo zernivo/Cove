@@ -43,8 +43,8 @@ pub mod backdrop {
     use super::Shape;
     use std::sync::Mutex;
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
-    use windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute;
-    use windows_sys::Win32::Graphics::Gdi::{FillRect, GetStockObject, BLACK_BRUSH, HBRUSH, HDC};
+    use windows_sys::Win32::Graphics::Dwm::{DwmEnableBlurBehindWindow, DwmSetWindowAttribute, DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND};
+    use windows_sys::Win32::Graphics::Gdi::{DeleteObject, FillRect, GetStockObject, BLACK_BRUSH, HBRUSH, HDC};
     use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
     use windows_sys::Win32::UI::Accessibility::{SetWinEventHook, HWINEVENTHOOK};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -100,17 +100,6 @@ pub mod backdrop {
         attrib: u32,
         data: *mut core::ffi::c_void,
         size: usize,
-    }
-    #[repr(C)]
-    struct Margins {
-        l: i32,
-        r: i32,
-        t: i32,
-        b: i32,
-    }
-    #[link(name = "dwmapi")]
-    extern "system" {
-        fn DwmExtendFrameIntoClientArea(hwnd: HWND, m: *const Margins) -> i32;
     }
 
     /// The neutral tint baked into the blur (AABBGGRR). Low alpha so the
@@ -185,8 +174,6 @@ pub mod backdrop {
             dwm_u32(h, 33, 1); // DWMWA_WINDOW_CORNER_PREFERENCE = DONOTROUND
             dwm_u32(h, 34, 0xFFFF_FFFE); // DWMWA_BORDER_COLOR = NONE
             dwm_u32(h, 3, 1); // DWMWA_TRANSITIONS_FORCEDISABLED
-            let m = Margins { l: -1, r: -1, t: -1, b: -1 };
-            DwmExtendFrameIntoClientArea(h, &m);
             let ok = accent(h, DARK.load(std::sync::atomic::Ordering::SeqCst));
             super::log(&format!("glass: backdrop window created (blur-behind {})", if ok { "on" } else { "unavailable" }));
             h as isize
@@ -226,16 +213,33 @@ pub mod backdrop {
             if GetWindowRect(owner, &mut rc) == 0 {
                 return;
             }
-            let (w, hh) = (rc.right - rc.left, rc.bottom - rc.top);
-            let key = (b.shapes.clone(), w, hh);
+            // 1 px inside the painted edge (see the module note).
+            let inset: Vec<Shape> = b.shapes.iter().map(|&(x, y, sw, sh, r)| (x + 1, y + 1, sw - 2, sh - 2, (r - 1).max(0))).collect();
+            // The backdrop window is only as big as the panels' bounding
+            // box: nothing of it can ever reach outside them.
+            let (l, t) = inset.iter().fold((i32::MAX, i32::MAX), |(l, t), s| (l.min(s.0), t.min(s.1)));
+            let (r, bm) = inset.iter().fold((i32::MIN, i32::MIN), |(r, bm), s| (r.max(s.0 + s.2), bm.max(s.1 + s.3)));
+            let (w, hh) = (r - l, bm - t);
+            if w <= 0 || hh <= 0 {
+                return;
+            }
+            let local: Vec<Shape> = inset.iter().map(|&(x, y, sw, sh, rr)| (x - l, y - t, sw, sh, rr)).collect();
+            let key = (local.clone(), w, hh);
             if b.applied.as_ref() != Some(&key) {
-                // 1 px inside the painted edge (see the module note).
-                let inset: Vec<Shape> = b.shapes.iter().map(|&(x, y, sw, sh, r)| (x + 1, y + 1, sw - 2, sh - 2, (r - 1).max(0))).collect();
-                super::round_region(b.hwnd, &inset);
+                // The window region shapes the window; DWM's blur-behind
+                // region shapes the accent's blur and tint (an accent
+                // ignores the window region on its own).
+                super::round_region(b.hwnd, &local);
+                let rgn = super::make_region(&local);
+                if !rgn.is_null() {
+                    let bb = DWM_BLURBEHIND { dwFlags: DWM_BB_ENABLE | DWM_BB_BLURREGION, fEnable: 1, hRgnBlur: rgn, fTransitionOnMaximized: 0 };
+                    DwmEnableBlurBehindWindow(h, &bb);
+                    DeleteObject(rgn);
+                }
                 b.applied = Some(key);
             }
-            // Directly under its window, same rectangle.
-            SetWindowPos(h, owner, rc.left, rc.top, w, hh, SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
+            // Directly under its window.
+            SetWindowPos(h, owner, rc.left + l, rc.top + t, w, hh, SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
         }
     }
 
@@ -303,16 +307,13 @@ pub fn no_dwm_rounding(w: &tauri::WebviewWindow) {
 #[cfg(not(windows))]
 pub fn no_dwm_rounding(_w: &tauri::WebviewWindow) {}
 
-/// Shape a window to the union of rounded rectangles (x, y, w, h, radius;
-/// physical px, window coordinates). Windows owns the region afterwards.
+/// The union of rounded rectangles (x, y, w, h, radius; physical px) as a
+/// GDI region the caller owns (null if empty).
 #[cfg(windows)]
-pub fn round_region(hwnd: isize, shapes: &[(i32, i32, i32, i32, i32)]) {
-    use windows_sys::Win32::Graphics::Gdi::{CombineRgn, CreateRoundRectRgn, DeleteObject, SetWindowRgn, HRGN, RGN_OR};
-    if hwnd == 0 || shapes.is_empty() {
-        return;
-    }
+pub fn make_region(shapes: &[(i32, i32, i32, i32, i32)]) -> windows_sys::Win32::Graphics::Gdi::HRGN {
+    use windows_sys::Win32::Graphics::Gdi::{CombineRgn, CreateRoundRectRgn, DeleteObject, HRGN, RGN_OR};
+    let mut acc: HRGN = std::ptr::null_mut();
     unsafe {
-        let mut acc: HRGN = std::ptr::null_mut();
         for &(x, y, w, h, r) in shapes {
             if w <= 0 || h <= 0 {
                 continue;
@@ -328,6 +329,20 @@ pub fn round_region(hwnd: isize, shapes: &[(i32, i32, i32, i32, i32)]) {
                 DeleteObject(rg);
             }
         }
+    }
+    acc
+}
+
+/// Shape a window to the union of rounded rectangles (x, y, w, h, radius;
+/// physical px, window coordinates). Windows owns the region afterwards.
+#[cfg(windows)]
+pub fn round_region(hwnd: isize, shapes: &[(i32, i32, i32, i32, i32)]) {
+    use windows_sys::Win32::Graphics::Gdi::{DeleteObject, SetWindowRgn};
+    if hwnd == 0 || shapes.is_empty() {
+        return;
+    }
+    let acc = make_region(shapes);
+    unsafe {
         if !acc.is_null() && SetWindowRgn(hwnd as _, acc, 1) == 0 {
             DeleteObject(acc);
         }
