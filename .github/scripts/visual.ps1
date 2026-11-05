@@ -99,7 +99,8 @@ Start-Process $exe.FullName -ArgumentList "--cove-open=cal"; Start-Sleep 2
 Focus $np; Start-Sleep 1
 foreach ($k in @("cc", "menu", "wifi")) {
   Start-Process $exe.FullName -ArgumentList "--cove-open=$k"
-  Start-Sleep 4
+  # Control Centre reads volume, brightness and Wi-Fi first (slow on the runner).
+  Start-Sleep 8
   Shot "02-$k"
   # Toggle it closed again (same item), then make sure.
   Start-Process $exe.FullName -ArgumentList "--cove-open=$k"

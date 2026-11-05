@@ -29,6 +29,37 @@ Labels: **[Apple]** = Apple HIG / WWDC. **[MS]** = Microsoft. **[3p]** = third-p
 
 ---
 
+## 0b. What ships since 2026-11-05: native blur-behind backdrops
+
+The user's test of b44d0c1 showed the two failure modes of the earlier
+recipe on a real Windows 11 PC: DWM's system backdrop (Mica/acrylic via
+`DWMWA_SYSTEMBACKDROP_TYPE`, what `window_vibrancy::apply_acrylic` uses on
+22H2+) is drawn as a **flat grey fallback whenever the window is inactive**,
+and it **ignores `SetWindowRgn`**, so square grey corners stuck out of the
+rounded panels. The wallpaper plate for the dock could read the wrong
+picture (a saturated blue).
+
+Now (`src-tauri/src/glass.rs`, `backdrop`):
+- Every glass panel (dock slab, each menu/submenu, Control Centre, Search)
+  gets its own small native window of Cove's, directly under the Cove
+  window, with `SetWindowCompositionAttribute(ACCENT_ENABLE_ACRYLICBLURBEHIND)`
+  and a neutral low-alpha tint. That accent blurs whether or not the
+  window is active.
+- The accent also ignores window regions (seen on the CI runner), so the
+  backdrop is shaped by **DWM's own anti-aliased corner rounding**
+  (`DWMWCP_ROUND`, 8 DIP) and sits `backdrop::inset(r)` px inside the CSS
+  corner: far enough that the 8 DIP corner lies wholly inside the panel's
+  larger corner. The blur-behind region and (Windows 10) the window region
+  are still set where Windows honours them.
+- The Cove windows stay transparent and unshaped; CSS paints the
+  anti-aliased corner, the neutral tint (`--c-lg-*` in chrome.css), the
+  bright top rim, a soft inner highlight, the glass rim band over the
+  inset (`--c-lg-edge`) and a soft drop shadow (popovers leave 24 DIP of
+  room; a press there closes the popover).
+- Limits: no saturation lift (the accent has none), and on machines with
+  transparency effects off (or VMs without blur, like the CI runner) the
+  accent draws its tint solid.
+
 ## 1. Apple's rules that matter for Cove (from the HIG pages, read 2026-11-03)
 
 **Materials / Liquid Glass** [Apple] https://developer.apple.com/design/human-interface-guidelines/materials
