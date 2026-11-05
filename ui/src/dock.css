@@ -183,6 +183,13 @@ body.tucked .stage { transform: translateY(calc(100% + 4px)); opacity: 0; pointe
 .st[data-k="sound"] .mx { display: none; }
 .st[data-k="sound"].muted .mx { display: inline; }
 .st[data-k="sound"].muted .w1, .st[data-k="sound"].muted .w2, .st[data-k="sound"].low .w2 { display: none; }
+.tpins { display: flex; align-items: center; gap: 1px; }
+.st.tp { min-width: 28px; padding: 0 5px; }
+.st.tp img { width: 17px; height: 17px; object-fit: contain; display: block; }
+.st.tp .tp-letter { width: 16px; height: 16px; border-radius: 4px; display: grid; place-items: center; font-size: 10px; font-weight: 600; background: var(--c-hover); }
+.st.more-st { min-width: 20px; padding: 0 3px; }
+.st.more-st svg { width: 13px; height: 13px; opacity: 0.8; }
+body.compact .tpins .st.tp:nth-child(n+3) { display: none; }
 .batt-st { padding: 0 7px; }
 .batt { width: 22px; height: 11px; border: 1.3px solid currentColor; border-radius: 3.2px; position: relative; box-sizing: border-box; margin-right: 2px; opacity: 0.95; }
 .batt::after { content: ""; position: absolute; right: -3.4px; top: 2.7px; width: 1.6px; height: 3.3px; border-radius: 0 1px 1px 0; background: currentColor; }

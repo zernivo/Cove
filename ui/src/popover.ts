@@ -536,6 +536,12 @@ async function open(kind: Kind, data: unknown): Promise<void> {
       // Wait briefly for the icons so the panel opens at its final size.
       await Promise.race([t, new Promise((r) => setTimeout(r, 120))]);
       show("cc");
+      // The dock's "›" opens Control Centre at "Other apps".
+      if ((data as { focus?: string } | null)?.focus === "tray") {
+        const sec = $("tray");
+        sec.scrollIntoView({ block: "nearest" });
+        sec.querySelector<HTMLElement>(".tray-cell")?.focus({ preventScroll: true });
+      }
       break;
     }
     case "cal": calMonth = q.get("today") ? new Date(q.get("today")!) : new Date(); renderCal(); show("cal"); break;

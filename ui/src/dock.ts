@@ -3,6 +3,7 @@ import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { makePlate, refractionFilter, wallpaperUrl, reducedMotion } from "./glass";
+import { MOCK_STATUS, type TrayStatus, type TrayItem } from "./tray";
 
 interface DockItem { kind: "pin" | "running" | "cove" | "stack" | "trash"; name: string; target: string; windows: number[]; active: boolean; attention?: boolean; icon?: string; no_icon?: boolean; full?: boolean }
 interface MItem { id?: string; label?: string; kbd?: string; check?: boolean; disabled?: boolean; sub?: MItem[]; sep?: boolean; header?: string; count?: string }
@@ -29,6 +30,7 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   }
   if (cmd === "popover_at") (window.parent as Window)?.postMessage({ coveDockMenu: args }, "*");
   if (cmd === "popover_dock") (window.parent as Window)?.postMessage({ coveDockPop: args }, "*");
+  if (cmd === "tray_status") return Promise.resolve((q.get("tray") === "off" ? { ...MOCK_STATUS, mode: "off", items: [] } : MOCK_STATUS) as T);
   if (cmd === "island_state") {
     const b = q.get("batt");
     return Promise.resolve({ battery: b ? { percent: Number(b) || 84, charging: false } : null, volume: 46, muted: false, wifi: q.get("wired") ? null : "Nazeer-5G" } as T);
@@ -379,12 +381,12 @@ function showMenu(it: DockItem, el: HTMLElement): void {
 // (the clock). They stand 8 DIP above the dock, centred on the item, and a
 // second click on the same item closes them. ----
 let popFrom: HTMLElement | null = null;
-function popDock(kind: "cove" | "cc" | "cal", el: HTMLElement): void {
+function popDock(kind: "cove" | "cc" | "cal", el: HTMLElement, data: unknown = null): void {
   const r = el.getBoundingClientRect();
   const top = innerHeight - FLOAT - DOCK_H;
   popFrom = el;
   menuOpen = kind;
-  invoke("popover_dock", { kind, x: r.left + r.width / 2, y: top, data: null }).catch(() => {});
+  invoke("popover_dock", { kind, x: r.left + r.width / 2, y: top, data }).catch(() => {});
   if (!inTauri) showOpen(kind);
 }
 function showOpen(open: string | null): void {
@@ -415,6 +417,7 @@ island.querySelectorAll<HTMLElement>(".st").forEach((b) => {
     if (e.button !== 0) return;
     closeStack();
     if (k === "search") invoke("topbar_open", { what: "search" }).catch(() => {});
+    else if (k === "more") popDock("cc", b, { focus: "tray" });
     else popDock(k === "clock" ? "cal" : "cc", b);
   });
   b.addEventListener("pointerenter", () => tipEnter(b));
@@ -442,6 +445,54 @@ async function refreshIsland(): Promise<void> {
   label("sound", s.volume === null ? "Sound" : s.muted ? "Sound (muted)" : `Sound ${s.volume}%`);
   if (had !== !!b) { measure(); place(); }
 }
+// ---- Pinned tray icons: up to 4 of other apps' tray icons (Discord,
+// Steam...) in their own colours, before Wi-Fi. The pins are the ones the
+// user chose in Control Centre; with none chosen, the first 4 icons. Clicks
+// go to the app exactly as the CC grid sends them (its own menu or window).
+const TRAY_MAX = 4;
+const tpins = document.getElementById("tpins")!;
+let traySig = "";
+function trayPicks(s: TrayStatus): TrayItem[] {
+  if (s.mode === "off") return [];
+  const byKey = new Map(s.items.map((i) => [i.key, i]));
+  const chosen = s.pins.map((k) => byKey.get(k)).filter((i): i is TrayItem => !!i);
+  return (s.pins.length ? chosen : s.items).slice(0, TRAY_MAX);
+}
+async function refreshTray(): Promise<void> {
+  const s = await invoke<TrayStatus>("tray_status").catch(() => null);
+  const picks = s ? trayPicks(s) : [];
+  const more = st("more");
+  const show = !!s && s.mode !== "off" && s.items.length > 0;
+  const nextSig = JSON.stringify([show, picks.map((i) => [i.id, i.icon, i.tip])]);
+  if (nextSig === traySig) return;
+  traySig = nextSig;
+  tpins.innerHTML = "";
+  for (const it of picks) {
+    const b = document.createElement("button");
+    b.className = "st tp";
+    b.setAttribute("aria-label", it.tip || it.name);
+    if (it.icon) {
+      const img = Object.assign(document.createElement("img"), { src: it.icon, alt: "", draggable: false });
+      img.onerror = () => img.replaceWith(Object.assign(document.createElement("span"), { className: "tp-letter", textContent: (it.name || "?").slice(0, 1).toUpperCase() }));
+      b.appendChild(img);
+    } else {
+      b.appendChild(Object.assign(document.createElement("span"), { className: "tp-letter", textContent: (it.name || "?").slice(0, 1).toUpperCase() }));
+    }
+    b.appendChild(Object.assign(document.createElement("span"), { className: "label", textContent: (it.tip || it.name).split("\n")[0] }));
+    const send = (how: "left" | "right" | "double") => { closeStack(); tipLeave(b); invoke("tray_click", { id: it.id, how }).catch(() => {}); };
+    b.addEventListener("click", (e) => { if (e.detail <= 1) send("left"); });
+    b.addEventListener("dblclick", () => send("double"));
+    b.addEventListener("contextmenu", (e) => { e.preventDefault(); send("right"); });
+    b.addEventListener("pointerenter", () => tipEnter(b));
+    b.addEventListener("pointerleave", () => tipLeave(b));
+    tpins.appendChild(b);
+  }
+  tpins.classList.toggle("hidden", picks.length === 0);
+  more.classList.toggle("hidden", !show);
+  measure();
+  place();
+}
+
 function clock(): void {
   const d = new Date();
   const fixed = q.get("clock")?.split("|");
@@ -570,3 +621,6 @@ clock();
 setInterval(clock, 1000);
 refreshIsland();
 setInterval(refreshIsland, 2000);
+refreshTray();
+if (inTauri) listen("tray-changed", refreshTray);
+setInterval(refreshTray, 5000);
