@@ -29,7 +29,8 @@ jobs:
           $env:RUST_BACKTRACE = "full"
           $p = Start-Process $exe.FullName -PassThru -RedirectStandardError err.txt -RedirectStandardOutput out.txt
           Start-Sleep 30
-          "alive after 25s: $(-not $p.HasExited)  exit: $($p.ExitCode)"
+          $alive = -not $p.HasExited
+          "alive after 30s: $alive  exit: $($p.ExitCode)"
           Get-Process | Where-Object { $_.Name -match "cove|msedgewebview2" } | Format-Table Name,Id,MainWindowTitle -AutoSize | Out-String
           "---- stderr"; Get-Content err.txt -ErrorAction SilentlyContinue
           "---- stdout"; Get-Content out.txt -ErrorAction SilentlyContinue
