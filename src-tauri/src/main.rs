@@ -148,7 +148,15 @@ fn show_main(app: &AppHandle) {
 
 /// Cove was opened again while running: bring Settings forward at once and
 /// give a short bounce of Cove's dock icon, so the click visibly did something.
-fn second_launch(app: &AppHandle) {
+fn second_launch(app: &AppHandle, args: &[String]) {
+    // Hidden test hook (the visual CI run): `Cove.exe --cove-open=cc`
+    // opens one of the dock's popovers (cc, wifi, cove, menu, cal) in the
+    // running Cove instead of showing its window.
+    if let Some(kind) = args.iter().find_map(|a| a.strip_prefix("--cove-open=")) {
+        cove_log(app, &format!("debug: open {kind}"));
+        let _ = app.emit_to("dock", "dock-debug-open", kind.to_string());
+        return;
+    }
     show_main(app);
     if let Some(d) = app.get_webview_window("dock") {
         let _ = d.emit("dock-bounce", "cove");
@@ -2709,7 +2717,7 @@ fn main() {
     }
     let app = tauri::Builder::default()
         // Opening Cove again just brings the running copy forward.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| second_launch(app)))
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| second_launch(app, &args)))
         .plugin(tauri_plugin_notification::init())
         // Full-resolution app icons, served from memory (see icons.rs).
         .register_uri_scheme_protocol("coveicon", |_ctx, req| {

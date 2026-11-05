@@ -406,6 +406,22 @@ if (inTauri) {
   });
 }
 
+// Hidden test hook (the visual CI run, `Cove.exe --cove-open=<kind>`):
+// open one of the dock's popovers as a click would.
+if (inTauri) {
+  listen<string>("dock-debug-open", (e) => {
+    const k = e.payload;
+    const cove = dock.querySelector<HTMLElement>('.item[data-k^="cove:"]');
+    const first = items.findIndex((i) => i.kind === "pin" || i.kind === "running");
+    const firstEl = first >= 0 ? dock.querySelector<HTMLElement>(`.item[data-k="${keyOf(items[first])}"]`) : null;
+    if (k === "cc") popDock("cc", st("cc"));
+    else if (k === "wifi") popDock("cc", st("wifi"));
+    else if (k === "cal") popDock("cal", st("clock"));
+    else if (k === "cove" && cove) popDock("cove", cove);
+    else if (k === "menu" && firstEl) showMenu(items[first], firstEl);
+  });
+}
+
 // ---- Status island ----
 interface Island { battery: { percent: number; charging: boolean } | null; volume: number | null; muted: boolean; wifi: string | null }
 const st = (k: string) => island.querySelector<HTMLElement>(`.st[data-k="${k}"]`)!;
