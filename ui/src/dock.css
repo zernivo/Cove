@@ -1,7 +1,9 @@
-/* Cove dock, variant A (user pick 2026-11-04): 48 DIP icons, 66 DIP tall,
-   floating 6 DIP above the bottom edge, radius 18. Liquid Glass: the
-   pre-frosted wallpaper plate lined up with the screen, refracted on a
-   16 DIP edge band, a clear Ink (or paper) tint, rim and shadow. */
+/* Cove dock, variant A proportions at a smaller size (user decision
+   2026-11-05): 40 DIP icons, 56 DIP tall, floating 6 DIP above the bottom
+   edge, radius 15, 8 DIP gaps. Liquid Glass: the pre-frosted wallpaper
+   plate lined up with the screen, refracted on a 13 DIP edge band, a clear
+   Ink (or paper) tint, rim and shadow. The status island (search, Wi-Fi,
+   sound, battery, Control Centre, clock) sits at its right end. */
 html, body {
   margin: 0;
   height: 100%;
@@ -9,7 +11,7 @@ html, body {
   overflow: hidden;
   user-select: none;
   font-family: "Segoe UI Variable Text", "Segoe UI", Inter, system-ui, sans-serif;
-  --size: 48px;
+  --size: 40px;
 }
 .stage {
   position: absolute;
@@ -28,11 +30,11 @@ body.tucked .stage { transform: translateY(calc(100% + 4px)); opacity: 0; pointe
   position: relative;
   display: flex;
   align-items: flex-end;
-  gap: 10px;
-  height: 66px;
+  gap: 8px;
+  height: 56px;
   box-sizing: border-box;
-  padding: 8px 8px 10px;
-  border-radius: var(--r-dock);
+  padding: 7px 8px 9px;
+  border-radius: 15px;
 }
 /* The glass slab: its own layer, so icon motion never repaints the plate. */
 .glass {
@@ -95,7 +97,8 @@ body.tucked .stage { transform: translateY(calc(100% + 4px)); opacity: 0; pointe
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
   color: #ecebe8;
   font-weight: 600;
-  font-size: 19px;
+  font-size: 16px;
+  border-radius: 9px;
 }
 .item .letter.pending { background: rgba(255, 255, 255, 0.1); color: transparent; animation: icon-wait 1.2s ease-in-out infinite alternate; }
 @keyframes icon-wait { from { opacity: 0.45; } to { opacity: 0.8; } }
@@ -120,9 +123,9 @@ body.tucked .stage { transform: translateY(calc(100% + 4px)); opacity: 0; pointe
 .item.leaving .label, .item.leaving .dot { display: none; }
 @keyframes leave { from { width: var(--size); opacity: 1; scale: 1; } to { width: 0; opacity: 0; scale: 0.4; margin: 0 -5px; } }
 
-/* Running dot: 4 DIP, neutral, 4 DIP above the dock's bottom edge. */
+/* Running dot: 4 DIP, neutral, 3 DIP above the dock's bottom edge. */
 .item .dot {
-  position: absolute; left: 50%; bottom: -8px;
+  position: absolute; left: 50%; bottom: -6px;
   width: 4px; height: 4px; margin-left: -2px;
   border-radius: 50%;
   background: var(--c-dot);
@@ -150,11 +153,54 @@ body.tucked .stage { transform: translateY(calc(100% + 4px)); opacity: 0; pointe
   transition: opacity 0.14s ease;
   z-index: 3;
 }
-.item.tip .label { opacity: 1; transition-duration: 0.18s; }
-.item.open .label { opacity: 0 !important; }
+.tip > .label { opacity: 1; transition-duration: 0.18s; }
+.item.open .label, .st.open .label { opacity: 0 !important; }
 
 /* One divider between the apps and Downloads + Bin. */
-.sep { width: 1px; height: 40px; align-self: center; margin: 0 -1px; background: var(--c-divider); flex: none; position: relative; z-index: 1; margin-top: -2px; }
+.sep { width: 1px; height: 32px; align-self: center; margin: 0 -1px; background: var(--c-divider); flex: none; position: relative; z-index: 1; margin-top: -2px; }
+
+/* ---- Status island: 16-18 DIP monochrome line glyphs (the menu bar's),
+   in 30 x 36 hit boxes; the clock is time over a short date. Never
+   magnified: a graphite glass pill on hover, a stronger one while its
+   popover is open, and a press on pointer-down. ---- */
+.island { position: relative; z-index: 1; display: flex; align-items: center; gap: 1px; align-self: center; height: 40px; margin-right: -2px; color: var(--c-text); }
+.st {
+  position: relative; flex: none;
+  height: 36px; min-width: 30px; padding: 0 6px; border: 0; border-radius: 8px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: none; color: inherit; font: inherit; cursor: default;
+  transition: background-color 0.12s ease, box-shadow 0.12s ease, scale 0.1s ease-out;
+}
+.st:hover { background: var(--c-hover); }
+.st.open, .st:active { background: var(--c-hl); box-shadow: var(--c-hl-sheen); }
+.st:active { scale: 0.96; }
+.st:focus-visible { outline: 2px solid var(--c-focus); outline-offset: -2px; }
+.st svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.35; stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
+.st svg .solid { fill: currentColor; stroke: none; }
+.st .label { translate: -50% -8px; }
+.st[data-k="wifi"] .g-net, .st[data-k="wifi"].wired .g-wifi { display: none; }
+.st[data-k="wifi"].wired .g-net { display: inline; }
+.st[data-k="sound"] .mx { display: none; }
+.st[data-k="sound"].muted .mx { display: inline; }
+.st[data-k="sound"].muted .w1, .st[data-k="sound"].muted .w2, .st[data-k="sound"].low .w2 { display: none; }
+.tpins { display: flex; align-items: center; gap: 1px; }
+.st.tp { min-width: 28px; padding: 0 5px; }
+.st.tp img { width: 17px; height: 17px; object-fit: contain; display: block; }
+.st.tp .tp-letter { width: 16px; height: 16px; border-radius: 4px; display: grid; place-items: center; font-size: 10px; font-weight: 600; background: var(--c-hover); }
+.st.more-st { min-width: 20px; padding: 0 3px; }
+.st.more-st svg { width: 13px; height: 13px; opacity: 0.8; }
+body.compact .tpins .st.tp:nth-child(n+3) { display: none; }
+.batt-st { padding: 0 7px; }
+.batt { width: 22px; height: 11px; border: 1.3px solid currentColor; border-radius: 3.2px; position: relative; box-sizing: border-box; margin-right: 2px; opacity: 0.95; }
+.batt::after { content: ""; position: absolute; right: -3.4px; top: 2.7px; width: 1.6px; height: 3.3px; border-radius: 0 1px 1px 0; background: currentColor; }
+.batt .fill { position: absolute; left: 1.2px; top: 1.2px; bottom: 1.2px; border-radius: 1px; background: currentColor; }
+.batt .fill.low { background: #ff6b5f; }
+.batt .fill.charging { background: #34c759; }
+.st.clock { flex-direction: column; align-items: center; gap: 1px; padding: 0 8px; margin-left: 1px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.st.clock .t { font-size: 13px; font-weight: 600; line-height: 15px; letter-spacing: 0.005em; }
+.st.clock .d { font-size: 11px; font-weight: 500; line-height: 13px; opacity: 0.72; letter-spacing: 0.01em; }
+body.compact .st.clock .d { display: none; }
+body.compact .st.clock .t { font-size: 13px; }
 
 /* Folder stack: a solid thick panel above its icon. */
 .item.open::after {
@@ -163,7 +209,7 @@ body.tucked .stage { transform: translateY(calc(100% + 4px)); opacity: 0; pointe
 }
 .stack {
   position: fixed;
-  bottom: 84px;
+  bottom: 76px;
   width: 420px;
   max-height: 330px;
   display: flex;

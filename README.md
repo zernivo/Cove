@@ -1,7 +1,7 @@
 <h1 align="center">Cove</h1>
 <p align="center"><b>Windows, made calm.</b></p>
 
-<p align="center"><img src="docs/images/hero.png" alt="The Cove desktop on Windows 11: a Liquid Glass dock along the bottom edge of a calm wallpaper" width="100%"></p>
+<p align="center"><img src="docs/images/hero.png" alt="The Cove desktop on Windows 11: a Liquid Glass dock with its status island, and Control Centre open above it" width="100%"></p>
 
 <p align="center">
   <a href="https://github.com/zernivo/Cove/releases/latest"><b>Download for Windows 11</b></a> ·

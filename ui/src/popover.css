@@ -72,6 +72,26 @@ body.tick { outline: 1px solid transparent; }
 .menu .header img { width: 14px; height: 14px; object-fit: contain; }
 .menu .row.danger { color: var(--c-danger); }
 
+/* ---- Calendar (the dock clock): today, then the month. Today is a
+   graphite pill, never teal. 7 x 6 cells so the panel never resizes. ---- */
+.cal { width: 268px; padding: 12px 12px 6px; white-space: normal; }
+.cal-today { display: flex; flex-direction: column; gap: 2px; padding: 2px 4px 10px; }
+.cal-today b { font-size: 15px; font-weight: 600; letter-spacing: -0.005em; }
+.cal-today small { font-size: 12px; color: var(--c-muted); }
+.cal-month { display: flex; align-items: center; justify-content: space-between; padding: 0 2px 6px 4px; font-size: 12px; font-weight: 600; }
+.cal-nav { display: flex; gap: 2px; }
+.cal-nav button { width: 24px; height: 22px; border-radius: var(--r-row); display: grid; place-items: center; color: var(--c-muted); }
+.cal-nav button:hover { background: var(--c-hover); color: var(--c-text); }
+.cal-nav svg { width: 13px; height: 13px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); row-gap: 2px; }
+.cal-grid .wd { height: 20px; display: grid; place-items: center; font-size: 10.5px; font-weight: 600; color: var(--c-faint); letter-spacing: 0.02em; }
+.cal-grid .dd { height: 30px; display: grid; place-items: center; font-size: 12.5px; font-variant-numeric: tabular-nums; border-radius: 15px; }
+.cal-grid .dd.out { color: var(--c-faint); }
+.cal-grid .dd.today { background: var(--c-hl); box-shadow: var(--c-hl-sheen); color: var(--c-hl-text); font-weight: 650; }
+.cal-foot { display: flex; justify-content: space-between; gap: 8px; margin: 8px -4px 0; padding: 6px 4px 0; border-top: 1px solid var(--c-sep); }
+.cal-foot .link { font-size: 12px; color: var(--c-muted); padding: 4px 6px; border-radius: var(--r-row); }
+.cal-foot .link:hover { background: var(--c-hover); color: var(--c-text); }
+
 .confirm { width: 300px; padding: 14px; }
 .confirm p { margin: 0 0 14px; font-size: 13px; line-height: 1.42; white-space: normal; }
 .confirm-row { display: flex; justify-content: flex-end; gap: 8px; }

@@ -77,6 +77,11 @@ pub fn sound() -> (Option<u8>, bool) {
     imp::volume()
 }
 
+/// The connected Wi-Fi network's name (starts netsh: call off the UI thread).
+pub fn get_wifi() -> Option<String> {
+    imp::wifi()
+}
+
 pub use imp::{set_brightness, set_dark, set_volume, toggle_mute};
 
 /// Pull the SSID out of `netsh wlan show interfaces` output.

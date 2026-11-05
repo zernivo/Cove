@@ -20,6 +20,24 @@
         <div class="confirm-row"><button id="confirm-no">Cancel</button><button class="primary" id="confirm-yes"></button></div>
       </div>
 
+      <!-- The clock's calendar (from the dock's status island). -->
+      <div class="menu cal hidden" id="cal" role="dialog" aria-label="Calendar">
+        <div class="cal-today"><b id="cal-day"></b><small id="cal-date"></small></div>
+        <div class="cal-month">
+          <span id="cal-title"></span>
+          <span class="cal-nav">
+            <button id="cal-prev" aria-label="Previous month"><svg viewBox="0 0 16 16"><path d="M9.8 3.6L5.4 8l4.4 4.4" /></svg></button>
+            <button id="cal-now" aria-label="This month"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="1.6" class="solid" /></svg></button>
+            <button id="cal-next" aria-label="Next month"><svg viewBox="0 0 16 16"><path d="M6.2 3.6L10.6 8l-4.4 4.4" /></svg></button>
+          </span>
+        </div>
+        <div class="cal-grid" id="cal-grid"></div>
+        <div class="foot cal-foot">
+          <button class="link" id="cal-notes">Notifications</button>
+          <button class="link" id="cal-settings">Date &amp; time settings</button>
+        </div>
+      </div>
+
       <div class="cc hidden" id="cc" role="dialog" aria-label="Control Centre">
         <div class="grid">
           <button class="tog" id="t-wifi" title="Wi-Fi settings" aria-describedby="wifi-name">

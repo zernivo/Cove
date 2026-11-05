@@ -69,7 +69,7 @@ pub fn register(hwnd: isize, edge: u32, monitor: (i32, i32, i32, i32), thickness
     // (once Explorer has applied the new work area).
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(200));
-        imp::refit_maximized(monitor);
+        imp::refit_maximized(Some(monitor));
     });
     rc
 }
@@ -113,12 +113,23 @@ pub fn held(hwnd: isize) -> Option<(i32, i32, i32, i32)> {
 }
 
 /// Give the space back. Safe to call when the bar isn't registered.
+/// When it was, windows that are maximised re-fit the larger work area
+/// (so turning the reserved menu bar off gives maximised apps the full
+/// screen height at once, not on their next resize).
 pub fn unregister(hwnd: isize) {
     imp::unregister(hwnd);
-    if let Ok(mut b) = BARS.lock() {
+    let had = BARS.lock().map(|mut b| {
+        let n = b.len();
         b.retain(|(h, _, _)| *h != hwnd);
-    }
+        n != b.len()
+    });
     save();
+    if had.unwrap_or(false) {
+        std::thread::spawn(|| {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            imp::refit_maximized(None);
+        });
+    }
 }
 
 /// Forget a registration (Explorer restarted and dropped it) so the next
@@ -231,14 +242,15 @@ mod imp {
         1
     }
 
-    /// Re-fit every maximised window on `monitor` to its current work area.
-    /// Asynchronous moves only, so a hung app can't stall Cove.
-    pub fn refit_maximized(monitor: (i32, i32, i32, i32)) {
+    /// Re-fit every maximised window on `monitor` (every monitor for None)
+    /// to its current work area. Asynchronous moves only, so a hung app
+    /// can't stall Cove.
+    pub fn refit_maximized(monitor: Option<(i32, i32, i32, i32)>) {
         let mut hs: Vec<HWND> = Vec::new();
         unsafe { EnumWindows(Some(collect), &mut hs as *mut Vec<HWND> as LPARAM) };
         for h in hs {
             let Some((mon, work)) = mon_info(h) else { continue };
-            if mon != monitor {
+            if monitor.is_some_and(|m| m != mon) {
                 continue;
             }
             let Some(have) = window_rect(h as isize) else { continue };
@@ -261,7 +273,7 @@ mod imp {
     pub fn window_rect(_h: isize) -> Option<(i32, i32, i32, i32)> {
         None
     }
-    pub fn refit_maximized(_m: (i32, i32, i32, i32)) {}
+    pub fn refit_maximized(_m: Option<(i32, i32, i32, i32)>) {}
 }
 
 #[cfg(test)]

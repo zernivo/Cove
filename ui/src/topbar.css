@@ -74,7 +74,11 @@ svg .solid { fill: currentColor; stroke: none; }
 .fill.low { background: #ff6b5f; }
 .fill.charging { background: #34c759; }
 .hidden { display: none !important; }
+/* Top-edge mode: slides down from above the screen and back up the same
+   path (critically damped, no bounce), like the dock from the bottom. */
+.glass, .bar { transition: transform 0.18s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.18s ease; }
+body.tucked .glass, body.tucked .bar { transform: translateY(-100%); opacity: 0; transition-duration: 0.16s; pointer-events: none; }
 @media (prefers-reduced-transparency: reduce) {
   .plate { display: none; }
 }
-@media (prefers-reduced-motion: reduce) { .plate, button { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .plate, button { transition: none; } .glass, .bar { transition: opacity 0.15s ease; } body.tucked .glass, body.tucked .bar { transform: none; } }

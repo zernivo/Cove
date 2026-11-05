@@ -11,6 +11,43 @@
     <div class="stage">
       <div class="dock" id="dock">
         <div class="glass" id="glass"><div class="plate" id="plate"></div><div class="tint"></div></div>
+        <!-- Status island: the menu bar's extras, inside the same glass, at
+             the dock's right end. Monochrome line glyphs; no magnification,
+             a graphite hover pill instead. -->
+        <div class="island" id="island">
+          <button class="st" data-k="search" aria-label="Search">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="6.8" cy="6.8" r="4.6" /><path d="M10.2 10.2l3.9 3.9" /></svg>
+            <span class="label">Search</span>
+          </button>
+          <!-- Up to 4 pinned tray icons (other apps', original colours), then
+               a chevron that opens Control Centre at "Other apps". -->
+          <div class="tpins hidden" id="tpins"></div>
+          <button class="st more-st hidden" data-k="more" aria-label="Other apps">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.2 3.8L10.4 8l-4.2 4.2" /></svg>
+            <span class="label">Other apps</span>
+          </button>
+          <button class="st" data-k="wifi" aria-label="Wi-Fi">
+            <svg class="g-wifi" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.6 6.1a9.4 9.4 0 0 1 12.8 0" /><path d="M3.9 8.5a6.1 6.1 0 0 1 8.2 0" /><path d="M6.2 10.9a2.8 2.8 0 0 1 3.6 0" /><circle cx="8" cy="13" r="0.9" class="solid" /></svg>
+            <svg class="g-net" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.2" y="2.6" width="11.6" height="8" rx="1.6" /><path d="M5.6 13.6h4.8M8 10.6v3" /></svg>
+            <span class="label">Wi-Fi</span>
+          </button>
+          <button class="st" data-k="sound" aria-label="Sound">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path class="solid" d="M2.2 6h2.3l3.2-2.7v9.4L4.5 10H2.2z" /><path class="w1" d="M10 6.2a2.6 2.6 0 0 1 0 3.6" /><path class="w2" d="M11.9 4.4a5.2 5.2 0 0 1 0 7.2" /><path class="mx" d="M10.2 6.2l3.6 3.6M13.8 6.2l-3.6 3.6" /></svg>
+            <span class="label">Sound</span>
+          </button>
+          <button class="st batt-st hidden" data-k="battery" aria-label="Battery">
+            <span class="batt"><span class="fill" id="batt-fill"></span></span>
+            <span class="label">Battery</span>
+          </button>
+          <button class="st" data-k="cc" aria-label="Control Centre">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.4" width="13" height="4.8" rx="2.4" /><rect x="1.5" y="8.8" width="13" height="4.8" rx="2.4" /><circle cx="11.9" cy="4.8" r="1.25" class="solid" /><circle cx="4.1" cy="11.2" r="1.25" class="solid" /></svg>
+            <span class="label">Control Centre</span>
+          </button>
+          <button class="st clock" data-k="clock" aria-label="Date and time">
+            <span class="t" id="clock-t"></span><span class="d" id="clock-d"></span>
+            <span class="label" id="clock-label">Calendar</span>
+          </button>
+        </div>
       </div>
     </div>
     <div class="stack hidden" id="stack"></div>

@@ -71,6 +71,12 @@ $("wifi-btn").addEventListener("pointerdown", (e) => { if (e.button === 0) openP
 $("sound-btn").addEventListener("pointerdown", (e) => { if (e.button === 0) openPopover("cc"); });
 
 if (inTauri) listen<string | null>("popover-state", (e) => { open = e.payload; showOpen(); });
+// "Show at the top edge": the bar is tucked above the screen (and lets
+// clicks through) until the pointer touches the top edge; the app slides it.
+if (inTauri) {
+  listen<boolean>("topbar-slide", (e) => document.body.classList.toggle("tucked", e.payload));
+  listen<string>("topbar-mode", (e) => { document.body.dataset.bar = e.payload; });
+} else if (q.get("tucked")) document.body.classList.add("tucked");
 
 const go = (id: string, what: string) => $(id).addEventListener("click", () => invoke("topbar_open", { what }));
 go("search", "search");

@@ -66,7 +66,7 @@ export async function initTraySetting(invoke: Invoke): Promise<void> {
     toggle.disabled = !takeover;
     note.textContent = !takeover
       ? "The Windows taskbar shows them while it's on."
-      : s.note ?? "Discord, Steam and the rest, in Control Centre while the taskbar is hidden.";
+      : s.note ?? "Discord, Steam and the rest: the first four in the dock, all of them in Control Centre.";
     note.classList.toggle("warn", !!s.note && takeover);
   };
   const takeover = () => !(document.getElementById("dock-taskbar") as HTMLInputElement | null)?.disabled

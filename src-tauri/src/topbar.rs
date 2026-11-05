@@ -24,6 +24,40 @@ pub struct TopState {
     pub muted: bool,
 }
 
+/// What the dock's status island shows: battery (laptops only), sound and
+/// the Wi-Fi network (None on Ethernet or offline).
+#[derive(Debug, Clone, Serialize)]
+pub struct Island {
+    pub battery: Option<Battery>,
+    pub volume: Option<u8>,
+    pub muted: bool,
+    pub wifi: Option<String>,
+}
+
+/// The Wi-Fi name, cached: asking Windows starts netsh, so it's refreshed
+/// at most every 15 s, off the caller's thread (the first call returns None).
+static WIFI: std::sync::Mutex<(Option<String>, Option<std::time::Instant>, bool)> = std::sync::Mutex::new((None, None, false));
+
+fn wifi_cached() -> Option<String> {
+    let Ok(mut g) = WIFI.lock() else { return None };
+    let stale = g.1.map_or(true, |t| t.elapsed() >= std::time::Duration::from_secs(15));
+    if stale && !g.2 {
+        g.2 = true;
+        std::thread::spawn(|| {
+            let v = crate::controls::get_wifi();
+            if let Ok(mut g) = WIFI.lock() {
+                *g = (v, Some(std::time::Instant::now()), false);
+            }
+        });
+    }
+    g.0.clone()
+}
+
+pub fn island() -> Island {
+    let (volume, muted) = crate::controls::sound();
+    Island { battery: imp::battery(), volume, muted, wifi: wifi_cached() }
+}
+
 /// The app in front, as the menu bar names it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Front {

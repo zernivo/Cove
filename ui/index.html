@@ -12,7 +12,7 @@
     <!-- Title bar: Cove's own, no Windows caption. -->
     <header class="titlebar" data-tauri-drag-region>
       <div class="tb-brand" data-tauri-drag-region><img class="tb-mark" src="/cove-mark.png" alt="" />Cove</div>
-      <label class="desk-pill" title="Cove desktop: the dock and menu bar replace the Windows taskbar">
+      <label class="desk-pill" title="Cove desktop: the dock replaces the Windows taskbar">
         <span>Cove desktop</span>
         <span class="switch"><input type="checkbox" role="switch" id="desk-toggle" /><span aria-hidden="true"></span></span>
       </label>
@@ -36,15 +36,31 @@
       <section class="stage" id="stage" aria-hidden="true">
         <div class="mini-wall" id="mini-wall"></div>
         <button class="zone z-menubar" data-scene="menubar" tabindex="-1">
-          <span class="mb-left"><span class="mb-dot"></span><span class="mb-dash"></span><span class="mb-dash short"></span></span>
-          <span class="mb-right" id="mini-clock"></span>
+          <span class="mb-bar">
+            <span class="mb-left"><span class="mb-dot"></span><span class="mb-dash"></span><span class="mb-dash short"></span></span>
+            <span class="mb-right"><span class="mb-dash tiny"></span><span class="mb-dash tiny"></span><span class="mb-dash tiny"></span></span>
+          </span>
+          <span class="mb-state" id="mini-bar-state"></span>
         </button>
         <button class="zone z-desktop" data-scene="desktop" tabindex="-1"></button>
         <button class="zone z-windows" data-scene="windows" tabindex="-1">
           <span class="mini-win a"><i></i></span><span class="mini-win b"><i></i></span>
         </button>
         <div class="mini-search" id="mini-search"><span class="ms-glass"></span>Search apps, files, settings<kbd>Alt</kbd><kbd>Space</kbd></div>
-        <button class="zone z-dock" data-scene="dock" tabindex="-1"><span class="mini-dock" id="mini-dock"><i class="pi s skel"></i><i class="pi s skel"></i><i class="pi s skel"></i><i class="pi s skel"></i><i class="pi s skel"></i><i class="pi s skel"></i></span></button>
+        <button class="zone z-dock" data-scene="dock" tabindex="-1">
+          <span class="mini-dock">
+            <span class="mini-apps" id="mini-dock"><i class="pi s skel"></i><i class="pi s skel"></i><i class="pi s skel"></i><i class="pi s skel"></i><i class="pi s skel"></i><i class="pi s skel"></i></span>
+            <span class="mini-sep"></span>
+            <span class="mini-island" aria-hidden="true">
+              <svg viewBox="0 0 16 16"><circle cx="6.8" cy="6.8" r="4.6" /><path d="M10.2 10.2l3.9 3.9" /></svg>
+              <i class="mini-tray"></i><i class="mini-tray"></i><i class="mini-tray"></i>
+              <svg viewBox="0 0 16 16"><path d="M1.6 6.1a9.4 9.4 0 0 1 12.8 0" /><path d="M3.9 8.5a6.1 6.1 0 0 1 8.2 0" /><path d="M6.2 10.9a2.8 2.8 0 0 1 3.6 0" /></svg>
+              <svg viewBox="0 0 16 16"><path d="M2.2 6h2.3l3.2-2.7v9.4L4.5 10H2.2z" /><path d="M10 6.2a2.6 2.6 0 0 1 0 3.6" /></svg>
+              <svg viewBox="0 0 16 16"><rect x="1.5" y="2.4" width="13" height="4.8" rx="2.4" /><rect x="1.5" y="8.8" width="13" height="4.8" rx="2.4" /></svg>
+              <span class="mini-clock"><b id="mini-clock"></b><small id="mini-date"></small></span>
+            </span>
+          </span>
+        </button>
         <span class="tag" data-for="menubar">Menu bar</span>
         <span class="tag" data-for="desktop">Desktop</span>
         <span class="tag" data-for="windows">Windows</span>
@@ -86,7 +102,7 @@
 
         <div class="scene hidden" id="scene-dock">
           <h1 tabindex="-1">Dock</h1>
-          <p class="lede">Your taskbar, rebuilt. Pinned and open apps, with their real icons.</p>
+          <p class="lede">Your taskbar, rebuilt. Pinned and open apps with their real icons, and at the right end a few tray icons, Wi-Fi, sound, battery, Control Centre and the time. Click the Cove icon for the Cove menu.</p>
           <div class="group">
             <div class="row"><div class="label"><h2>Show the dock</h2><p class="note" id="dock-note"></p></div><label class="switch"><input type="checkbox" role="switch" id="dock-toggle" /><span aria-hidden="true"></span></label></div>
             <div class="row col"><div class="label"><h2>Hide the dock</h2><p class="note">The dock never takes space from your apps unless you choose Never. It comes back when you touch the bottom edge.</p></div><div class="seg" id="dock-hide"></div></div>
@@ -104,9 +120,9 @@
 
         <div class="scene hidden" id="scene-menubar">
           <h1 tabindex="-1">Menu bar</h1>
-          <p class="lede">The app you're in, the time, Wi-Fi, sound and battery, along the top.</p>
+          <p class="lede">The app you're in and its menus, along the top. Off by default: the dock already shows the time, Wi-Fi, sound and Control Centre.</p>
           <div class="group">
-            <div class="row"><div class="label"><h2>Show the menu bar</h2><p class="note" id="topbar-note"></p></div><label class="switch"><input type="checkbox" role="switch" id="topbar-toggle" /><span aria-hidden="true"></span></label></div>
+            <div class="row col"><div class="label"><h2>Menu bar</h2><p class="note" id="menubar-note"></p></div><div class="seg" id="menubar-mode" role="radiogroup" aria-label="Menu bar"></div></div>
           </div>
           <div class="group">
             <div class="row col"><div class="label"><h2>Your screens</h2><p class="note" id="displays-note">Cove sizes itself to each screen's scaling.</p></div><div class="seg" id="displays" role="list" aria-label="Screens"></div></div>

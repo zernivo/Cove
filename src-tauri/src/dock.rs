@@ -375,6 +375,22 @@ pub fn insert_cove(items: &mut Vec<DockItem>, cove: DockItem) {
     items.insert(at, cove);
 }
 
+/// A window rectangle `r` is "fullscreen" on monitor `m` when it covers the
+/// whole monitor and isn't simply a maximised window with a title bar
+/// (pure: unit-tested). With the taskbar hidden, a maximised window covers
+/// the monitor too, but keeps its caption and IsZoomed; a video in
+/// fullscreen, a browser after F11 or a borderless game does not.
+pub fn is_fullscreen(r: (i32, i32, i32, i32), m: (i32, i32, i32, i32), zoomed: bool, caption: bool) -> bool {
+    let covers = r.0 <= m.0 && r.1 <= m.1 && r.2 >= m.2 && r.3 >= m.3;
+    covers && !(zoomed && caption)
+}
+
+/// The foreground window is fullscreen on monitor `m` (its full rectangle):
+/// the dock and the menu bar stay hidden and their edge reveal is off.
+pub fn fullscreen_on(m: (i32, i32, i32, i32)) -> bool {
+    imp::foreground_fullscreen() == Some(m)
+}
+
 pub use imp::{
     activate, bin_empty, close_windows, cursor, foreground, minimize, monitor_at, overlaps, taskbar_autohide, taskbar_is_visible,
     taskbar_visible, windows, tile, work_area, zoom,
@@ -749,6 +765,53 @@ mod imp {
         }
     }
 
+    /// The monitor (full rectangle) on which the foreground window is
+    /// fullscreen, if it is: a window covering its monitor without being a
+    /// captioned maximised window, or Windows reporting a Direct3D
+    /// exclusive-fullscreen app or presentation mode. Never the desktop,
+    /// Explorer's shell windows or Cove's own windows.
+    pub fn foreground_fullscreen() -> Option<(i32, i32, i32, i32)> {
+        use windows_sys::Win32::Graphics::Gdi::MonitorFromWindow;
+        use windows_sys::Win32::UI::Shell::SHQueryUserNotificationState;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{IsZoomed, GWL_STYLE, WS_CAPTION};
+        unsafe {
+            let h = GetForegroundWindow();
+            if h.is_null() || IsIconic(h) != 0 || IsWindowVisible(h) == 0 {
+                return None;
+            }
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(h, &mut pid);
+            if pid == GetCurrentProcessId() {
+                return None;
+            }
+            let mut cls = [0u16; 64];
+            let n = GetClassNameW(h, cls.as_mut_ptr(), 64);
+            let class = String::from_utf16_lossy(&cls[..n.max(0) as usize]);
+            if matches!(class.as_str(), "Progman" | "WorkerW" | "Shell_TrayWnd" | "Shell_SecondaryTrayWnd") {
+                return None;
+            }
+            let hm = MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST);
+            let mut mi: MONITORINFO = std::mem::zeroed();
+            mi.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+            if GetMonitorInfoW(hm, &mut mi) == 0 {
+                return None;
+            }
+            let m = (mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right, mi.rcMonitor.bottom);
+            // QUNS_RUNNING_D3D_FULL_SCREEN (3) / QUNS_PRESENTATION_MODE (4).
+            let mut quns: i32 = 0;
+            if SHQueryUserNotificationState(&mut quns as *mut i32 as *mut _) == 0 && (quns == 3 || quns == 4) {
+                return Some(m);
+            }
+            let mut r: RECT = std::mem::zeroed();
+            if GetWindowRect(h, &mut r) == 0 {
+                return None;
+            }
+            let style = GetWindowLongW(h, GWL_STYLE) as u32;
+            let caption = style & WS_CAPTION == WS_CAPTION;
+            super::is_fullscreen((r.left, r.top, r.right, r.bottom), m, IsZoomed(h) != 0, caption).then_some(m)
+        }
+    }
+
     pub fn cursor() -> Option<(i32, i32)> {
         let mut p = POINT { x: 0, y: 0 };
         (unsafe { GetCursorPos(&mut p) } != 0).then_some((p.x, p.y))
@@ -847,6 +910,9 @@ mod imp {
         false
     }
     pub fn wait_for_exit(_pid: u32) {}
+    pub fn foreground_fullscreen() -> Option<(i32, i32, i32, i32)> {
+        None
+    }
     pub fn cursor() -> Option<(i32, i32)> {
         None
     }
@@ -899,6 +965,23 @@ mod tests {
         let mut b = vec![1, 2, 3];
         prune_attention(&mut b, &[1, 2], 2);
         assert_eq!(b, vec![1]);
+    }
+
+    #[test]
+    fn fullscreen_is_not_maximised() {
+        let m = (0, 0, 1920, 1080);
+        // A video or game covering the monitor exactly.
+        assert!(super::is_fullscreen((0, 0, 1920, 1080), m, false, false));
+        // A browser after F11 keeps its styles but isn't zoomed.
+        assert!(super::is_fullscreen((0, 0, 1920, 1080), m, false, true));
+        // Maximised with a title bar (taskbar hidden): its frame hangs over
+        // the edges, but it's not fullscreen.
+        assert!(!super::is_fullscreen((-8, -8, 1928, 1088), m, true, true));
+        // A borderless "maximised" game is.
+        assert!(super::is_fullscreen((0, 0, 1920, 1080), m, true, false));
+        // Not covering the monitor.
+        assert!(!super::is_fullscreen((0, 40, 1920, 1080), m, false, false));
+        assert!(!super::is_fullscreen((1920, 0, 3840, 1080), m, false, false));
     }
 
     #[test]
