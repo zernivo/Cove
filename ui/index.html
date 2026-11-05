@@ -14,13 +14,13 @@
       <div class="tb-brand" data-tauri-drag-region><img class="tb-mark" src="/cove-mark.png" alt="" />Cove</div>
       <label class="desk-pill" title="Cove desktop: the dock and menu bar replace the Windows taskbar">
         <span>Cove desktop</span>
-        <span class="switch"><input type="checkbox" id="desk-toggle" /><span></span></span>
+        <span class="switch"><input type="checkbox" role="switch" id="desk-toggle" /><span aria-hidden="true"></span></span>
       </label>
       <div class="tb-right">
-        <button class="tb-about" id="about-open" title="About Cove and updates"><span id="status">…</span><span class="dot hidden" id="update-dot"></span></button>
-        <button class="cap" id="cap-min" aria-label="Minimise"><svg viewBox="0 0 10 10"><path d="M1 5h8" /></svg></button>
-        <button class="cap" id="cap-max" aria-label="Maximise"><svg viewBox="0 0 10 10"><rect x="1.5" y="1.5" width="7" height="7" rx="1" /></svg></button>
-        <button class="cap close" id="cap-close" aria-label="Close"><svg viewBox="0 0 10 10"><path d="M2 2l6 6M8 2l-6 6" /></svg></button>
+        <button class="tb-about" id="about-open" title="About Cove and updates"><span id="status">About Cove</span><span class="dot hidden" id="update-dot" role="img" aria-label="Update available"></span></button>
+        <button class="cap" id="cap-min" aria-label="Minimise"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 5h8" /></svg></button>
+        <button class="cap" id="cap-max" aria-label="Maximise"><svg viewBox="0 0 10 10" aria-hidden="true"><rect x="1.5" y="1.5" width="7" height="7" rx="1" /></svg></button>
+        <button class="cap close" id="cap-close" aria-label="Close"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" /></svg></button>
       </div>
     </header>
 
@@ -31,18 +31,20 @@
 
     <main class="stage-wrap">
       <!-- Your desktop, in miniature: click the part you want to change. -->
-      <section class="stage" id="stage" aria-label="Your desktop">
+      <!-- Mouse shortcut to the scenes below; keyboard users get the scene bar, so the
+           miniature stays out of the tab order and the accessibility tree. -->
+      <section class="stage" id="stage" aria-hidden="true">
         <div class="mini-wall" id="mini-wall"></div>
-        <button class="zone z-menubar" data-scene="menubar">
+        <button class="zone z-menubar" data-scene="menubar" tabindex="-1">
           <span class="mb-left"><span class="mb-dot"></span><span class="mb-dash"></span><span class="mb-dash short"></span></span>
           <span class="mb-right" id="mini-clock"></span>
         </button>
-        <button class="zone z-desktop" data-scene="desktop" aria-label="Desktop"></button>
-        <button class="zone z-windows" data-scene="windows" aria-label="Windows">
+        <button class="zone z-desktop" data-scene="desktop" tabindex="-1"></button>
+        <button class="zone z-windows" data-scene="windows" tabindex="-1">
           <span class="mini-win a"><i></i></span><span class="mini-win b"><i></i></span>
         </button>
         <div class="mini-search" id="mini-search"><span class="ms-glass"></span>Search apps, files, settings<kbd>Alt</kbd><kbd>Space</kbd></div>
-        <button class="zone z-dock" data-scene="dock" aria-label="Dock"><span class="mini-dock" id="mini-dock"></span></button>
+        <button class="zone z-dock" data-scene="dock" tabindex="-1"><span class="mini-dock" id="mini-dock"><i class="pi s skel"></i><i class="pi s skel"></i><i class="pi s skel"></i><i class="pi s skel"></i><i class="pi s skel"></i><i class="pi s skel"></i></span></button>
         <span class="tag" data-for="menubar">Menu bar</span>
         <span class="tag" data-for="desktop">Desktop</span>
         <span class="tag" data-for="windows">Windows</span>
@@ -53,11 +55,11 @@
       <!-- The scene's settings. Every control applies at once. -->
       <section class="panel" id="panel">
         <div class="scene" id="scene-desktop">
-          <h1>Desktop</h1>
+          <h1 tabindex="-1">Desktop</h1>
           <p class="lede">Wallpaper and the look of everything Cove draws.</p>
           <div class="group gallery" id="gallery">
             <div class="gal-head"><h2>Wallpaper</h2><div class="seg" id="gal-mode" role="radiogroup" aria-label="Dark or light wallpapers"></div></div>
-            <div class="gal-chips" id="gal-chips" role="tablist" aria-label="Wallpaper categories"></div>
+            <div class="gal-chips" id="gal-chips" role="radiogroup" aria-label="Wallpaper categories"></div>
             <div class="gal-grid" id="walls" role="listbox" aria-label="Wallpapers"></div>
             <div class="gal-foot">
               <p class="note" id="wall-note">Photos load from free-licence libraries when you pick one, and stay credited. Cove's own art ships with the app.</p>
@@ -76,82 +78,82 @@
           <div class="group">
             <div class="row"><div class="label"><h2>Light and dark on a schedule</h2><p class="note" id="sched-note"></p></div><div class="seg" id="sched-mode"></div></div>
             <div class="row sched-times" id="sched-times">
-              <label>Light at <input type="time" id="sched-light" /></label>
-              <label>Dark at <input type="time" id="sched-dark" /></label>
+              <label class="time"><span>Light at</span><input type="time" id="sched-light" /></label>
+              <label class="time"><span>Dark at</span><input type="time" id="sched-dark" /></label>
             </div>
           </div>
         </div>
 
         <div class="scene hidden" id="scene-dock">
-          <h1>Dock</h1>
+          <h1 tabindex="-1">Dock</h1>
           <p class="lede">Your taskbar, rebuilt. Pinned and open apps, with their real icons.</p>
           <div class="group">
-            <div class="row"><div class="label"><h2>Show the dock</h2><p class="note" id="dock-note"></p></div><label class="switch"><input type="checkbox" id="dock-toggle" /><span></span></label></div>
+            <div class="row"><div class="label"><h2>Show the dock</h2><p class="note" id="dock-note"></p></div><label class="switch"><input type="checkbox" role="switch" id="dock-toggle" /><span aria-hidden="true"></span></label></div>
             <div class="row col"><div class="label"><h2>Hide the dock</h2><p class="note">The dock never takes space from your apps unless you choose Never. It comes back when you touch the bottom edge.</p></div><div class="seg" id="dock-hide"></div></div>
-            <div class="row"><div class="label"><h2>Hide the Windows taskbar</h2><p class="note">While the dock is on. It comes back the moment you turn Cove off or quit.</p></div><label class="switch"><input type="checkbox" id="dock-taskbar" /><span></span></label></div>
+            <div class="row"><div class="label"><h2>Hide the Windows taskbar</h2><p class="note">While the dock is on. It comes back the moment you turn Cove off or quit.</p></div><label class="switch"><input type="checkbox" role="switch" id="dock-taskbar" /><span aria-hidden="true"></span></label></div>
           </div>
           <div class="group">
-            <div class="row col"><div class="label"><h2>Pinned apps</h2><p class="note">Brought over from your taskbar. Right-click an app in the dock to keep or remove it.</p></div><div class="pins" id="dock-pins"></div></div>
+            <div class="row col"><div class="label"><h2>Pinned apps</h2><p class="note">Brought over from your taskbar. Right-click an app in the dock to keep or remove it.</p></div><div class="pins" id="dock-pins" role="list" aria-label="Pinned apps" aria-busy="true"><i class="pi m skel"></i><i class="pi m skel"></i><i class="pi m skel"></i><i class="pi m skel"></i><i class="pi m skel"></i><i class="pi m skel"></i><i class="pi m skel"></i></div></div>
             <div class="row"><div class="label"><h2>Folders</h2></div><div class="seg multi" id="dock-stacks"></div></div>
             <div class="row"><div class="label"><h2>With more than one screen</h2></div><div class="seg" id="dock-display"></div></div>
           </div>
         </div>
 
         <div class="scene hidden" id="scene-menubar">
-          <h1>Menu bar</h1>
+          <h1 tabindex="-1">Menu bar</h1>
           <p class="lede">The app you're in, the time, Wi-Fi, sound and battery, along the top.</p>
           <div class="group">
-            <div class="row"><div class="label"><h2>Show the menu bar</h2><p class="note" id="topbar-note"></p></div><label class="switch"><input type="checkbox" id="topbar-toggle" /><span></span></label></div>
+            <div class="row"><div class="label"><h2>Show the menu bar</h2><p class="note" id="topbar-note"></p></div><label class="switch"><input type="checkbox" role="switch" id="topbar-toggle" /><span aria-hidden="true"></span></label></div>
           </div>
           <div class="group">
-            <div class="row col"><div class="label"><h2>Your screens</h2><p class="note" id="displays-note">Cove sizes itself to each screen's scaling.</p></div><div class="seg" id="displays"></div></div>
+            <div class="row col"><div class="label"><h2>Your screens</h2><p class="note" id="displays-note">Cove sizes itself to each screen's scaling.</p></div><div class="seg" id="displays" role="list" aria-label="Screens"></div></div>
           </div>
         </div>
 
         <div class="scene hidden" id="scene-windows">
-          <h1>Windows</h1>
+          <h1 tabindex="-1">Windows</h1>
           <p class="lede">Switching between apps and putting windows where you want them.</p>
           <div class="group">
-            <div class="row"><div class="label"><h2>App switcher</h2><p class="note" id="sw-note"></p></div><label class="switch"><input type="checkbox" id="sw-toggle" /><span></span></label></div>
-            <div class="row"><div class="label"><h2>Snap windows</h2><p class="note" id="snap-note"></p></div><label class="switch"><input type="checkbox" id="snap-toggle" /><span></span></label></div>
-            <div class="row" id="snap-anim-row"><div class="label"><h2>Glide into place</h2></div><label class="switch"><input type="checkbox" id="snap-animate" /><span></span></label></div>
+            <div class="row"><div class="label"><h2>App switcher</h2><p class="note" id="sw-note"></p></div><label class="switch"><input type="checkbox" role="switch" id="sw-toggle" /><span aria-hidden="true"></span></label></div>
+            <div class="row"><div class="label"><h2>Snap windows</h2><p class="note" id="snap-note"></p></div><label class="switch"><input type="checkbox" role="switch" id="snap-toggle" /><span aria-hidden="true"></span></label></div>
+            <div class="row" id="snap-anim-row"><div class="label"><h2>Glide into place</h2></div><label class="switch"><input type="checkbox" role="switch" id="snap-animate" /><span aria-hidden="true"></span></label></div>
           </div>
           <div class="keys" id="snap-list"></div>
         </div>
 
         <div class="scene hidden" id="scene-keys">
-          <h1>Keys</h1>
+          <h1 tabindex="-1">Keys</h1>
           <p class="lede">Mac habits on your keyboard. They work while Cove is running.</p>
           <div class="group">
-            <div class="row"><div class="label"><h2>Search</h2><p class="note" id="search-note"></p></div><label class="switch"><input type="checkbox" id="search-toggle" /><span></span></label></div>
-            <div class="row"><div class="label"><h2>Search inside files</h2><p class="note" id="wi-note"></p></div><label class="switch"><input type="checkbox" id="wi-toggle" /><span></span></label></div>
-            <div class="row"><div class="label"><h2>Clipboard history</h2><p class="note" id="clip-note"></p></div><label class="switch"><input type="checkbox" id="clip-toggle" /><span></span></label></div>
+            <div class="row"><div class="label"><h2>Search</h2><p class="note" id="search-note"></p></div><label class="switch"><input type="checkbox" role="switch" id="search-toggle" /><span aria-hidden="true"></span></label></div>
+            <div class="row"><div class="label"><h2>Search inside files</h2><p class="note" id="wi-note"></p></div><label class="switch"><input type="checkbox" role="switch" id="wi-toggle" /><span aria-hidden="true"></span></label></div>
+            <div class="row"><div class="label"><h2>Clipboard history</h2><p class="note" id="clip-note"></p></div><label class="switch"><input type="checkbox" role="switch" id="clip-toggle" /><span aria-hidden="true"></span></label></div>
           </div>
           <div class="group">
-            <div class="row"><div class="label"><h2>Window shortcuts</h2><p class="note" id="hk-note"></p></div><label class="switch"><input type="checkbox" id="hk-toggle" /><span></span></label></div>
+            <div class="row"><div class="label"><h2>Window shortcuts</h2><p class="note" id="hk-note"></p></div><label class="switch"><input type="checkbox" role="switch" id="hk-toggle" /><span aria-hidden="true"></span></label></div>
             <div class="keys" id="hk-list"></div>
           </div>
         </div>
 
         <div class="scene hidden" id="scene-quiet">
-          <h1>Quiet</h1>
+          <h1 tabindex="-1">Quiet</h1>
           <p class="lede">Turn off the parts of Windows that get in the way. Each one is recorded and can be put back.</p>
           <div class="group" id="calm-list"></div>
           <div class="group">
-            <div class="row"><div class="label"><h2>Safe mode</h2><p class="note">Pauses everything Cove does without changing your settings. Hold Shift while Cove starts to open in safe mode.</p></div><label class="switch"><input type="checkbox" id="safe-toggle" /><span></span></label></div>
+            <div class="row"><div class="label"><h2>Safe mode</h2><p class="note">Pauses everything Cove does without changing your settings. Hold Shift while Cove starts to open in safe mode.</p></div><label class="switch"><input type="checkbox" role="switch" id="safe-toggle" /><span aria-hidden="true"></span></label></div>
             <div class="row"><div class="label"><h2>Back to stock Windows</h2><p class="note" id="journal-count"></p></div><button class="btn danger" id="restore-btn">Restore everything</button></div>
           </div>
         </div>
       </section>
     </main>
 
-    <nav class="scenes" id="scenes" aria-label="Settings">
-      <button data-scene="desktop" class="on"><svg viewBox="0 0 20 20"><rect x="2.5" y="3.5" width="15" height="10" rx="2" /><path d="M7 16.5h6" /></svg>Desktop</button>
-      <button data-scene="dock"><svg viewBox="0 0 20 20"><rect x="2.5" y="11.5" width="15" height="5" rx="2.5" /><path d="M6 14h.01M10 14h.01M14 14h.01" /></svg>Dock</button>
-      <button data-scene="menubar"><svg viewBox="0 0 20 20"><path d="M3 4.5h14M3 9h9M3 13.5h6" /></svg>Menu bar</button>
-      <button data-scene="windows"><svg viewBox="0 0 20 20"><rect x="2.5" y="3.5" width="10" height="8" rx="1.5" /><rect x="7.5" y="8.5" width="10" height="8" rx="1.5" /></svg>Windows</button>
-      <button data-scene="keys"><svg viewBox="0 0 20 20"><rect x="2.5" y="5.5" width="15" height="9" rx="2" /><path d="M6 10.5h8" /></svg>Keys</button>
-      <button data-scene="quiet"><svg viewBox="0 0 20 20"><path d="M15.5 12.5A6.5 6.5 0 0 1 7.5 4.5a6.5 6.5 0 1 0 8 8z" /></svg>Quiet</button>
+    <nav class="scenes" id="scenes" aria-label="Settings scenes">
+      <button data-scene="desktop" class="on" aria-current="page"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="10" rx="2" /><path d="M7 16.5h6" /></svg>Desktop</button>
+      <button data-scene="dock"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="11.5" width="15" height="5" rx="2.5" /><path d="M6 14h.01M10 14h.01M14 14h.01" /></svg>Dock</button>
+      <button data-scene="menubar"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 4.5h14M3 9h9M3 13.5h6" /></svg>Menu bar</button>
+      <button data-scene="windows"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3.5" width="10" height="8" rx="1.5" /><rect x="7.5" y="8.5" width="10" height="8" rx="1.5" /></svg>Windows</button>
+      <button data-scene="keys"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="5.5" width="15" height="9" rx="2" /><path d="M6 10.5h8" /></svg>Keys</button>
+      <button data-scene="quiet"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 12.5A6.5 6.5 0 0 1 7.5 4.5a6.5 6.5 0 1 0 8 8z" /></svg>Quiet</button>
     </nav>
 
     <!-- About: version, updates, tour, intro. -->
@@ -160,8 +162,8 @@
         <img class="about-mark" src="/cove-mark.png" alt="" />
         <h1 id="about-title">Cove</h1>
         <p class="note" id="up-title"></p>
-        <p class="note" id="up-note">Checking…</p>
-        <div class="progress hidden" id="up-progress"><span id="up-bar"></span></div>
+        <p class="note" id="up-note" aria-live="polite">Checking…</p>
+        <div class="progress hidden" id="up-progress" role="progressbar" aria-label="Update download" aria-valuemin="0" aria-valuemax="100"><span id="up-bar"></span></div>
         <div class="notes hidden" id="up-notes"></div>
         <div class="sheet-actions">
           <button class="btn ghost" id="up-check">Check for updates</button>
@@ -175,17 +177,17 @@
       </div>
     </div>
 
-    <div class="toast hidden" id="toast"></div>
+    <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
     <div class="tour hidden" id="tour" role="dialog" aria-modal="true" aria-labelledby="tour-title">
       <div class="tour-card">
-        <div class="tour-dots" id="tour-dots"></div>
-        <div class="tour-keys" id="tour-keys"></div>
+        <div class="tour-dots" id="tour-dots" role="img"></div>
+        <div class="tour-keys" id="tour-keys" aria-hidden="true"></div>
         <h1 id="tour-title"></h1>
         <p class="tour-body" id="tour-body"></p>
         <div class="tour-extra" id="tour-extra"></div>
-        <p class="tour-done hidden" id="tour-check">✓ Nice, that's it.</p>
+        <p class="tour-done hidden" id="tour-check" role="status">✓ Nice, that's it.</p>
         <div class="tour-actions">
-          <button class="btn ghost" id="tour-skip">Skip tour</button>
+          <button class="btn ghost skip" id="tour-skip">Skip tour</button>
           <span class="tour-spacer"></span>
           <button class="btn link hidden" id="tour-back">Back</button>
           <button class="btn ghost hidden" id="tour-enable">Turn it on</button>
@@ -193,6 +195,23 @@
         </div>
       </div>
     </div>
+    <script>
+      // Show the last scene before the first paint, so opening Settings never
+      // flashes the Desktop scene first. main.ts takes over from here.
+      (function () {
+        var alias = { calm: "quiet", habits: "keys", look: "desktop", restore: "quiet", topbar: "menubar" };
+        var sc = localStorage.getItem("cove.scene") || "desktop";
+        sc = alias[sc] || sc;
+        if (!document.getElementById("scene-" + sc)) return;
+        document.querySelectorAll(".scene").forEach(function (el) { el.classList.toggle("hidden", el.id !== "scene-" + sc); });
+        document.querySelectorAll("#scenes button").forEach(function (b) {
+          var on = b.getAttribute("data-scene") === sc;
+          b.classList.toggle("on", on);
+          if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+        });
+        document.getElementById("stage").setAttribute("data-scene", sc);
+      })();
+    </script>
     <script type="module" src="./src/main.ts"></script>
   </body>
 </html>
