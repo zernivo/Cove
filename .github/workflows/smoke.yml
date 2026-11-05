@@ -1,7 +1,5 @@
 name: Smoke launch
 on:
-  push:
-    branches: [smoke-launch, fix-launch]
   workflow_dispatch:
 jobs:
   smoke:
