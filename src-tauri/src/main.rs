@@ -107,8 +107,8 @@ fn apply_features(app: &AppHandle) {
     clipboard::set_enabled(on && d.clipboard);
     switcher::set_enabled(on && d.switcher);
     snap::configure(on && d.snap, d.snap_animate);
-    traffic::refresh();
-    topbar_apply(app, d.topbar);
+traffic::refresh();
+    topbar_apply(app, &d.menu_bar);
     dock_apply(app, &state);
     tray_sync(app);
     let _ = app.emit("safe-changed", safe());
@@ -238,14 +238,14 @@ fn restore_all(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<Rest
     dock_release(&app);
     let had_bar = state.settings.lock().map(|mut s| {
         let was = s.data.topbar;
-        s.data.topbar = false;
+        s.data.set_menu_bar("off");
         let _ = s.save();
         was
     }).unwrap_or(false);
     if had_bar {
         report.features += 1;
     }
-    topbar_apply(&app, false);
+    topbar_apply(&app, "off");
     let had_switcher = state.settings.lock().map(|mut s| {
         let was = s.data.switcher;
         s.data.switcher = false;
@@ -280,34 +280,157 @@ fn restore_all(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<Rest
 
 // ---- Cove top bar ----
 
-/// Menu bar height in DIP (macOS: 24 pt). The reserved AppBar strip is
-/// exactly this, scaled to the main display; topbar.css/ts use the same 25.
+/// Menu bar height in DIP (macOS: 24 pt). With "Always" the reserved
+/// AppBar strip is exactly this, scaled to the main display; topbar.css/ts
+/// use the same 24.
 const TOPBAR_HEIGHT: f64 = 24.0;
 
-fn topbar_apply(app: &AppHandle, on: bool) {
-    let on = on && !safe();
+/// The menu bar's mode now: 0 off, 1 top edge (hidden until the pointer
+/// touches the top 2 DIP; reserves nothing), 2 always (reserved strip).
+/// Read by topbar_edge_watch.
+static BAR_MODE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+/// Where the bar window sits in "top edge" mode (physical px), unreserved.
+static BAR_STRIP: Mutex<Option<(i32, i32, i32, i32)>> = Mutex::new(None);
+
+fn bar_mode_code(mode: &str) -> u8 {
+    match mode {
+        "edge" => 1,
+        "always" => 2,
+        _ => 0,
+    }
+}
+
+/// Show the menu bar the way `mode` asks ("off", "edge" or "always").
+/// Only "always" reserves the top of the screen; "off" and "edge" leave
+/// the work area alone, so maximised windows get the full height.
+fn topbar_apply(app: &AppHandle, mode: &str) {
+    let mode = if safe() { "off" } else { mode };
     let Some(w) = app.get_webview_window("topbar") else { return };
     let Ok(hwnd) = w.hwnd() else { return };
     let h = hwnd.0 as isize;
-    if on {
-        // The bar lives on the main display, so use that display's scale.
-        let sf = app
-            .primary_monitor()
-            .ok()
-            .flatten()
-            .map(|m| m.scale_factor())
-            .unwrap_or_else(|| w.scale_factor().unwrap_or(1.0));
-        // The bar sits on exactly the strip ABM_SETPOS returned: the
-        // monitor's top edge. Placed with a synchronous SetWindowPos after
-        // showing (tao's own moves are asynchronous and in its coordinates),
-        // and checked again by display_watch.
-        let rc = topbar::register(h, (TOPBAR_HEIGHT * sf).round() as i32);
-        let _ = w.show();
-        appbar::place(h, rc);
-    } else {
-        topbar::unregister(h);
-        let _ = w.hide();
-        popover_close(app);
+    // The bar lives on the main display, so use that display's scale.
+    let sf = app
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .map(|m| m.scale_factor())
+        .unwrap_or_else(|| w.scale_factor().unwrap_or(1.0));
+    let thick = (TOPBAR_HEIGHT * sf).round() as i32;
+    let code = bar_mode_code(mode);
+    BAR_MODE.store(code, std::sync::atomic::Ordering::SeqCst);
+    let _ = w.emit("topbar-mode", mode);
+    match code {
+        2 => {
+            if let Ok(mut b) = BAR_STRIP.lock() {
+                *b = None;
+            }
+            // The bar sits on exactly the strip ABM_SETPOS returned: the
+            // monitor's top edge. Placed with a synchronous SetWindowPos
+            // after showing (tao's own moves are asynchronous and in its
+            // coordinates), and checked again by display_watch.
+            let rc = topbar::register(h, thick);
+            let _ = w.set_ignore_cursor_events(false);
+            let _ = w.emit("topbar-slide", false);
+            let _ = w.show();
+            appbar::place(h, rc);
+        }
+        1 => {
+            // Nothing reserved: the bar floats over the top of the screen,
+            // tucked away (and click-through) until the pointer reaches
+            // the top edge (topbar_edge_watch).
+            topbar::unregister(h);
+            let m = dock::primary().map(|m| m.monitor).unwrap_or((0, 0, 1920, 1080));
+            let rc = (m.0, m.1, m.2, m.1 + thick);
+            if let Ok(mut b) = BAR_STRIP.lock() {
+                *b = Some(rc);
+            }
+            let _ = w.set_ignore_cursor_events(true);
+            let _ = w.emit("topbar-slide", true);
+            let _ = w.show();
+            appbar::place(h, rc);
+        }
+        _ => {
+            if let Ok(mut b) = BAR_STRIP.lock() {
+                *b = None;
+            }
+            topbar::unregister(h);
+            let _ = w.hide();
+            // Close the bar's own menu (never one that hangs from the dock).
+            if POP.lock().map(|p| p.open.is_some() && p.at.is_none()).unwrap_or(false) {
+                popover_close(app);
+            }
+        }
+    }
+}
+
+/// "Top edge" and fullscreen: the bar slides in when the pointer touches
+/// the top 2 DIP of the main display and away 350 ms after it leaves the
+/// bar (it stays while one of its menus is open). In every mode the bar
+/// stays hidden, and the edge does nothing, while the app in front is
+/// fullscreen on that display (a video, a game). Polls every 40 ms.
+fn topbar_edge_watch(app: AppHandle) {
+    let mut hidden: Option<bool> = None;
+    let mut revealed = false;
+    let mut left_at: Option<std::time::Instant> = None;
+    let mut full = false;
+    let mut last_mode = 0u8;
+    let mut tick: u32 = 0;
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(40));
+        tick = tick.wrapping_add(1);
+        let mode = BAR_MODE.load(std::sync::atomic::Ordering::SeqCst);
+        if mode != last_mode {
+            // A new mode starts from its own resting state (topbar_apply
+            // already tucked an edge bar, and shows an always bar).
+            last_mode = mode;
+            hidden = Some(mode == 1);
+            revealed = false;
+            left_at = None;
+        }
+        if mode == 0 || safe() || !DESKTOP_REVEALED.load(std::sync::atomic::Ordering::SeqCst) {
+            continue;
+        }
+        let Some(w) = app.get_webview_window("topbar") else { continue };
+        let Ok(h) = w.hwnd() else { continue };
+        let strip = if mode == 2 { appbar::held(h.0 as isize) } else { BAR_STRIP.lock().ok().and_then(|s| *s) };
+        let Some(rc) = strip else { continue };
+        if tick % 6 == 0 {
+            let (cx, cy) = ((rc.0 + rc.2) / 2, rc.1);
+            full = dock::monitor_at(cx, cy).is_some_and(|m| dock::fullscreen_on(m.monitor));
+        }
+        let Some((x, y)) = dock::cursor() else { continue };
+        let sf = w.scale_factor().unwrap_or(1.0);
+        let edge = (2.0 * sf).round().max(1.0) as i32;
+        let bar_menu = POP.lock().map(|p| p.open.is_some() && p.at.is_none()).unwrap_or(false);
+        let want_hidden = if full {
+            revealed = false;
+            true
+        } else if mode == 2 {
+            false
+        } else {
+            let in_x = x >= rc.0 && x < rc.2;
+            if in_x && y >= rc.1 - 1 && y < rc.1 + edge {
+                revealed = true;
+                left_at = None;
+            } else if revealed {
+                let on_bar = in_x && y < rc.3 + (4.0 * sf).round() as i32;
+                if on_bar || bar_menu {
+                    left_at = None;
+                } else {
+                    let t = *left_at.get_or_insert_with(std::time::Instant::now);
+                    if t.elapsed() >= std::time::Duration::from_millis(350) {
+                        revealed = false;
+                        left_at = None;
+                    }
+                }
+            }
+            !revealed
+        };
+        if hidden != Some(want_hidden) {
+            let _ = w.emit("topbar-slide", want_hidden);
+            let _ = w.set_ignore_cursor_events(want_hidden);
+            hidden = Some(want_hidden);
+        }
     }
 }
 
@@ -316,15 +439,45 @@ fn topbar_status(state: tauri::State<'_, AppState>) -> bool {
     state.settings.lock().map(|s| s.data.topbar).unwrap_or(false)
 }
 
+/// On/off for the tray and older callers: on keeps the chosen mode, or
+/// picks "Show at the top edge" when the bar was off.
 #[tauri::command]
 fn topbar_set(enabled: bool, app: AppHandle, state: tauri::State<'_, AppState>) -> bool {
-    if let Ok(mut s) = state.settings.lock() {
-        s.data.topbar = enabled;
-        let _ = s.save();
-    }
-    topbar_apply(&app, enabled);
+    let cur = state.settings.lock().map(|s| s.data.menu_bar.clone()).unwrap_or_default();
+    let mode = match (enabled, cur.as_str()) {
+        (false, _) => "off".to_string(),
+        (true, "edge" | "always") => cur,
+        (true, _) => "edge".to_string(),
+    };
+    menubar_set(mode, app, state) != "off"
+}
+
+/// The menu bar mode: "off", "edge" or "always".
+#[tauri::command]
+fn menubar_status(state: tauri::State<'_, AppState>) -> String {
+    state.settings.lock().map(|s| s.data.menu_bar.clone()).unwrap_or_else(|_| "off".into())
+}
+
+#[tauri::command]
+fn menubar_set(mode: String, app: AppHandle, state: tauri::State<'_, AppState>) -> String {
+    let mode = match state.settings.lock() {
+        Ok(mut s) => {
+            s.data.set_menu_bar(&mode);
+            let _ = s.save();
+            s.data.menu_bar.clone()
+        }
+        Err(_) => return "off".into(),
+    };
+    topbar_apply(&app, &mode);
     tray_sync(&app);
-    enabled
+    let _ = app.emit("settings-changed", ());
+    mode
+}
+
+/// The dock's status island: battery, sound and Wi-Fi.
+#[tauri::command]
+async fn island_state() -> topbar::Island {
+    topbar::island()
 }
 
 #[tauri::command]
@@ -422,11 +575,11 @@ fn popover_toggle(kind: String, x: f64, right: bool, data: Option<serde_json::Va
         None => None,
     };
     // The page renders, measures itself and calls popover_place to show.
-    let _ = app.emit_to("popover", "popover-show", serde_json::json!({ "kind": kind, "data": data }));
+    let _ = app.emit_to("popover", "popover-show", serde_json::json!({ "kind": kind, "data": data, "up": false }));
 }
 
 /// A dock icon's context menu: the shared glass menu, centred on the icon
-/// (`x`, dock window DIP) and hanging 10 DIP above the dock's top (`y`).
+/// (`x`, dock window DIP) and standing 8 DIP above the dock's top (`y`).
 #[tauri::command]
 fn popover_at(kind: String, x: f64, y: f64, data: Option<serde_json::Value>, app: AppHandle) {
     let Some(d) = app.get_webview_window("dock") else { return };
@@ -435,15 +588,50 @@ fn popover_at(kind: String, x: f64, y: f64, data: Option<serde_json::Value>, app
         p.at = Some((pos.x + (x * sf).round() as i32, pos.y + (y * sf).round() as i32));
         p.blurred = None;
     }
-    let _ = app.emit_to("popover", "popover-show", serde_json::json!({ "kind": kind, "data": data }));
+    let _ = app.emit_to("popover", "popover-show", serde_json::json!({ "kind": kind, "data": data, "up": true }));
+}
+
+/// The dock's own popovers (the Cove menu from the Cove icon, Control
+/// Centre from the status island, the clock's calendar): toggled like the
+/// bar's, but standing 8 DIP above the dock, centred on the item that
+/// opened them (`x`, `y`: the item's centre and the dock's top, dock
+/// window DIP). Same 180 ms open / 120 ms close motion, rising from below.
+#[tauri::command]
+fn popover_dock(kind: String, x: f64, y: f64, data: Option<serde_json::Value>, app: AppHandle) {
+    let Some(d) = app.get_webview_window("dock") else { return };
+    let (Ok(pos), Ok(sf)) = (d.outer_position(), d.scale_factor()) else { return };
+    let open_now = {
+        let Ok(mut p) = POP.lock() else { return };
+        if p.open.as_deref() == Some(kind.as_str()) {
+            false
+        } else if p.blurred.as_ref().is_some_and(|(k, t)| *k == kind && t.elapsed() < std::time::Duration::from_millis(350)) {
+            // This very click closed it (the popover lost focus to the dock).
+            p.blurred = None;
+            return;
+        } else {
+            p.at = Some((pos.x + (x * sf).round() as i32, pos.y + (y * sf).round() as i32));
+            p.blurred = None;
+            true
+        }
+    };
+    if !open_now {
+        popover_close(&app);
+        return;
+    }
+    let mut data = data.unwrap_or_else(|| serde_json::json!({}));
+    if kind == "cove" && data.is_object() {
+        data["user"] = serde_json::json!(topbar::user_first_name());
+    }
+    let _ = app.emit_to("popover", "popover-show", serde_json::json!({ "kind": kind, "data": data, "up": true }));
 }
 
 /// The popover page has rendered `kind` at `width` x `height` DIP: size the
 /// window to exactly that, shape it to the panels shown (`shapes`: x, y, w,
 /// h, radius in DIP; a menu and its open submenu are two), place it and
 /// show it. Bar menus hang 3 DIP under the bar from their title (Control
-/// Centre 6 DIP under it, 8 DIP from the right); dock menus centre their
-/// main panel (`anchor_w` wide) on the icon, 10 DIP above the dock.
+/// Centre 6 DIP under it, 8 DIP from the right); dock popovers centre their
+/// main panel (`anchor_w` wide) on the item, 8 DIP above the dock, kept
+/// on screen.
 #[tauri::command]
 fn popover_place(kind: String, width: f64, height: f64, shapes: Option<Vec<[f64; 5]>>, anchor_w: Option<f64>, app: AppHandle) {
     let Some(w) = app.get_webview_window("popover") else { return };
@@ -455,7 +643,7 @@ fn popover_place(kind: String, width: f64, height: f64, shapes: Option<Vec<[f64;
         let (pw, ph) = ((width * sf).ceil() as i32, (height * sf).ceil() as i32);
         let aw = (anchor_w.unwrap_or(width) * sf).round() as i32;
         let left = ax - aw / 2;
-        let top = ay - (10.0 * sf).round() as i32 - ph;
+        let top = ay - (8.0 * sf).round() as i32 - ph;
         (pw, ph, left, top.max(m.monitor.1), m)
     } else {
         let Some(m) = dock::primary() else { return };
@@ -667,6 +855,7 @@ fn topbar_open(what: String, app: AppHandle) -> Result<(), String> {
         "settings" => "ms-settings:",
         "control" => "ms-actioncenter:controlcenter/&showFooter=true",
         "notifications" => "ms-actioncenter:",
+        "datetime" => "ms-settings:dateandtime",
         "battery" => "ms-settings:batterysaver",
         "network" => "ms-settings:network",
         "wifi" => "ms-availablenetworks:",
@@ -1639,10 +1828,14 @@ fn display_watch(app: AppHandle) {
         if dock::TASKBAR_GONE.load(std::sync::atomic::Ordering::SeqCst) && dock::taskbar_is_visible() && !tray::NATIVE_OPEN.load(std::sync::atomic::Ordering::SeqCst) {
             dock::taskbar_visible(false);
         }
-        let (dock_on, follow, bar_on) = match st.settings.lock() {
-            Ok(s) => (s.data.dock, s.data.dock_display == "follow", s.data.topbar),
+        let (dock_on, follow, bar_mode) = match st.settings.lock() {
+            Ok(s) => (s.data.dock, s.data.dock_display == "follow", s.data.menu_bar.clone()),
             Err(_) => continue,
         };
+        // Only "Always" reserves a strip; "Show at the top edge" just
+        // keeps its window on the main display's top edge.
+        let bar_on = bar_mode != "off";
+        let bar_reserved = bar_mode == "always";
 
         // Explorer restarted (it forgets every AppBar): the work area runs
         // under a bar again, so reserve the strips anew (checked every 3 s).
@@ -1653,11 +1846,11 @@ fn display_watch(app: AppHandle) {
                     .map(|h| h.0 as isize)
                     .and_then(|h| appbar::held(h).map(|rc| (h, rc)))
             };
-            if let (true, Some((h, rc)), Some(p)) = (bar_on, held("topbar"), dock::primary()) {
+            if let (true, Some((h, rc)), Some(p)) = (bar_reserved, held("topbar"), dock::primary()) {
                 if p.work.1 < rc.3 {
                     appbar::forget(h);
                     let a = app.clone();
-                    let _ = app.run_on_main_thread(move || topbar_apply(&a, true));
+                    let _ = app.run_on_main_thread(move || topbar_apply(&a, "always"));
                 }
             }
             if let (true, Some((h, rc))) = (dock_on, held("dock")) {
@@ -1678,7 +1871,8 @@ fn display_watch(app: AppHandle) {
             let h_of = |label: &str| app.get_webview_window(label).and_then(|w| w.hwnd().ok()).map(|h| h.0 as isize);
             if bar_on {
                 if let Some(h) = h_of("topbar") {
-                    if let (Some(rc), Some(now)) = (appbar::held(h), appbar::window_rect(h)) {
+                    let want = if bar_reserved { appbar::held(h) } else { BAR_STRIP.lock().ok().and_then(|s| *s) };
+                    if let (Some(rc), Some(now)) = (want, appbar::window_rect(h)) {
                         if now != rc {
                             let _ = app.run_on_main_thread(move || appbar::place(h, rc));
                         }
@@ -1720,7 +1914,8 @@ fn display_watch(app: AppHandle) {
                 let key = (p.monitor, scale100(&app, &p));
                 if bar_key.is_some() && bar_key != Some(key) {
                     let a = app.clone();
-                    let _ = app.run_on_main_thread(move || topbar_apply(&a, true));
+                    let m = bar_mode.clone();
+                    let _ = app.run_on_main_thread(move || topbar_apply(&a, &m));
                 }
                 bar_key = Some(key);
             }
@@ -1993,9 +2188,10 @@ static DESKTOP_REVEALED: std::sync::atomic::AtomicBool = std::sync::atomic::Atom
 fn reveal_desktop(app: &AppHandle) {
     DESKTOP_REVEALED.store(true, std::sync::atomic::Ordering::SeqCst);
     let state = app.state::<AppState>();
-    let (bar_on, dock_on) = state.settings.lock().map(|s| (s.data.topbar, s.data.dock)).unwrap_or((false, false));
+    let (bar_mode, dock_on) = state.settings.lock().map(|s| (s.data.menu_bar.clone(), s.data.dock)).unwrap_or(("off".into(), false));
+    let bar_on = bar_mode != "off";
     if bar_on {
-        topbar_apply(app, true);
+        topbar_apply(app, &bar_mode);
     }
     if dock_on {
         dock_apply(app, &state);
@@ -2065,13 +2261,13 @@ fn dock_unpin(target: String, state: tauri::State<'_, AppState>) {
     }
 }
 
-/// The dock's own strip at the bottom of its display, in DIP: the dock
-/// (48 + 16 padding + 2 border) and its 8 DIP of air. Only "Never hide"
+/// The dock's own strip at the bottom of its display, in DIP: the 56 DIP
+/// dock (40 DIP icons) and its 6 DIP of air. Only "Never hide"
 /// reserves it (maximised windows then stop above it); by default the dock
 /// takes no space, like a Mac's, and slides away when a window touches it.
 /// Magnified icons and labels draw above the strip, over the apps, only
 /// while the pointer is on the dock.
-const DOCK_RESERVE: f64 = 72.0; // 66 DIP dock + 6 DIP float
+const DOCK_RESERVE: f64 = 62.0; // 56 DIP dock + 6 DIP float
 
 fn dock_enabled(app: &AppHandle) -> bool {
     app.state::<AppState>().settings.lock().map(|s| s.data.dock).unwrap_or(false) && !safe()
@@ -2192,6 +2388,7 @@ fn dock_hit_watch(app: AppHandle) {
     let mut revealed = false;
     let mut left_at: Option<std::time::Instant> = None;
     let mut covered = false;
+    let mut full = false;
     let mut tick: u32 = 0;
     loop {
         std::thread::sleep(std::time::Duration::from_millis(40));
@@ -2213,13 +2410,22 @@ fn dock_hit_watch(app: AppHandle) {
 
         // A window over the strip (checked every ~240 ms; EnumWindows is cheap
         // but not free).
-        if mode == "smart" && tick % 6 == 0 {
-            covered = dock::overlaps(rc);
+        if tick % 6 == 0 {
+            if mode == "smart" {
+                covered = dock::overlaps(rc);
+            }
+            // A fullscreen app (a video, a game) on the dock's display:
+            // the dock stays down and the bottom edge doesn't bring it up.
+            let (cx, cy) = ((rc.0 + rc.2) / 2, (rc.1 + rc.3) / 2);
+            full = dock::monitor_at(cx, cy).is_some_and(|m| dock::fullscreen_on(m.monitor));
         }
         // The bottom edge under the dock: the last 2 DIP of the screen.
         let sf = w.scale_factor().unwrap_or(1.0);
         let edge = (2.0 * sf).round().max(1.0) as i32;
-        let at_edge = x >= rc.0 && x < rc.2 && y >= rc.3 - edge && y <= rc.3 + 1;
+        let at_edge = !full && x >= rc.0 && x < rc.2 && y >= rc.3 - edge && y <= rc.3 + 1;
+        if full {
+            revealed = false;
+        }
         let is_hidden = hidden.unwrap_or(false);
         if at_edge {
             revealed = true;
@@ -2234,13 +2440,14 @@ fn dock_hit_watch(app: AppHandle) {
         } else if inside {
             left_at = None;
         }
-        let want_hidden = match mode.as_str() {
-            "never" => false,
-            "always" => true,
-            _ => covered,
-        } && !revealed
-            && !busy
-            && !(inside && !is_hidden);
+        let want_hidden = full
+            || (match mode.as_str() {
+                "never" => false,
+                "always" => true,
+                _ => covered,
+            } && !revealed
+                && !busy
+                && !(inside && !is_hidden));
         if hidden != Some(want_hidden) {
             let _ = w.emit("dock-slide", want_hidden);
             hidden = Some(want_hidden);
@@ -2652,6 +2859,8 @@ fn main() {
                 std::thread::spawn(move || display_watch(h));
                 let h = app.handle().clone();
                 std::thread::spawn(move || dock_hit_watch(h));
+                let h = app.handle().clone();
+                std::thread::spawn(move || topbar_edge_watch(h));
             }
             if updated {
                 use tauri_plugin_notification::NotificationExt;
@@ -2804,6 +3013,10 @@ fn main() {
             search_winindex_set,
             topbar_status,
             topbar_set,
+            menubar_status,
+            menubar_set,
+            island_state,
+            popover_dock,
             topbar_state,
             topbar_open,
             topbar_menu,

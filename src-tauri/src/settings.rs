@@ -46,8 +46,16 @@ pub struct Settings {
     pub taskbar_prev_autohide: Option<bool>,
     /// Alt+Tab shows Cove's app switcher (one icon per app).
     pub switcher: bool,
-    /// Cove top bar on.
+    /// The menu bar is on in some form (menu_bar != "off"). Kept in step
+    /// with `menu_bar` by `set_menu_bar`; older code paths read it.
     pub topbar: bool,
+    /// The menu bar (2026-11-05): "off" (default: no bar, nothing
+    /// reserved), "edge" (hidden, slides in when the pointer touches the
+    /// top edge, reserves nothing) or "always" (the 24 DIP reserved bar).
+    /// Empty only in settings saved before this existed: `Store::load`
+    /// migrates those to "off".
+    #[serde(default)]
+    pub menu_bar: String,
     /// Cove Glass theme: "tidepool" or "slate".
     #[serde(default = "tidepool")]
     pub theme: String,
@@ -142,6 +150,26 @@ fn smart() -> String {
     "smart".into()
 }
 
+/// The menu bar modes Settings offers.
+pub const MENU_BAR: &[&str] = &["off", "edge", "always"];
+
+impl Settings {
+    /// Set the menu bar mode (unknown values mean "off").
+    pub fn set_menu_bar(&mut self, mode: &str) {
+        let m = MENU_BAR.iter().find(|m| **m == mode).unwrap_or(&"off");
+        self.menu_bar = m.to_string();
+        self.topbar = *m != "off";
+    }
+
+    /// Settings from before the menu bar modes had a bar that reserved the
+    /// top of the screen; everyone starts with no bar now (user decision
+    /// 2026-11-05: Windows users aren't used to a bar across the top).
+    fn migrate(&mut self) {
+        let m = if self.menu_bar.is_empty() { "off".to_string() } else { self.menu_bar.clone() };
+        self.set_menu_bar(&m);
+    }
+}
+
 /// The dock hide modes Settings offers.
 pub const DOCK_HIDE: &[&str] = &["smart", "always", "never"];
 
@@ -176,6 +204,7 @@ impl Default for Settings {
             dock_hide: smart(),
             taskbar_prev_autohide: None,
             topbar: false,
+            menu_bar: "off".into(),
             switcher: false,
             snap: false,
             search_winindex: true,
@@ -207,8 +236,10 @@ impl Store {
     pub fn load(path: PathBuf) -> Self {
         let data = std::fs::read_to_string(&path)
             .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
+            .and_then(|s| serde_json::from_str::<Settings>(&s).ok())
             .unwrap_or_default();
+        let mut data = data;
+        data.migrate();
         Store { path, data }
     }
 
@@ -234,5 +265,23 @@ mod tests {
         s.save().unwrap();
         assert!(Store::load(path.clone()).data.hotkeys);
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn old_menu_bar_migrates_to_off() {
+        let path = std::env::temp_dir().join(format!("cove-settings-mb-{}.json", std::process::id()));
+        std::fs::write(&path, r#"{"topbar": true, "dock": true}"#).unwrap();
+        let s = Store::load(path.clone());
+        assert_eq!(s.data.menu_bar, "off");
+        assert!(!s.data.topbar);
+        assert!(s.data.dock);
+        std::fs::write(&path, r#"{"topbar": false, "menu_bar": "edge"}"#).unwrap();
+        let s = Store::load(path.clone());
+        assert_eq!(s.data.menu_bar, "edge");
+        assert!(s.data.topbar);
+        std::fs::write(&path, r#"{"menu_bar": "sideways"}"#).unwrap();
+        assert_eq!(Store::load(path.clone()).data.menu_bar, "off");
+        let _ = std::fs::remove_file(path);
+        assert_eq!(Settings::default().menu_bar, "off");
     }
 }
