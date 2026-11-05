@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cove window buttons</title>
+    <style>
+      /* Mac window buttons, drawn over the left of the focused window's
+         title bar. The window is exactly the three dots plus 2 DIP padding,
+         shaped (by Cove) so only the dots take clicks. */
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: transparent;
+        overflow: hidden;
+        user-select: none;
+        -webkit-user-select: none;
+        cursor: default;
+      }
+      .lights {
+        position: absolute;
+        left: 2px;
+        top: 2px;
+        display: flex;
+        gap: 8px;
+        opacity: 0;
+        transition: opacity var(--fade, 150ms) ease-out;
+      }
+      .lights.on {
+        opacity: 1;
+      }
+      .dot {
+        position: relative;
+        width: 12px;
+        height: 12px;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        background: var(--c);
+        /* The subtle darker ring Mac dots have. */
+        box-shadow: inset 0 0 0 0.5px var(--ring);
+        outline: none;
+        cursor: default;
+      }
+      .close { --c: #ff5f57; --ring: #e0443e; --glyph: #4d0000; }
+      .min { --c: #febc2e; --ring: #dea123; --glyph: #985700; }
+      .zoom { --c: #28c840; --ring: #1aab29; --glyph: #006500; }
+      .dot svg {
+        position: absolute;
+        inset: 0;
+        width: 12px;
+        height: 12px;
+        opacity: 0;
+        stroke: var(--glyph);
+        fill: none;
+        stroke-width: 1.2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .zoom svg path.fill {
+        fill: var(--glyph);
+        stroke: none;
+      }
+      /* Glyphs on all three while the pointer is over the group, as on a Mac. */
+      .lights:hover .dot svg,
+      .lights.hover .dot svg {
+        opacity: 1;
+      }
+      /* Pressed: darker, like a Mac dot held down. */
+      .dot:active,
+      .dot.down {
+        filter: brightness(0.82);
+      }
+      /* Not offered by this window (no minimise or maximise box). */
+      .dot.off {
+        --c: #b8b8bd;
+        --ring: #a0a0a6;
+      }
+      .dot.off svg {
+        display: none;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .lights {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="lights" id="lights">
+      <button class="dot close" data-act="close" aria-label="Close" tabindex="-1">
+        <svg viewBox="0 0 12 12"><path d="M3.8 3.8l4.4 4.4M8.2 3.8L3.8 8.2" /></svg>
+      </button>
+      <button class="dot min" data-act="min" aria-label="Minimise" tabindex="-1">
+        <svg viewBox="0 0 12 12"><path d="M3.2 6h5.6" /></svg>
+      </button>
+      <button class="dot zoom" data-act="zoom" aria-label="Zoom" tabindex="-1">
+        <!-- ↔ on the diagonal: two arrowheads, like the Mac zoom glyph. -->
+        <svg viewBox="0 0 12 12"><path class="fill" d="M3.4 8.6V4.9l3.7 3.7z" /><path class="fill" d="M8.6 3.4v3.7L4.9 3.4z" /></svg>
+      </button>
+    </div>
+    <script type="module" src="/src/traffic.ts"></script>
+  </body>
+</html>
