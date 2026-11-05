@@ -1840,7 +1840,7 @@ fn intro_key(version: &str, build: &str) -> String {
 //
 // At startup the intro window is shown before the dock, the menu bar and
 // Settings, sized to the main display's full bounds. It plays the full
-// voxel build once per installed build (intro_key), the ~1 s logo
+// "Blocks settle" build once per installed build (intro_key), the ~1 s logo
 // otherwise. When it ends (or a backstop fires) the window hides and Cove's
 // desktop appears; Settings opens only on a first run. A second launch
 // never replays it; "Play the intro" in About does. Every step is written to
@@ -1891,39 +1891,30 @@ fn log_stamp(t: u64) -> String {
     format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", rem / 3600, rem % 3600 / 60, rem % 60)
 }
 
-/// Show the intro window over the whole main display and let it play.
+/// Get the intro window ready over the whole main display and let it play.
+/// The window stays hidden until the page has rendered its sprites and
+/// calls intro_ready, so nothing on screen ever waits on a half-ready page.
 fn intro_show(app: &AppHandle, full: bool, startup: bool) {
-    let run = {
-        let Ok(mut st) = INTRO.lock() else { return };
-        st.full = full;
-        st.startup = startup;
-        st.done = false;
-        st.run = st.run.wrapping_add(1);
-        st.run
-    };
     let Some(w) = app.get_webview_window("intro") else {
+        let run = intro_next_run(full, startup);
         cove_log(app, "intro: no intro window; skipping");
         intro_finish(app, "no-window", run);
         return;
     };
     // The main display's full bounds (over where the bar and dock will be).
-    let (x, y, pw, ph) = match app.primary_monitor().ok().flatten() {
-        Some(m) => (m.position().x, m.position().y, m.size().width, m.size().height),
-        None => dock::primary().map(|m| (m.monitor.0, m.monitor.1, (m.monitor.2 - m.monitor.0) as u32, (m.monitor.3 - m.monitor.1) as u32)).unwrap_or((0, 0, 1920, 1080)),
-    };
+    // Sized before the page may ask which intro to play, so it builds once.
+    let (x, y, pw, ph) = intro_bounds(app);
     let _ = w.set_position(PhysicalPosition::new(x, y));
     let _ = w.set_size(tauri::PhysicalSize::new(pw, ph));
+    let run = intro_next_run(full, startup);
     if !startup {
-        // A replay: start the page over.
+        // A replay: start the page over (it calls intro_ready again).
+        let _ = w.hide();
         let _ = w.eval("location.reload()");
     }
-    let _ = w.set_always_on_top(true);
-    let shown = w.show().is_ok();
-    let _ = w.set_position(PhysicalPosition::new(x, y));
-    let _ = w.set_focus();
     cove_log(
         app,
-        &format!("intro: window shown={shown} ({}, {pw}x{ph} at {x},{y}, {})", if full { "full" } else { "short" }, if startup { "startup" } else { "replay" }),
+        &format!("intro: window prepared ({}, {pw}x{ph} at {x},{y}, {}); waiting for the page", if full { "full" } else { "short" }, if startup { "startup" } else { "replay" }),
     );
     // Backstop: whatever the page does, the intro ends.
     let h = app.clone();
@@ -1933,6 +1924,40 @@ fn intro_show(app: &AppHandle, full: bool, startup: bool) {
         let h2 = h.clone();
         let _ = h.run_on_main_thread(move || intro_finish(&h2, "timeout", run));
     });
+}
+
+fn intro_next_run(full: bool, startup: bool) -> u32 {
+    let Ok(mut st) = INTRO.lock() else { return 0 };
+    st.full = full;
+    st.startup = startup;
+    st.done = false;
+    st.run = st.run.wrapping_add(1);
+    st.run
+}
+
+fn intro_bounds(app: &AppHandle) -> (i32, i32, u32, u32) {
+    match app.primary_monitor().ok().flatten() {
+        Some(m) => (m.position().x, m.position().y, m.size().width, m.size().height),
+        None => dock::primary().map(|m| (m.monitor.0, m.monitor.1, (m.monitor.2 - m.monitor.0) as u32, (m.monitor.3 - m.monitor.1) as u32)).unwrap_or((0, 0, 1920, 1080)),
+    }
+}
+
+/// The intro page has rendered everything it draws: show its window now.
+#[tauri::command]
+fn intro_ready(app: AppHandle) {
+    let live = INTRO.lock().map(|s| !s.done).unwrap_or(false);
+    if !live {
+        return;
+    }
+    let Some(w) = app.get_webview_window("intro") else { return };
+    let (x, y, pw, ph) = intro_bounds(&app);
+    let _ = w.set_position(PhysicalPosition::new(x, y));
+    let _ = w.set_size(tauri::PhysicalSize::new(pw, ph));
+    let _ = w.set_always_on_top(true);
+    let shown = w.show().is_ok();
+    let _ = w.set_position(PhysicalPosition::new(x, y));
+    let _ = w.set_focus();
+    cove_log(&app, &format!("intro: page ready, window shown={shown} ({pw}x{ph} at {x},{y})"));
 }
 
 /// End the intro (once per run): hide its window, then on startup reveal
@@ -2837,6 +2862,7 @@ fn main() {
             clipboard_status,
             just_updated,
             intro_begin,
+            intro_ready,
             intro_done,
             intro_play,
             tray::tray_status,

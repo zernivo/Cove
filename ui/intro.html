@@ -3,10 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <title>Cove</title>
-    <link rel="stylesheet" href="./src/tokens.css" />
     <style>
+      /* The wordmark font: a few-KB subset of Inter (OFL, fonts/Inter-LICENSE.txt). */
+      @font-face { font-family: "Inter"; src: url("/fonts/inter-intro.woff2") format("woff2"); font-weight: 100 900; font-display: block; }
       html, body { margin: 0; height: 100%; overflow: hidden; background: #111215; cursor: default; user-select: none; }
-      canvas { width: 100%; height: 100%; display: block; }
+      canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
       body { transition: opacity 0.28s ease; }
       body.out { opacity: 0; }
     </style>
