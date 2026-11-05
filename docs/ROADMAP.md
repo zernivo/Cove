@@ -4,85 +4,80 @@ Every phase is judged against one rule: **smoothness and flexibility**. Strip wh
 
 Legend: ✅ done · 🔨 in progress · ⬜ planned
 
+Current release: **v0.9.0** (the desktop takeover). Status below is as of that release.
+
 ---
 
 ## Phase 0: Foundations ✅ (v0.0.x)
 - ✅ Research: Windows 11 pain points, macOS vs Windows in depth, 21 existing tools, Liquid Glass design
-- ✅ Name, tagline and logo (impossible-C mark, centred blue cube)
+- ✅ Name, tagline and logo (the voxel C)
 - ✅ Repo, Rust + Tauri 2 scaffold, Windows CI
 - ✅ Change journal: every setting stored with its previous value, restored newest-first
 
-## Phase 1: Calm + Mac habits 🔨 (v0.1)
-- ✅ Calm preset: 7 per-user toggles (Task View, search box, Widgets, Copilot, Start Recommended, lock-screen tips, suggestions)
-- ✅ Back to stock: one-click exact restore
-- ✅ Hotkeys: Alt+W close, Alt+M minimize, Alt+H hide app, Alt+Q quit app, Alt+` cycle app windows (opt-in, conflict detection)
-- ✅ Settings window: Calm / Mac habits / Back to stock
-- ✅ Release pipeline: Windows installer built on every version tag
-- ✅ Remembered settings, close to tray, single instance, one-click updater, new app icon
-- ⬜ Test on real Windows 11 24H2/25H2/26H2 and fix setting names that differ
-- ⬜ Tray icon, launch at sign-in (optional), remember hotkey on/off
+## Phase 1: Calm + Mac habits ✅ (v0.1)
+- ✅ Quiet Windows (was the Calm preset): per-user switches for Task View, the search box, Copilot, Start Recommended, lock-screen tips and suggestions
+- ✅ Restore everything: one-click exact restore
+- ✅ Mac shortcuts: Alt+W, Alt+M, Alt+H, Alt+Q, Alt+` (opt-in, conflict detection)
+- ✅ Remembered settings, tray icon, single instance, one-click updater, release pipeline
+- ⬜ Hide the Widgets button: Windows locks that setting on current builds, so Cove links to Taskbar settings instead ("Coming later")
+- ⬜ Check every setting name on real Windows 11 24H2 / 25H2 / 26H2 machines
 
-## Phase 2: Cove Search 🔨 (v0.2)
-- ✅ Alt+Space launcher (pre-created hidden window, opens on the monitor under the cursor)
-- ✅ Apps via Get-StartApps (desktop + Store), recent files, 27 Settings pages, quick actions, calculator
-- ✅ Tabs: All / Apps / Files / Settings; Tab to switch, Enter to open, Ctrl+Enter to reveal
-- ✅ Learns what you open most; fully local, no web results, no telemetry
-- ⬜ Real app icons in results
-- ✅ Deeper file search across your personal folders (v0.2.3); Windows Search index results, including file contents (v0.4.3)
-- ✅ Real app and file icons (v0.2.2)
-- ✅ Clipboard history tab, text only, memory only (v0.2.3)
-- ✅ Built-in open-time measurement shown in Settings (v0.4.3); target under 100 ms still to confirm on real hardware
+## Phase 2: Cove Search ✅ (v0.2–v0.4)
+- ✅ Alt+Space launcher on the screen under the pointer, 640-wide glass panel
+- ✅ Apps (desktop + Store) with real icons, files (Cove's own walk plus the Windows Search index, including file contents), Settings pages, quick actions, calculator
+- ✅ Tabs and prefixes: All / Apps / Files / Settings / Clipboard
+- ✅ Clipboard history: text only, memory only, skips password-manager copies
+- ✅ Learns what you open most; fully local
+- 🔨 Open time under 100 ms: measured in Settings → Keys, still to confirm on more hardware
 
-## Phase 3: Dock + top bar 🟡 (v0.3)
-- ✅ Top bar (AppBar API): active app name, Cove menu, quick settings, battery, clock (v0.3.1); Control Centre panel: sound/brightness sliders, mute, dark mode, Wi-Fi (v0.3.2)
-- ✅ Dock: pinned + running apps, running dots, gentle magnification, Recycle Bin (v0.3.0); folder stacks: Downloads/Documents/Desktop/Pictures grid (v0.3.3)
-- ✅ Taskbar auto-hide only through its own documented setting, restored when Cove quits (v0.3.0)
-- ✅ Multi-monitor and per-DPI support: dock on main display or follows the pointer (bottom-edge rest), dock + top bar re-fit on display plug/resize/scale changes (v0.3.4). Top bar stays on the main display.
-- Note: a true global menu bar can't work for Chrome, Electron or Store apps, so the top bar shows the active app and common actions instead
+## Phase 3: Dock + menu bar ✅ (v0.3, rebuilt in v0.9)
+- ✅ Dock: pinned and running apps, AppID grouping like the taskbar, real icons, running dots, gentle magnification, launch and attention bounces, folder stacks, Recycle Bin (v0.3.0, v0.9.0)
+- ✅ Dock hides when a window touches it (or Always / Never); full-screen apps hide it (v0.9.0)
+- ✅ Status island at the dock's right end: pinned tray icons, Search, Wi-Fi, sound, battery, Control Centre, clock (v0.9.0)
+- ✅ Cove menu on the Cove dock icon; app menus in each app's dock right-click menu (v0.9.0)
+- ✅ Menu bar modes: Off (default), Show at the top edge, Always (24 DIP reserved AppBar) (v0.9.0)
+- ✅ Multi-monitor and per-DPI placement; dock on the main display or follows the pointer (v0.3.4, v0.7.3)
+- ⬜ Menu bar glass: the optional menu bar still paints Ink over a wallpaper plate; move it to the same clear blur-behind glass as the dock
+- Note: a true global menu bar can't work for Chrome, Electron or Store apps, so the bar shows the app in front and common actions instead
 
-## Phase 4: Window overview 🚧 (v0.4)
-- ✅ App-grouped switcher (Alt+Tab replacement, opt-in, WH_KEYBOARD_LL hook removed when off) (v0.4.0)
-- ✅ App Exposé: all windows of one app at a glance, live DWM thumbnails; Dock right-click or ↓ in the switcher (v0.4.1)
-- ✅ Window snapping presets with smooth, interruptible motion (200 ms glide, Ctrl+Alt presets, opt-in) (v0.4.2)
+## Phase 4: Window overview ✅ (v0.4)
+- ✅ App-grouped switcher (Alt+Tab replacement, opt-in)
+- ✅ App Exposé: all windows of one app, live DWM thumbnails
+- ✅ Window snapping presets with smooth, interruptible motion
 
-## Phase 5: Calm look ✅ (v0.5)
-- ✅ Cove Glass themes for Cove's own surfaces: Tidepool (default) and Slate, light/dark/follow Windows, theme accent or Windows accent (v0.5.0)
-- ✅ Wallpaper gallery: four original 4K scenes (Tidepool, Lagoon, Dune, Slate), each in light and dark; previous wallpaper restorable (v0.5.1)
-- ✅ Light/dark schedule at set times; wallpaper follows Cove's appearance; Windows accent option (v0.5.0–v0.5.1)
+## Phase 5: Calm look ✅ (v0.5, rebuilt in v0.9)
+- ✅ Wallpaper gallery: Cove art plus credited Commons and NASA photos in nine categories, downloaded on pick (v0.9.0)
+- ✅ Light/dark schedule at set times; wallpaper follows the appearance (v0.5.1)
+- ⬜ Live wallpapers: listed as "coming soon" in the gallery, off in v0.9.0
 
 ## Phase 6: Cove Tour ✅ (v0.6)
-- ✅ Interactive first-run tour: pick a starting preset (Mac-like, Light touch, or change nothing), then try Search, Mac shortcuts, snapping, the switcher and App Exposé live; each step ticks itself off when you use it (v0.6.0)
-- ✅ Replayable anytime from Take the tour in the sidebar (v0.6.0)
+- ✅ Interactive first-run tour you learn by doing, replayable from About
 
 ## Phase 7: UI polish ✅ (v0.7)
-- ✅ One pass over the settings screens: type scale, spacing, contrast-safe text on the accent (also with the Windows accent), keyboard focus rings, empty states (v0.7.0)
-- ✅ Window backgrounds: a soft Tidepool wash that sets off the logo, a quiet gradient for Slate, light and dark (v0.7.0)
-- ✅ Motion: page fade, sliding nav indicator, chip/card/toggle transitions, all off with reduced motion (v0.7.0); 60 fps still to confirm on hardware
-- ✅ Refined tray menu: left-click opens Cove; right-click toggles Dock, Top bar, Mac shortcuts, App switcher, Window snapping, Appearance, plus Tour, Updates and Restore (v0.7.1)
-- ✅ Onboarding visuals: Cove Tour in the Cove Glass style (v0.6.0–v0.7.0)
-- ✅ Final app icon (Deep tide) and installer artwork for NSIS and MSI (v0.7.2)
-- ✅ DPI and multi-monitor consistency pass: Search and switcher sized per display scale, main window rescued from unplugged screens, live "Your displays" list (v0.7.3; physical testing outstanding)
+- ✅ Type scale, focus rings, empty states, refined tray menu, final icon and installer artwork, DPI and multi-monitor pass
 
-## Phase 8: Beta → 1.0 🚧
-- ✅ Safe mode: hold Shift at start, `--safe`, tray or Restore page, or automatic after two launches that didn't last 30 s; pauses every feature without touching settings (v0.8.0)
-- ⬜ Code signing (e.g. SignPath Foundation for open source) so SmartScreen stops warning
-- ✅ Signed updates: every installer must match a minisign signature (Tauri updater format) made offline with Cove's key; unsigned or tampered installers are deleted, never run (v0.8.1)
-- ⬜ Performance gates in CI: ~0% idle CPU, ≤150 MB idle memory (fall back to WinUI 3 if exceeded)
-- ⬜ Accessibility pass (keyboard-only, screen reader, reduced motion)
-- ⬜ Licence, contributor guide, winget package
+## Phase 8: Desktop takeover and the Liquid Glass redesign ✅ (v0.8–v0.9)
+- ✅ Safe mode: Shift at start, `--safe`, tray or Settings, or automatic after two short launches (v0.8.0)
+- ✅ Signed updates: every installer must match a minisign signature made offline with Cove's key (v0.8.1)
+- ✅ Cove desktop: the taskbar is hidden completely while on and restored exactly when off, on quit, in safe mode and by the watchdog after a crash (v0.9.0)
+- ✅ Liquid Glass redesign with graphite highlights; clear blur-behind glass that works on inactive windows (v0.9.0)
+- ✅ Control Centre with other apps' tray icons through a stand-in tray, no injection (v0.9.0)
+- ✅ Mac traffic lights on the focused window, covering the native buttons (v0.9.0)
+- ✅ Intro B "Blocks settle" (v0.9.0)
+- ✅ Settings redesign: the live desktop miniature, six scenes, instant controls (v0.9.0)
+- ✅ Accessibility pass: keyboard-only, Narrator roles, reduced motion and transparency, contrast (v0.9.0)
+- ✅ MIT licence, contributing guide, UI bundle size gate, smoke and visual check on a Windows runner (v0.9.0)
 
-## Phase 9: Feel & delight 🚧 (v0.9, from community research, before 1.0)
-What the most-watched Windows customization reels ask for (Nov 2026), adapted to Cove's safety rules. Order not set yet.
-- ✅ Dock motion: launch bounce until the first window appears, hover label rise and press feedback, attention hops when an app flashes (documented shell hook, read-only), icons grow in and shrink away; all off with reduced motion (v0.9.0)
-- ✅ Launch intro: first launch builds the C from voxels on flat Ink, then the name; every later launch is a quick mark; click or any key skips; Reduce motion shows it still (v0.9.0)
-- ⬜ Settings window redesign on Ink (from the v0.8.1 screen-recording review)
-- ⬜ Deeper glass: real Mica/Acrylic backdrops (documented DWM APIs) on Cove's own dock, top bar, Search and panels, with a battery-friendly toggle
-- ⬜ Calm widgets: optional small widget area (clock, calendar, now playing, battery; weather opt-in), in Cove's own windows
-- ⬜ Dynamic wallpapers: original scenes that shift gently through the day (still frames, near-zero CPU), paused on battery or full-screen apps
-- Already covered: disappearing taskbar (documented auto-hide, v0.3.0), Spotlight-style search (Phase 2), Mac-like window motion (v0.4.2)
-- Out of scope: restyling Start or the real taskbar (tools like Windhawk do it by injecting into Explorer), video wallpapers behind desktop icons
+## Next (towards 1.0)
+- ⬜ **Code signing** so SmartScreen stops warning: SignPath Foundation (free for open source) for the NSIS and MSI installers, or a **Microsoft Store MSIX** package, which Microsoft signs
+- ⬜ **winget** package `zernivo.Cove`: draft manifests in `packaging/winget`, submitted once the installer is signed
+- ⬜ **Live wallpapers**: original scenes that shift gently, near-zero CPU, paused on battery and under full-screen apps
+- ⬜ **Phase 9: Feel & delight** (from community research; order not set): calm widgets (clock, calendar, now playing, battery; weather opt-in) in Cove's own windows, more dock motion polish, dynamic wallpapers
+- ⬜ **Menu bar glass**: the optional menu bar on the same clear blur glass as the dock
+- ⬜ Known issues from v0.9.0: blur, DPI and tray clicks checked on more PCs; light-mode contrast for white tray icons; a faster first Control Centre open
+- ⬜ Performance gates in CI: ~0% idle CPU, ≤150 MB idle memory
 
 ---
 
 ### Never on the roadmap
-System-file patching, Explorer injection, drivers, disabling Defender or updates, HKLM tweaks for normal use, or any Apple fonts, icons or wallpapers.
+System-file patching, Explorer injection, drivers, disabling Defender or updates, HKLM tweaks for normal use, restyling the real Start menu or taskbar by injecting into Explorer, or any Apple fonts, icons or wallpapers.

@@ -24,7 +24,7 @@ design work: `npm run dev`, then open `http://localhost:5173/` (Settings),
 
 ## Before you push
 
-Run all three. CI runs the same checks on Windows.
+Run all four. CI runs the same checks on Windows.
 
 ```bash
 bash notes/windows-check.sh   # type-checks the Rust core for Windows (works from Linux/macOS too)
@@ -43,23 +43,76 @@ It installs what it needs (rustup target, clang, llvm) on first run.
 `windows-latest`:
 
 1. `npm install`, `npx tsc --noEmit`, `npm run build`
-2. **UI bundle size budget** (`scripts/check-bundle-size.mjs`): the JS, CSS and
-   HTML Vite emits must stay under the budgets at the top of that script
-   (total, gzipped total, and per file). Raise a budget only on purpose, in the
-   change that needs it, and say why in the PR.
+2. **UI bundle size gate** (`npm run check:size`, `scripts/check-bundle-size.mjs`):
+   the JS, CSS and HTML Vite emits (images and wallpapers excluded) must stay
+   under the budgets at the top of that script: 300 KB in total, 110 KB
+   gzipped, and 96 KB for any single file. Raise a budget only on purpose, in
+   the change that needs it, and say why in the PR.
 3. `cargo check` and `cargo test` for `src-tauri`.
 
 A pull request merges when CI is green. We squash-merge, so the PR title
 becomes the commit message on `main`: write it as what changed for the user.
 
-## Preview builds
+## Smoke and visual check
+
+CI type-checks and tests, but it never starts Cove. The **Smoke launch**
+workflow (`.github/workflows/smoke.yml`, manual) does, on a `windows-latest`
+runner (Windows Server 2025 with the Windows 11 shell, 1920×1080 at 100%):
+
+1. builds the NSIS installer, installs it silently (`/S`) and launches Cove;
+   the run **fails if Cove exits within 30 seconds** and prints stderr,
+   `cove.log` and the Application event log;
+2. runs `.github/scripts/visual.ps1` in dark and then light mode: turns the
+   Cove desktop and the traffic lights on, opens Notepad and File Explorer
+   (screenshots of each focused, and of a hover on the red button), then opens
+   Control Centre, a dock menu and the Wi-Fi popover through the hidden
+   second-launch argument `Cove.exe --cove-open=<kind>` (kinds: `cc`, `wifi`,
+   `cove`, `menu`, `cal`) and screenshots each;
+3. uploads the screenshots and `cove.log` as the **visual** artifact.
+
+Run it from Actions → Smoke launch → Run workflow (pick your branch), or:
+
+```bash
+curl -X POST -H "Accept: application/vnd.github+json" \
+  -H "Authorization: Bearer $GITHUB_TOKEN" \
+  https://api.github.com/repos/zernivo/Cove/actions/workflows/smoke.yml/dispatches \
+  -d '{"ref":"my-branch"}'
+```
+
+**Run it before sending anyone a preview and before tagging a release.** Look
+at the screenshots for any UI change. The runner has no blur (the backdrop
+draws its tint solid there), so the screenshots check shape, corners, tint,
+placement and text, not the blur itself. Control Centre takes about 5 seconds
+to open on the runner.
+
+## Preview builds and releases
 
 To try `main` on a real PC without cutting a release, run the **Preview build**
 workflow (Actions → Preview build → Run workflow). It publishes a pre-release
 named `preview` with `Cove-preview-<sha>-setup.exe`. It is never marked latest,
-so the in-app updater ignores it. Releases are cut by pushing a `v*` tag; the
-**Release** workflow builds and publishes the installers, and the maintainer
-then adds the update signature with Cove's update key, which never lives on GitHub.
+so the in-app updater ignores it.
+
+Releases:
+1. Bump the version in `package.json`, `src-tauri/tauri.conf.json` and
+   `src-tauri/Cargo.toml`, and write its section in `CHANGELOG.md`
+   (`## vX.Y.Z`; use `###` for sub-headings inside it).
+2. Merge with CI green, then run the smoke workflow on `main`.
+3. Push the tag `vX.Y.Z` on that commit. The **Release** workflow builds the
+   NSIS setup and the MSI and publishes them with that changelog section as
+   the release notes.
+4. The maintainer signs the published setup with Cove's update key, which
+   never lives on GitHub, and commits `signatures/Cove_X.Y.Z_x64-setup.exe.sig`
+   to `main`. Until then the in-app updater refuses the release.
+
+## Code rules (Rust core)
+
+- **Manage state first.** In `.setup()`, `app.manage(AppState { .. })` comes
+  before anything that can pump window messages. On every path a page or a
+  window event can reach, use `app.try_state::<T>()` and return quietly when
+  it isn't there yet; never `app.state()`. Details in
+  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#the-setup-rule).
+- New features honour safe mode (`safe()`) and are undone on off, quit and
+  Restore. Anything that changes a Windows setting goes through the journal.
 
 ## Design rules (summary)
 
@@ -75,9 +128,12 @@ glass or motion work.
   tint of at least 0.59 behind it.
 - **Liquid Glass, done honestly.** A transparent WebView2 window cannot blur
   what is behind it, so never rely on CSS `backdrop-filter` over the desktop.
-  The dock uses the wallpaper plate (a pre-blurred slice of the wallpaper) with
-  refraction on the edge band only; panels over apps (Control Centre, Search,
-  menus) use Windows acrylic plus a CSS tint and rim.
+  The dock, menus, Control Centre and Search sit on native backdrop windows
+  from `glass.rs` (a clear blur-behind that also works on inactive windows);
+  the page tells the core its panel shapes with `glass_shape` and paints the
+  corners, the faint `--c-lg-*` tint, the rim and the shadow. Don't use DWM's
+  system backdrop (Mica/acrylic through `window-vibrancy`): it turns flat grey
+  on inactive windows and ignores window regions.
 - **Motion.** Springs that settle without overshoot by default, interruptible,
   responding on pointer-down; enter and exit along the same path.
 - **Real states.** Real loading states (skeletons the size of the real thing),
