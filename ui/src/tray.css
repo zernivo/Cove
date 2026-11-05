@@ -1,0 +1,26 @@
+/* Control Centre "Other apps": a module like the others (a fill, radius
+   10), 6 cells to a row, 20 DIP icons in 32 DIP cells, the graphite
+   highlight on hover. The tooltip is drawn inside the panel. */
+.tray-mod { position: relative; padding: 10px 10px 8px; }
+.tray-mod .head { margin: 0 2px 6px; }
+.tray-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 2px; }
+.tray-cell {
+  height: 32px; border-radius: 8px; display: grid; place-items: center;
+  transition: background-color 0.12s ease;
+}
+.tray-cell img { width: 20px; height: 20px; object-fit: contain; pointer-events: none; }
+.tray-cell:hover, .tray-cell:focus-visible { background: var(--c-hl); box-shadow: var(--c-hl-sheen); outline: none; }
+.tray-cell:active { transform: scale(0.94); }
+.tray-letter {
+  width: 20px; height: 20px; border-radius: 5px; display: grid; place-items: center;
+  background: var(--c-chip-off); color: var(--c-text); font-size: 11px; font-weight: 600;
+}
+.tray-glyph svg { width: 16px; height: 16px; color: var(--c-muted); }
+.tray-empty { padding: 2px 2px 4px; }
+.tray-tip {
+  position: absolute; z-index: 5; max-width: 240px; padding: 3px 8px;
+  border-radius: 6px; background: var(--c-solid, #1c1d22); color: var(--c-text);
+  box-shadow: var(--c-panel-rim), 0 4px 12px rgba(0, 0, 0, 0.28);
+  font-size: 11px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  pointer-events: none;
+}
