@@ -68,7 +68,7 @@ h2 { font-size: 13.5px; font-weight: 550; }
    place. No fade from transparent (that read as a blank flash). */
 .scene.enter { animation: scene-in 0.22s var(--spring); }
 @keyframes scene-in { from { transform: translateY(4px); } }
-.scene h1:focus-visible { outline-offset: 4px; border-radius: 4px; }
+.scene h1:focus { outline: none; } /* a landing spot for keyboard focus, not a control */
 .scene h1 { margin-top: 6px; }
 .lede { color: var(--fg-2); margin: 6px 0 18px; max-width: 44ch; }
 
@@ -175,35 +175,29 @@ h2 { font-size: 13.5px; font-weight: 550; }
 @media (prefers-reduced-motion: reduce) { .wt .im, .wt .credit { transition: none; } .wt .load.indet .bar i { animation: none; width: 100%; opacity: 0.5; } }
 .sched-times { gap: 18px; color: var(--fg-2); font-size: 12.5px; }
 .sched-times.off { display: none; }
-/* Time fields: the native control restyled to Ink and graphite. Each part
-   (hour, minute, AM/PM) is a graphite pill when focused; arrows step it,
-   digits type into it. The picker button becomes a quiet clock glyph. */
+/* Time fields (main.ts timeField): Ink field, each part a graphite glass
+   pill when focused, a small stepper for the mouse. */
 .time { display: inline-flex; align-items: center; gap: 8px; }
-.sched-times input[type="time"] {
+.tbox {
+  display: inline-flex; align-items: center; height: 32px; padding: 0 2px 0 5px; border-radius: var(--r-ctl);
+  background: var(--ink); box-shadow: inset 0 0 0 1px var(--hair); color: var(--fg);
   font: 550 13px/1 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; font-variant-numeric: tabular-nums;
-  color: var(--fg); background: var(--ink); border: 0; box-shadow: inset 0 0 0 1px var(--hair);
-  border-radius: var(--r-ctl); height: 32px; padding: 0 4px 0 6px; color-scheme: dark; cursor: text;
-  transition: box-shadow 0.15s ease, background 0.15s ease;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
 }
-.sched-times input[type="time"]:hover { background: var(--ink-2); }
-.sched-times input[type="time"]:focus-within { box-shadow: inset 0 0 0 1px rgba(233, 232, 228, 0.35); }
-.sched-times input::-webkit-datetime-edit { padding: 0; }
-.sched-times input::-webkit-datetime-edit-fields-wrapper { display: inline-flex; align-items: center; }
-.sched-times input::-webkit-datetime-edit-text { color: var(--fg-3); padding: 0 1px; }
-.sched-times input::-webkit-datetime-edit-hour-field,
-.sched-times input::-webkit-datetime-edit-minute-field,
-.sched-times input::-webkit-datetime-edit-ampm-field { padding: 3px 4px; border-radius: 5px; color: var(--fg); }
-.sched-times input::-webkit-datetime-edit-hour-field:focus,
-.sched-times input::-webkit-datetime-edit-minute-field:focus,
-.sched-times input::-webkit-datetime-edit-ampm-field:focus {
-  background: rgba(233, 232, 228, 0.18); color: #fff; outline: none;
+.tbox:hover { background: var(--ink-2); }
+.tbox:focus-within { box-shadow: inset 0 0 0 1px rgba(233, 232, 228, 0.32); }
+.tbox .ts { min-width: 22px; padding: 4px 3px; border-radius: 5px; text-align: center; cursor: default; }
+.tbox .ts:focus { outline: none; }
+.tbox .ts:focus-visible, .tbox .ts:focus {
+  background: rgba(233, 232, 228, 0.18); color: #fff;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 0 0 0.5px rgba(255, 255, 255, 0.1);
 }
-.sched-times input::-webkit-calendar-picker-indicator {
-  width: 14px; height: 14px; margin-left: 4px; padding: 5px; border-radius: 6px; cursor: pointer; opacity: 0.75;
-  background: center / 14px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23a3a3ab' stroke-width='1.4' stroke-linecap='round'%3E%3Ccircle cx='8' cy='8' r='6'/%3E%3Cpath d='M8 4.6V8l2.3 1.5'/%3E%3C/svg%3E");
-}
-.sched-times input::-webkit-calendar-picker-indicator:hover { opacity: 1; background-color: var(--ink-3); }
+.tbox .ts + .ts { margin-left: 3px; }
+.tbox .tc { color: var(--fg-3); padding: 0 1px; }
+.tstep { display: inline-grid; grid-template-rows: 1fr 1fr; margin-left: 4px; height: 26px; }
+.tstep button { width: 18px; border: 0; padding: 0; background: none; border-radius: 4px; display: grid; place-items: center; cursor: pointer; color: var(--fg-2); }
+.tstep button:hover { background: var(--ink-3); color: var(--fg); }
+.tstep svg { width: 9px; height: 6px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 
 /* Pinned apps (real icons) */
 .pins { display: flex; flex-wrap: wrap; gap: 8px; }

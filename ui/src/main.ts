@@ -314,6 +314,7 @@ function renderWall(w: WallStatus): void {
   chipGroup("sched-mode", [["off", "Off"], ["times", "On"]], w.schedule, (k) => saveSched(k));
   ($("sched-light") as HTMLInputElement).value = w.light_at;
   ($("sched-dark") as HTMLInputElement).value = w.dark_at;
+  timeSync.forEach((f) => f());
   $("sched-times").classList.toggle("off", w.schedule !== "times");
 }
 
@@ -450,6 +451,104 @@ $("wall-own-file").addEventListener("change", async (e) => {
   }
 });
 if (inTauri) listen<WallProgress>("wallpaper-progress", (e) => showProgress(e.payload));
+
+// ---- Time fields (light/dark schedule) ----
+// Cove's own control instead of the native <input type="time">, whose parts
+// can't be styled to Ink and graphite. Hour, minute (and AM/PM where the
+// locale uses it) are spinbuttons: arrows step, digits type, Left/Right move,
+// and the small stepper does the same for the mouse. The value lives in a
+// hidden input that fires "change" once you stop adjusting.
+const timeSync: (() => void)[] = [];
+const hour12 = new Intl.DateTimeFormat(undefined, { hour: "numeric" }).resolvedOptions().hour12 ?? false;
+const pad2 = (n: number) => String(n).padStart(2, "0");
+function timeField(hostId: string, inputId: string): void {
+  const host = $(hostId);
+  const input = $(inputId) as HTMLInputElement;
+  host.setAttribute("role", "group");
+  host.setAttribute("aria-labelledby", `${hostId}-l`);
+  const seg = (label: string) => {
+    const s = document.createElement("span");
+    s.className = "ts";
+    s.tabIndex = 0;
+    s.setAttribute("role", "spinbutton");
+    s.setAttribute("aria-label", label);
+    return s;
+  };
+  const h = seg("Hour"), m = seg("Minutes"), ap = hour12 ? seg("AM or PM") : null;
+  const segs = [h, m, ...(ap ? [ap] : [])];
+  const colon = Object.assign(document.createElement("span"), { className: "tc", textContent: ":" });
+  colon.setAttribute("aria-hidden", "true");
+  const stepper = document.createElement("span");
+  stepper.className = "tstep";
+  stepper.setAttribute("aria-hidden", "true");
+  stepper.innerHTML = '<button tabindex="-1" data-d="1"><svg viewBox="0 0 10 6"><path d="M1.5 4.5L5 1.5l3.5 3"/></svg></button><button tabindex="-1" data-d="-1"><svg viewBox="0 0 10 6"><path d="M1.5 1.5L5 4.5l3.5-3"/></svg></button>';
+  host.append(h, colon, m, ...(ap ? [ap] : []), stepper);
+  let last: HTMLElement = h;
+  let typed = "";
+  let timer = 0;
+  const get = () => { const [H, M] = (input.value || "00:00").split(":").map(Number); return { H: H || 0, M: M || 0 }; };
+  const paint = () => {
+    const { H, M } = get();
+    h.textContent = hour12 ? String(H % 12 || 12) : pad2(H);
+    h.setAttribute("aria-valuemin", hour12 ? "1" : "0");
+    h.setAttribute("aria-valuemax", hour12 ? "12" : "23");
+    h.setAttribute("aria-valuenow", hour12 ? String(H % 12 || 12) : String(H));
+    m.textContent = pad2(M);
+    m.setAttribute("aria-valuemin", "0");
+    m.setAttribute("aria-valuemax", "59");
+    m.setAttribute("aria-valuenow", String(M));
+    if (ap) { ap.textContent = H < 12 ? "AM" : "PM"; ap.setAttribute("aria-valuetext", ap.textContent); }
+  };
+  const flush = () => { if (timer) { clearTimeout(timer); timer = 0; input.dispatchEvent(new Event("change")); } };
+  const set = (H: number, M: number) => {
+    input.value = `${pad2(((H % 24) + 24) % 24)}:${pad2(((M % 60) + 60) % 60)}`;
+    paint();
+    clearTimeout(timer);
+    timer = window.setTimeout(flush, 700);
+  };
+  const step = (el: HTMLElement, d: number) => {
+    const { H, M } = get();
+    if (el === h) set(H + d, M);
+    else if (el === m) set(H, M + d);
+    else set(H + 12, M);
+  };
+  const typeDigit = (el: HTMLElement, digit: string) => {
+    const { H, M } = get();
+    typed = (typed + digit).slice(-2);
+    const n = Number(typed);
+    if (el === h) {
+      if (hour12) { const v = Math.min(12, Math.max(1, n || 12)); set((v % 12) + (H >= 12 ? 12 : 0), M); }
+      else set(Math.min(23, n), M);
+      if (typed.length === 2 || n * 10 > (hour12 ? 12 : 23)) { typed = ""; m.focus(); }
+    } else if (el === m) {
+      set(H, Math.min(59, n));
+      if (typed.length === 2 || n * 10 > 59) { typed = ""; (ap ?? m).focus(); }
+    }
+  };
+  segs.forEach((el, i) => {
+    el.addEventListener("focus", () => { last = el; typed = ""; });
+    el.addEventListener("keydown", (e) => {
+      const k = e.key;
+      if (k === "ArrowUp" || k === "ArrowDown") step(el, k === "ArrowUp" ? 1 : -1);
+      else if (k === "PageUp" || k === "PageDown") step(el, (k === "PageUp" ? 1 : -1) * (el === m ? 10 : 1));
+      else if (k === "ArrowRight" && i < segs.length - 1) segs[i + 1].focus();
+      else if (k === "ArrowLeft" && i > 0) segs[i - 1].focus();
+      else if (/^[0-9]$/.test(k) && el !== ap) typeDigit(el, k);
+      else if (el === ap && /^[ap]$/i.test(k)) { const { H, M } = get(); if ((k.toLowerCase() === "p") !== (H >= 12)) set(H + 12, M); }
+      else if (k === "Enter") flush();
+      else return;
+      e.preventDefault();
+    });
+  });
+  stepper.addEventListener("pointerdown", (e) => e.preventDefault()); // keep focus where it is
+  stepper.querySelectorAll<HTMLButtonElement>("button").forEach((b) =>
+    b.addEventListener("click", () => { step(last, Number(b.dataset.d)); last.focus(); }));
+  host.addEventListener("focusout", (e) => { if (!host.contains(e.relatedTarget as Node)) flush(); });
+  timeSync.push(paint);
+  paint();
+}
+timeField("tf-light", "sched-light");
+timeField("tf-dark", "sched-dark");
 
 // ---- Look (Cove Glass) ----
 async function saveSched(mode?: string): Promise<void> {

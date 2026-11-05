@@ -135,3 +135,13 @@ body.tick { outline: 1px solid transparent; }
 
 .foot { display: flex; justify-content: space-between; gap: 8px; min-width: 0; padding: 2px 2px 0; }
 .foot .link { margin: 0; font-size: 12px; font-weight: 500; }
+
+/* Accessibility: graphite focus ring on every control (not only buttons),
+   motion off when asked, and system colours in high contrast. */
+:is(button, input, [tabindex]):focus-visible { outline: 2px solid var(--c-focus); outline-offset: -2px; }
+.slider input:focus-visible { outline: none; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; } }
+@media (forced-colors: active) {
+  .menu, .cc, .module { border: 1px solid CanvasText; }
+  .menu .row:focus-visible, .menu .row.on, .tog.on .chip { outline: 2px solid Highlight; }
+}
