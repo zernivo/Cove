@@ -19,7 +19,7 @@ interface TopState { app: string; kind: "app" | "cove" | "desktop" | "shell"; hw
 interface Media { title: string; artist: string; app: string; playing: boolean; icon: string | null }
 interface Controls { volume: number | null; muted: boolean; brightness: number | null; wifi: string | null; dark: boolean; bluetooth?: boolean | null; bt_devices?: number | null; focus?: boolean | null; device?: string | null; media?: Media | null }
 export interface MItem { id?: string; label?: string; kbd?: string; icon?: string | null; check?: boolean; disabled?: boolean; sub?: MItem[]; sep?: boolean; header?: string; headerIcon?: string | null; danger?: boolean; count?: string; run?: () => unknown }
-type Kind = "cove" | "app" | "file" | "view" | "go" | "window" | "dock" | "confirm" | "cc";
+type Kind = "cove" | "app" | "file" | "view" | "go" | "window" | "dock" | "confirm" | "cc" | "cal";
 
 const inTauri = "__TAURI_INTERNALS__" in window;
 const onWindows = inTauri && navigator.userAgent.includes("Windows");
@@ -41,8 +41,11 @@ if (onWindows) document.documentElement.classList.add("acrylic");
 const stage = $("stage");
 const menuEl = $("menu");
 const subEl = $("sub");
-const views: Record<"menu" | "confirm" | "cc", HTMLElement> = { menu: menuEl, confirm: $("confirm"), cc: $("cc") };
+const views: Record<"menu" | "confirm" | "cc" | "cal", HTMLElement> = { menu: menuEl, confirm: $("confirm"), cc: $("cc"), cal: $("cal") };
 let current: Kind | null = null;
+/** The popover stands above the dock (rises from below) instead of
+ *  hanging from the menu bar. Set by the app with each popover-show. */
+let up = false;
 let icons: Record<string, string | null> = {};
 const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -59,10 +62,11 @@ loadIcons();
 
 // ---- Layout, shape and placement ----
 let subFor: HTMLElement | null = null;
-const bottomAnchored = () => current === "dock";
+const bottomAnchored = () => up;
+const viewOf = (k: Kind | null): "menu" | "confirm" | "cc" | "cal" => (k === "confirm" || k === "cc" || k === "cal" ? k : "menu");
 
 function layout(): { w: number; h: number; shapes: number[][]; anchorW: number } {
-  const main = current === "confirm" ? views.confirm : current === "cc" ? views.cc : menuEl;
+  const main = views[viewOf(current)];
   const mr = main.getBoundingClientRect();
   const mw = Math.ceil(mr.width), mh = Math.ceil(mr.height);
   const radius = (el: HTMLElement) => parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0;
@@ -118,8 +122,8 @@ function enter(): void {
   const frames = reduced.matches
     ? [{ opacity: 0 }, { opacity: 1 }]
     : [{ opacity: 0, transform: `translateY(${up ? 4 : -4}px) scale(0.97)` }, { opacity: 1, transform: "none" }];
-  for (const el of [views.menu, views.confirm, views.cc]) {
-    el.style.setProperty("--origin", current === "cc" ? "top right" : up ? "bottom center" : "top left");
+  for (const el of Object.values(views)) {
+    el.style.setProperty("--origin", up ? "bottom center" : current === "cc" ? "top right" : "top left");
   }
   anim = stage.animate(frames, { duration: reduced.matches ? 150 : 180, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" });
   // Belt and braces: whatever happens to frames, the content ends visible.
@@ -129,7 +133,7 @@ function enter(): void {
 /** Render one popover, then have the app size, shape and show the window. */
 async function show(kind: Kind): Promise<void> {
   current = kind;
-  const view = kind === "confirm" ? "confirm" : kind === "cc" ? "cc" : "menu";
+  const view = viewOf(kind);
   for (const [k, el] of Object.entries(views)) el.classList.toggle("hidden", k !== view);
   closeSub(false);
   stage.style.opacity = "0"; // nothing visible until the window is on screen
@@ -472,6 +476,47 @@ async function trayRefresh(): Promise<void> {
 }
 if (inTauri) listen("tray-changed", () => { if (current === "cc") trayRefresh(); });
 
+// ---- Calendar (the dock clock) ----
+let calMonth = new Date();
+function firstWeekday(): number {
+  // 0 = Sunday ... 6 = Saturday; Monday unless the locale says otherwise.
+  try {
+    const loc = new Intl.Locale(navigator.language) as Intl.Locale & { weekInfo?: { firstDay: number }; getWeekInfo?: () => { firstDay: number } };
+    const fd = loc.getWeekInfo?.().firstDay ?? loc.weekInfo?.firstDay;
+    if (fd) return fd % 7;
+  } catch { /* older engine */ }
+  return 1;
+}
+function renderCal(): void {
+  const now = q.get("today") ? new Date(q.get("today")!) : new Date();
+  $("cal-day").textContent = now.toLocaleDateString(undefined, { weekday: "long" });
+  $("cal-date").textContent = now.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
+  const y = calMonth.getFullYear(), m = calMonth.getMonth();
+  $("cal-title").textContent = new Date(y, m, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const fd = firstWeekday();
+  const grid = $("cal-grid");
+  grid.innerHTML = "";
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(2024, 0, 7 + ((fd + i) % 7)); // 7 Jan 2024 was a Sunday
+    grid.appendChild(Object.assign(document.createElement("span"), { className: "wd", textContent: d.toLocaleDateString(undefined, { weekday: "narrow" }) }));
+  }
+  const lead = (new Date(y, m, 1).getDay() - fd + 7) % 7;
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(y, m, 1 - lead + i);
+    const cell = document.createElement("span");
+    const today = d.toDateString() === now.toDateString();
+    cell.className = `dd${d.getMonth() !== m ? " out" : ""}${today ? " today" : ""}`;
+    cell.textContent = String(d.getDate());
+    if (today) cell.setAttribute("aria-current", "date");
+    grid.appendChild(cell);
+  }
+}
+$("cal-prev").addEventListener("click", () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1); renderCal(); });
+$("cal-next").addEventListener("click", () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1); renderCal(); });
+$("cal-now").addEventListener("click", () => { calMonth = new Date(); renderCal(); });
+go($("cal-notes"), "notifications");
+go($("cal-settings"), "datetime");
+
 // ---- Open / close ----
 async function open(kind: Kind, data: unknown): Promise<void> {
   if (!Object.keys(icons).length) await loadIcons();
@@ -493,18 +538,20 @@ async function open(kind: Kind, data: unknown): Promise<void> {
       show("cc");
       break;
     }
+    case "cal": calMonth = q.get("today") ? new Date(q.get("today")!) : new Date(); renderCal(); show("cal"); break;
     default: break;
   }
 }
 
 if (inTauri) {
   listen("popover-repaint", repaint);
-  listen<{ kind: Kind; data: unknown }>("popover-show", (e) => open(e.payload.kind, e.payload.data));
+  listen<{ kind: Kind; data: unknown; up?: boolean }>("popover-show", (e) => { up = !!e.payload.up; open(e.payload.kind, e.payload.data); });
   // The window was hidden by the app (clicked elsewhere): reset for next time.
   listen("popover-hidden", () => { current = null; stage.style.opacity = "0"; closeSub(false); });
 } else {
-  // Browser preview: ?k=cc|cove|app|file|go|window|dock[&sub=1]
+  // Browser preview: ?k=cc|cove|app|file|go|window|dock|cal[&sub=1][&up=1]
   const k = (q.get("k") ?? "cc") as Kind;
+  up = k === "dock" || !!q.get("up");
   const demo: TopState = { app: q.get("app") ?? "Google Chrome", kind: (q.get("kind") as TopState["kind"]) ?? "app", hwnd: 1, count: 3, icon: "/mock/chrome.png", user: "Khubaib" };
   const dockDemo = { items: [
     { header: "Google Chrome" },
@@ -532,7 +579,7 @@ if (inTauri) {
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") { if (subFor) closeSub(true); else hide(); return; }
-  if (!current || current === "cc" || current === "confirm") return;
+  if (!current || current === "cc" || current === "confirm" || current === "cal") return;
   const box = subFor && subEl.contains(document.activeElement) ? subEl : menuEl;
   const items = [...box.querySelectorAll<HTMLButtonElement>(".row:not(:disabled)")];
   const i = items.indexOf(document.activeElement as HTMLButtonElement);

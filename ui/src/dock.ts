@@ -5,7 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { makePlate, refractionFilter, wallpaperUrl, reducedMotion } from "./glass";
 
 interface DockItem { kind: "pin" | "running" | "cove" | "stack" | "trash"; name: string; target: string; windows: number[]; active: boolean; attention?: boolean; icon?: string; no_icon?: boolean; full?: boolean }
-interface MItem { id?: string; label?: string; kbd?: string; check?: boolean; disabled?: boolean; sub?: MItem[]; sep?: boolean; header?: string }
+interface MItem { id?: string; label?: string; kbd?: string; check?: boolean; disabled?: boolean; sub?: MItem[]; sep?: boolean; header?: string; count?: string }
 
 const inTauri = "__TAURI_INTERNALS__" in window;
 const q = new URLSearchParams(location.search);
@@ -28,22 +28,27 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
     return Promise.resolve(["report.pdf", "photo.png", "setup.exe", "notes.txt", "Project", "song.mp3", "budget.xlsx"].map((n) => ({ name: n, path: n, dir: !n.includes("."), icon: null })) as T);
   }
   if (cmd === "popover_at") (window.parent as Window)?.postMessage({ coveDockMenu: args }, "*");
+  if (cmd === "popover_dock") (window.parent as Window)?.postMessage({ coveDockPop: args }, "*");
+  if (cmd === "island_state") {
+    const b = q.get("batt");
+    return Promise.resolve({ battery: b ? { percent: Number(b) || 84, charging: false } : null, volume: 46, muted: false, wifi: q.get("wired") ? null : "Nazeer-5G" } as T);
+  }
   return Promise.resolve((cmd === "dock_state" ? { items: MOCK } : null) as T);
 }
 
-// ---- Geometry (dock.css): variant A ----
-const SIZE = 48, GAP = 10, PAD_X = 8, SEP_W = 1 - 2; // .sep: 1 px wide, -1 px margins each side
-const DOCK_H = 66, FLOAT = 6;
-const HEADROOM = 54; // magnified icons (+12 + 7 DIP) and the tooltip above them
-const SIDE = 40;     // spread (+~12 DIP each side) and shadow reach
+// ---- Geometry (dock.css): variant A proportions, smaller (2026-11-05) ----
+const SIZE = 40, GAP = 8, PAD_X = 8, SEP_W = 1 - 2; // .sep: 1 px wide, -1 px margins each side
+const DOCK_H = 56, FLOAT = 6, RADIUS = 15;
+const HEADROOM = 48; // magnified icons (+10 + 6 DIP) and the tooltip above them
+const SIDE = 36;     // spread (+~10 DIP each side) and shadow reach
 const STACK_H = 360; // extra height while a folder stack is open
 // ---- Magnification (user pick): smooth and gentle. At most 1.25x, a lift
-// of 7 DIP, neighbours with a cosine-squared falloff over two icons, and a
+// of 6 DIP, neighbours with a cosine-squared falloff over two icons, and a
 // critically damped spring (damping ratio 1.0) settling in ~250 ms. Every
 // icon's scale follows its own spring, so motion is interruptible and never
 // jumps; distances are measured on the resting layout, so growing icons
 // never feed back into the pointer maths (no jitter).
-const MAX = 1.25, LIFT = 7, RANGE = (SIZE + GAP) * 2, OMEGA = 24;
+const MAX = 1.25, LIFT = 6, RANGE = (SIZE + GAP) * 2, OMEGA = 24;
 
 const ICON_WAIT = 5000; // after this, a still-missing icon shows its letter tile
 const waitingSince = new Map<string, number>();
@@ -57,6 +62,8 @@ const dock = document.getElementById("dock")!;
 const glass = document.getElementById("glass")!;
 const plateEl = document.getElementById("plate")!;
 const stack = document.getElementById("stack")!;
+const island = document.getElementById("island")!;
+const islandSep = Object.assign(document.createElement("div"), { className: "sep isep" });
 let openStack = "";
 let items: DockItem[] = [];
 let sig = "";
@@ -68,6 +75,11 @@ let firstRender = true;
 const keyOf = (it: DockItem) => `${it.kind}:${it.target}`;
 
 function place(): void {
+  // The clock drops its date line when the dock would not fit its display.
+  const compact = document.body.classList.contains("compact");
+  const wide = Math.ceil(dock.getBoundingClientRect().width) + SIDE * 2;
+  if (!compact && wide > geom.mw - 16) { document.body.classList.add("compact"); measure(); }
+  else if (compact && wide + 40 < geom.mw - 16) { document.body.classList.remove("compact"); measure(); }
   const pill = Math.ceil(dock.getBoundingClientRect().width);
   let width = pill + SIDE * 2;
   let height = FLOAT + DOCK_H + HEADROOM;
@@ -94,7 +106,7 @@ function layoutGlass(): void {
   root.setProperty("--mon-h", `${geom.mh}px`);
   glass.style.setProperty("--px", `${-left}px`);
   glass.style.setProperty("--py", `${-top}px`);
-  if (plateUrl) plateEl.style.filter = `url(#${refractionFilter(r.width, DOCK_H, 18, { bezel: 16, thickness: 32, strength: 0.7 })})`;
+  if (plateUrl) plateEl.style.filter = `url(#${refractionFilter(r.width, DOCK_H, RADIUS, { bezel: 13, thickness: 28, strength: 0.7 })})`;
 }
 async function loadPlate(): Promise<void> {
   try {
@@ -119,6 +131,7 @@ function render(): void {
   const now = Date.now();
   for (const [k, until] of launching) if (until < now) launching.delete(k);
   dock.querySelectorAll(".item, .sep").forEach((e) => e.remove());
+  island.remove();
   let sepDone = false;
   items.forEach((it, i) => {
     // One divider: between the apps and Downloads + Bin.
@@ -156,6 +169,7 @@ function render(): void {
     if (it.windows.length) el.appendChild(Object.assign(document.createElement("span"), { className: "dot" }));
     el.appendChild(Object.assign(document.createElement("span"), { className: "label", textContent: it.name }));
     el.addEventListener("click", (e) => open(it, el, e.shiftKey));
+    if (it.kind === "cove") el.addEventListener("pointerdown", (e) => { if (e.button === 0) popDock("cove", el); });
     el.addEventListener("contextmenu", (e) => { e.preventDefault(); showMenu(it, el); });
     el.addEventListener("pointerdown", (e) => { if (e.button === 0) el.classList.add("pressed"); });
     el.addEventListener("pointerup", () => el.classList.remove("pressed"));
@@ -164,13 +178,16 @@ function render(): void {
     el.addEventListener("animationend", (e) => { if (e.animationName === "arrive") { el.classList.remove("arriving"); measure(); } });
     dock.appendChild(el);
   });
+  // The status island closes the dock, after its own divider.
+  dock.appendChild(islandSep);
+  dock.appendChild(island);
   const keep = new Set(items.map(keyOf));
   if (!reducedMotion.matches) {
     for (const [k, { el, idx }] of before) {
       if (keep.has(k)) continue;
       const ghost = el.cloneNode(true) as HTMLElement;
       ghost.className = "item leaving";
-      const at = dock.querySelectorAll(".item")[idx] ?? null;
+      const at = dock.querySelectorAll(".item")[idx] ?? islandSep;
       dock.insertBefore(ghost, at);
       ghost.addEventListener("animationend", () => { ghost.remove(); measure(); place(); });
       setTimeout(() => ghost.remove(), 600);
@@ -196,7 +213,7 @@ function measure(): void {
   slots = [];
   for (const el of Array.from(dock.children) as HTMLElement[]) {
     const isItem = el.classList.contains("item");
-    if (!isItem && !el.classList.contains("sep")) continue;
+    if (!isItem && !el.classList.contains("sep") && el !== island) continue;
     if (el.classList.contains("leaving")) continue;
     const prev = old.get(el);
     slots.push({ el, pic: el.querySelector<HTMLElement>(".pic"), c: el.offsetLeft + el.offsetWidth / 2, s: prev?.s ?? 1, v: prev?.v ?? 0, t: 1, item: isItem });
@@ -276,8 +293,8 @@ let tipTimer = 0;
 let tipShownAt = 0;
 function tipEnter(el: HTMLElement): void {
   clearTimeout(tipTimer);
-  const warm = Date.now() - tipShownAt < 250 || !!dock.querySelector(".item.tip");
-  dock.querySelectorAll(".item.tip").forEach((e) => { if (e !== el) e.classList.remove("tip"); });
+  const warm = Date.now() - tipShownAt < 250 || !!dock.querySelector(".tip");
+  dock.querySelectorAll(".tip").forEach((e) => { if (e !== el) e.classList.remove("tip"); });
   tipTimer = window.setTimeout(() => { el.classList.add("tip"); tipShownAt = Date.now(); }, warm ? 0 : 300);
 }
 function tipLeave(el: HTMLElement): void {
@@ -289,6 +306,8 @@ function tipLeave(el: HTMLElement): void {
 async function open(it: DockItem, el: HTMLElement, fresh: boolean): Promise<void> {
   if (it.kind === "stack") { toggleStack(it, el); return; }
   closeStack();
+  // The Cove icon is the Cove menu (About This PC, Settings, Sleep, ...).
+  if (it.kind === "cove") return;
   try {
     if (fresh && it.kind === "pin") await invoke("dock_launch", { target: it.target });
     else await invoke("dock_open", { kind: it.kind, target: it.target, windows: it.windows, active: it.active });
@@ -304,17 +323,27 @@ async function open(it: DockItem, el: HTMLElement, fresh: boolean): Promise<void
 // ---- Context menu: the shared glass menu in the popover window, centred
 // on the icon, 10 DIP above the dock. Picks come back as dock-menu-pick. ----
 const actions = new Map<string, () => Promise<unknown>>();
-let menuOpen = false;
+let menuOpen = ""; // the popover this dock opened: "dock", "cove", "cc", "cal"
 function showMenu(it: DockItem, el: HTMLElement): void {
   actions.clear();
   const list: MItem[] = [{ header: it.name }];
   const act = (id: string, label: string, run: () => Promise<unknown>, kbd?: string, extra: Partial<MItem> = {}): MItem => { actions.set(id, run); return { id, label, kbd, ...extra }; };
   const has = it.windows.length > 0;
   if (it.kind === "pin" || it.kind === "running") {
+    // The app menu the menu bar used to hold lives here now, per app.
+    const app = (what: string) => () => invoke("topbar_app", { what, hwnd: it.windows[0], name: it.name });
     list.push(act("new", "New Window", () => invoke("dock_launch", { target: it.target })));
     list.push({ sep: true });
-    if (has) list.push(act("expose", "Show All Windows", () => invoke("expose_open", { name: it.name, windows: it.windows })));
-    if (has) list.push(act("hide", "Hide", () => invoke("topbar_app", { what: "hide", hwnd: it.windows[0], name: it.name }), "Alt+H"));
+    if (has) {
+      list.push(act("expose", "Show All Windows", () => invoke("expose_open", { name: it.name, windows: it.windows }), undefined, it.windows.length > 1 ? { count: String(it.windows.length) } : {}));
+      list.push({ sep: true });
+      list.push(act("hide", "Hide", app("hide"), "Alt+H"));
+      list.push(act("hide-others", "Hide Others", app("hide-others")));
+      list.push({ sep: true });
+      list.push(act("minimize", "Minimise", app("minimize"), "Alt+M"));
+      list.push(act("zoom", "Zoom", app("zoom")));
+      list.push(act("front", "Bring All to Front", app("front")));
+    }
     const opts: MItem[] = [];
     opts.push(it.kind === "pin"
       ? act("unpin", "Keep in Dock", () => invoke("dock_unpin", { target: it.target }), undefined, { check: true })
@@ -341,9 +370,27 @@ function showMenu(it: DockItem, el: HTMLElement): void {
   }
   const r = el.getBoundingClientRect();
   const top = innerHeight - FLOAT - DOCK_H;
-  menuOpen = true;
-  invoke("dock_busy", { busy: true });
+  menuOpen = "dock";
+  busy();
   invoke("popover_at", { kind: "dock", x: r.left + r.width / 2, y: top, data: { items: list } }).catch(() => {});
+}
+
+// ---- The dock's own popovers: the Cove menu (left-click the Cove icon),
+// Control Centre (Wi-Fi, sound, battery, Control Centre) and the calendar
+// (the clock). They stand 8 DIP above the dock, centred on the item, and a
+// second click on the same item closes them. ----
+let popFrom: HTMLElement | null = null;
+function popDock(kind: "cove" | "cc" | "cal", el: HTMLElement): void {
+  const r = el.getBoundingClientRect();
+  const top = innerHeight - FLOAT - DOCK_H;
+  popFrom = el;
+  menuOpen = kind;
+  busy();
+  invoke("popover_dock", { kind, x: r.left + r.width / 2, y: top, data: null }).catch(() => {});
+  if (!inTauri) showOpen(kind);
+}
+function showOpen(open: string | null): void {
+  island.querySelectorAll<HTMLElement>(".st").forEach((b) => b.classList.toggle("open", !!open && b === popFrom));
 }
 if (inTauri) {
   listen<string>("dock-menu-pick", async (e) => {
@@ -352,15 +399,69 @@ if (inTauri) {
     refresh();
   });
   listen<string | null>("popover-state", (e) => {
-    if (menuOpen && e.payload !== "dock") { menuOpen = false; busy(); }
+    if (menuOpen && e.payload !== menuOpen) { menuOpen = ""; popFrom = null; busy(); }
+    showOpen(menuOpen ? e.payload : null);
   });
+}
+
+// ---- Status island ----
+interface Island { battery: { percent: number; charging: boolean } | null; volume: number | null; muted: boolean; wifi: string | null }
+const st = (k: string) => island.querySelector<HTMLElement>(`.st[data-k="${k}"]`)!;
+const label = (k: string, text: string) => { st(k).querySelector(".label")!.textContent = text; st(k).setAttribute("aria-label", text); };
+island.querySelectorAll<HTMLElement>(".st").forEach((b) => {
+  const k = b.dataset.k!;
+  // Respond on press, like the menu bar did.
+  b.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    closeStack();
+    if (k === "search") invoke("topbar_open", { what: "search" }).catch(() => {});
+    else popDock(k === "clock" ? "cal" : "cc", b);
+  });
+  b.addEventListener("pointerenter", () => tipEnter(b));
+  b.addEventListener("pointerleave", () => tipLeave(b));
+});
+async function refreshIsland(): Promise<void> {
+  const s = await invoke<Island>("island_state").catch(() => null);
+  if (!s) return;
+  const b = s.battery;
+  const batt = st("battery");
+  const had = !batt.classList.contains("hidden");
+  batt.classList.toggle("hidden", !b);
+  if (b) {
+    const f = document.getElementById("batt-fill")!;
+    f.style.width = `${Math.max(2, Math.round((b.percent / 100) * 16.6))}px`;
+    f.className = `fill${b.charging ? " charging" : b.percent <= 20 ? " low" : ""}`;
+    label("battery", b.charging ? `Charging, ${b.percent}%` : `Battery ${b.percent}%`);
+  }
+  const wifi = st("wifi");
+  wifi.classList.toggle("wired", !s.wifi);
+  label("wifi", s.wifi ? `Wi-Fi: ${s.wifi}` : "Network");
+  const snd = st("sound");
+  snd.classList.toggle("muted", s.muted || s.volume === 0);
+  snd.classList.toggle("low", (s.volume ?? 100) < 34);
+  label("sound", s.volume === null ? "Sound" : s.muted ? "Sound (muted)" : `Sound ${s.volume}%`);
+  if (had !== !!b) { measure(); place(); }
+}
+function clock(): void {
+  const d = new Date();
+  const fixed = q.get("clock")?.split("|");
+  const t = fixed?.[0] ?? d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const day = fixed?.[1] ?? d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }).replace(/,/g, "");
+  const te = document.getElementById("clock-t")!, de = document.getElementById("clock-d")!;
+  if (te.textContent !== t || de.textContent !== day) {
+    te.textContent = t;
+    de.textContent = day;
+    document.getElementById("clock-label")!.textContent = d.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+    measure();
+    place();
+  }
 }
 
 // A folder stack reaches above the dock's strip: keep the whole window
 // clickable while one (or a dock menu) is open.
 let wasBusy = false;
 function busy(): void {
-  const now = menuOpen || !!openStack;
+  const now = !!menuOpen || !!openStack;
   if (now !== wasBusy) { wasBusy = now; invoke("dock_busy", { busy: now }); }
 }
 document.addEventListener("click", (e) => {
@@ -465,3 +566,7 @@ new MutationObserver(() => loadPlate()).observe(document.documentElement, { attr
 addEventListener("resize", () => { measure(); layoutGlass(); });
 refresh();
 setInterval(refresh, 1200);
+clock();
+setInterval(clock, 1000);
+refreshIsland();
+setInterval(refreshIsland, 2000);

@@ -32,8 +32,10 @@ const mock: Record<string, (a?: any) => unknown> = {
   update_install: () => null,
   just_updated: () => false,
   clipboard_set: (a) => a.enabled,
-  topbar_status: () => false,
+  topbar_status: () => mockBar !== "off",
   topbar_set: (a) => a.enabled,
+  menubar_status: () => mockBar,
+  menubar_set: (a) => (mockBar = ["off", "edge", "always"].includes(a.mode) ? a.mode : "off"),
   dock_status: () => ({ enabled: false, hide_taskbar: false, stacks: ["downloads"], display: "main" }),
   dock_set: (a) => ({ enabled: a.enabled, hide_taskbar: false, stacks: ["downloads"], display: "main" }),
   dock_hide_taskbar_set: (a) => ({ enabled: true, hide_taskbar: a.enabled, stacks: ["downloads"], display: "main" }),
@@ -62,6 +64,7 @@ const mock: Record<string, (a?: any) => unknown> = {
 function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   return inTauri ? tauriInvoke<T>(cmd, args) : Promise.resolve(mock[cmd](args) as T);
 }
+let mockBar = new URLSearchParams(location.search).get("bar") ?? "off"; // browser preview only
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -736,14 +739,20 @@ $("snap-animate").addEventListener("change", async (e) => {
 });
 invoke<SnapInfo>("snap_status").then(renderSnap);
 
-function renderTopbar(on: boolean): void {
-  ($("topbar-toggle") as HTMLInputElement).checked = on;
-  $("topbar-note").textContent = on ? "" : "Windows' clock and icons stay on the taskbar.";
+// Menu bar: Off (default), Show at the top edge, or Always (reserves space).
+const MENUBAR: [string, string, string][] = [
+  ["off", "Off", "No bar across the top, so maximised apps get the whole screen. The Cove menu is on the Cove icon in the dock."],
+  ["edge", "Show at the top edge", "Hidden until you push the pointer to the top of the screen. It never takes space from your apps."],
+  ["always", "Always", "Always there, 24 points tall. Maximised apps stop below it."],
+];
+function renderMenubar(mode: string): void {
+  const m = MENUBAR.find(([k]) => k === mode) ?? MENUBAR[0];
+  $("stage").dataset.bar = m[0];
+  $("mini-bar-state").textContent = m[0] === "off" ? "No menu bar" : m[0] === "edge" ? "Slides in at the top edge" : "Always shown";
+  $("menubar-note").textContent = m[2];
+  chipGroup("menubar-mode", MENUBAR.map(([k, label]) => [k, label] as [string, string]), m[0], async (k) => renderMenubar(await invoke<string>("menubar_set", { mode: k })));
 }
-$("topbar-toggle").addEventListener("change", async (e) => {
-  renderTopbar(await invoke<boolean>("topbar_set", { enabled: (e.target as HTMLInputElement).checked }));
-});
-invoke<boolean>("topbar_status").then(renderTopbar);
+invoke<string>("menubar_status").then(renderMenubar);
 
 function renderClip(on: boolean): void {
   ($("clip-toggle") as HTMLInputElement).checked = on;
@@ -880,7 +889,7 @@ interface TourStep {
 type Preset = "light" | "mac" | "none";
 let tourPreset: Preset = "mac";
 const PRESETS: [Preset, string, string][] = [
-  ["mac", "Mac-like", "Calm taskbar, Search, Mac shortcuts, dock, top bar, app switcher and window snapping"],
+  ["mac", "Mac-like", "Calm taskbar, Search, Mac shortcuts, dock, app switcher and window snapping"],
   ["light", "Light touch", "Calm taskbar and Search (Alt+Space). Everything else stays Windows"],
   ["none", "Keep things as they are", "Change nothing now. You can switch any feature on later"],
 ];
@@ -893,7 +902,6 @@ async function applyPreset(p: Preset): Promise<void> {
   if (p === "mac") {
     await invoke("hotkeys_set", { enabled: true });
     await invoke("dock_set", { enabled: true });
-    await invoke("topbar_set", { enabled: true });
     await invoke("switcher_set", { enabled: true });
     await invoke("snap_set", { enabled: true, animate: true });
   }
@@ -949,10 +957,10 @@ const TOUR: TourStep[] = [
     enable: () => invoke("switcher_set", { enabled: true }),
   },
   {
-    id: "dock", title: "Dock and top bar",
-    body: "The dock sits at the bottom with your apps and folders; the top bar shows the app in front, the clock and Control Centre. Change them in Dock & top bar, and the look in Look.",
-    on: async () => (await invoke<DockStatus>("dock_status")).enabled && (await invoke<boolean>("topbar_status")),
-    enable: async () => { await invoke("dock_set", { enabled: true }); await invoke("topbar_set", { enabled: true }); },
+    id: "dock", title: "The dock",
+    body: "The dock sits at the bottom with your apps and folders. Its right end shows the time, Wi-Fi, sound and Control Centre, and the Cove icon opens the Cove menu. Change it in Dock; a menu bar along the top is in Menu bar.",
+    on: async () => (await invoke<DockStatus>("dock_status")).enabled,
+    enable: async () => { await invoke("dock_set", { enabled: true }); },
   },
   {
     id: "end", title: "You're set",
@@ -1051,7 +1059,7 @@ if (inTauri) {
     invoke<DockStatus>("dock_status").then(renderDock);
     invoke<boolean>("switcher_status").then(renderSwitcher);
     invoke<SnapInfo>("snap_status").then(renderSnap);
-    invoke<boolean>("topbar_status").then(renderTopbar);
+    invoke<string>("menubar_status").then(renderMenubar);
     invoke<ThemeState>("theme_get").then(renderLook);
     invoke<HotkeyStatus>("hotkeys_status").then(renderHabits);
   });
@@ -1120,12 +1128,14 @@ if (inTauri) {
     w.toggleMaximize();
   });
 }
-// Cove desktop: the dock and menu bar together replace the Windows taskbar.
+// Cove desktop: the dock replaces the Windows taskbar. (The menu bar is
+// its own choice in Menu bar; turning the desktop off turns it off too.)
 $("desk-toggle").addEventListener("change", async (e) => {
   const on = (e.target as HTMLInputElement).checked;
-  const [d, bar] = await Promise.all([invoke<DockStatus>("dock_set", { enabled: on }), invoke<boolean>("topbar_set", { enabled: on })]);
+  const d = await invoke<DockStatus>("dock_set", { enabled: on });
+  if (!on) await invoke("topbar_set", { enabled: false });
   renderDock(d);
-  renderTopbar(bar);
+  invoke<string>("menubar_status").then(renderMenubar);
   toast(on ? "Cove desktop is on." : "Back to the Windows taskbar.");
 });
 
@@ -1228,7 +1238,8 @@ async function renderPins(): Promise<void> {
 }
 function miniClock(): void {
   const d = new Date();
-  $("mini-clock").textContent = d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }) + "  " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  $("mini-clock").textContent = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  $("mini-date").textContent = d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }).replace(/,/g, "");
 }
 function miniWall(): void {
   // The real desktop picture, served by Cove itself (falls back to Ink).
