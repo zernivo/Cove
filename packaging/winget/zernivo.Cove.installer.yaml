@@ -1,0 +1,25 @@
+# Draft winget manifest (installer file). Not submitted yet: see README.md here.
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+PackageIdentifier: zernivo.Cove
+PackageVersion: 0.9.0
+Platform:
+  - Windows.Desktop
+MinimumOSVersion: 10.0.22000.0
+InstallerType: nullsoft
+Scope: user
+InstallModes:
+  - interactive
+  - silent
+UpgradeBehavior: install
+ReleaseDate: 2026-11-05
+Dependencies:
+  PackageDependencies:
+    - PackageIdentifier: Microsoft.EdgeWebView2Runtime
+Installers:
+  - Architecture: x64
+    # Pattern: https://github.com/zernivo/Cove/releases/download/v<version>/Cove_<version>_x64-setup.exe
+    InstallerUrl: https://github.com/zernivo/Cove/releases/download/v0.9.0/Cove_0.9.0_x64-setup.exe
+    # Fill in from the published asset: (Get-FileHash .\Cove_0.9.0_x64-setup.exe).Hash
+    InstallerSha256: 0000000000000000000000000000000000000000000000000000000000000000
+ManifestType: installer
+ManifestVersion: 1.6.0
