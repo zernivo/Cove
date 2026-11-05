@@ -1,0 +1,40 @@
+name: Smoke launch
+on:
+  workflow_dispatch:
+jobs:
+  smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm install
+      - run: npx tauri build --bundles nsis
+        env:
+          GIT_SHA: ${{ github.sha }}
+      - name: Install build and launch
+        shell: pwsh
+        run: |
+          Copy-Item (Get-ChildItem src-tauri\target\release\bundle\nsis\*-setup.exe | Select-Object -First 1).FullName setup.exe
+          Start-Process .\setup.exe -ArgumentList "/S" -Wait
+          $exe = Get-ChildItem "$env:LOCALAPPDATA\Cove","$env:ProgramFiles\Cove" -Filter *.exe -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch "uninstall" } | Select-Object -First 1
+          "exe: $($exe.FullName)"
+          $env:RUST_BACKTRACE = "full"
+          $p = Start-Process $exe.FullName -PassThru -RedirectStandardError err.txt -RedirectStandardOutput out.txt
+          Start-Sleep 30
+          $alive = -not $p.HasExited
+          "alive after 30s: $alive  exit: $($p.ExitCode)"
+          Get-Process | Where-Object { $_.Name -match "cove|msedgewebview2" } | Format-Table Name,Id,MainWindowTitle -AutoSize | Out-String
+          "---- stderr"; Get-Content err.txt -ErrorAction SilentlyContinue
+          "---- stdout"; Get-Content out.txt -ErrorAction SilentlyContinue
+          "---- cove.log"
+          Get-ChildItem "$env:APPDATA\app.cove.desktop","$env:LOCALAPPDATA\app.cove.desktop" -ErrorAction SilentlyContinue | Format-Table FullName,Length | Out-String
+          Get-Content "$env:APPDATA\app.cove.desktop\cove.log" -ErrorAction SilentlyContinue
+          "---- app event log"
+          Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-5)} -ErrorAction SilentlyContinue | Where-Object { $_.LevelDisplayName -eq 'Error' } | Format-List TimeCreated,ProviderName,Message | Out-String -Width 300
+          if (-not $alive) { exit 1 }

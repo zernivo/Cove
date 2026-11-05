@@ -651,11 +651,14 @@ fn status_from(enabled: bool, pins: Vec<String>, takeover: bool) -> Status {
 #[tauri::command]
 pub async fn tray_status(app: tauri::AppHandle) -> Status {
     use tauri::Manager;
-    let st = app.state::<crate::AppState>();
-    let (enabled, pins, takeover) = st
-        .settings
-        .lock()
-        .map(|s| (s.data.tray_icons, s.data.tray_pins.clone(), s.data.dock && (s.data.takeover || s.data.dock_hide_taskbar)))
+    let (enabled, pins, takeover) = app
+        .try_state::<crate::AppState>()
+        .and_then(|st| {
+            st.settings
+                .lock()
+                .ok()
+                .map(|s| (s.data.tray_icons, s.data.tray_pins.clone(), s.data.dock && (s.data.takeover || s.data.dock_hide_taskbar)))
+        })
         .unwrap_or((true, Vec::new(), false));
     status_from(enabled, pins, takeover && !crate::safe())
 }

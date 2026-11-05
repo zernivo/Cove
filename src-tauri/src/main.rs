@@ -97,7 +97,7 @@ fn safe_marker_clear(app: &AppHandle) {
 
 /// Apply every feature from Settings, honouring safe mode.
 fn apply_features(app: &AppHandle) {
-    let state = app.state::<AppState>();
+    let Some(state) = app.try_state::<AppState>() else { return };
     let d = match state.settings.lock() {
         Ok(s) => s.data.clone(),
         Err(_) => return,
@@ -1200,7 +1200,7 @@ struct TrayChecks {
 
 fn tray_sync(app: &AppHandle) {
     let Some(t) = app.try_state::<TrayChecks>() else { return };
-    let state = app.state::<AppState>();
+    let Some(state) = app.try_state::<AppState>() else { return };
     let Ok(g) = state.settings.lock() else { return };
     let d = &g.data;
     let _ = t.dock.set_checked(d.dock);
@@ -1215,7 +1215,7 @@ fn tray_sync(app: &AppHandle) {
 }
 
 fn tray_action(app: &AppHandle, id: &str) {
-    let state = app.state::<AppState>();
+    let Some(state) = app.try_state::<AppState>() else { return };
     let cur = match state.settings.lock() {
         Ok(s) => s.data.clone(),
         Err(_) => return,
@@ -1366,7 +1366,7 @@ fn wallpaper_fixed_file(app: &AppHandle, choice: &str) -> Option<std::path::Path
 
 /// Remember the wallpaper from before Cove, then record the new choice and show it.
 fn wallpaper_choose(app: &AppHandle, choice: String) -> Result<wallpaper::WallpaperStatus, String> {
-    let state = app.state::<AppState>();
+    let state = app.try_state::<AppState>().ok_or("Cove is still starting.")?;
     {
         let mut s = state.settings.lock().map_err(|e| e.to_string())?;
         if s.data.wallpaper_prev.is_none() {
@@ -1470,7 +1470,7 @@ fn schedule_tick(app: &AppHandle) {
     if safe() {
         return;
     }
-    let state = app.state::<AppState>();
+    let Some(state) = app.try_state::<AppState>() else { return };
     let decided = state.settings.lock().ok().and_then(|s| {
         if s.data.schedule != "times" {
             return None;
@@ -2192,7 +2192,7 @@ static DESKTOP_REVEALED: std::sync::atomic::AtomicBool = std::sync::atomic::Atom
 /// After the startup intro: the menu bar, the dock and (first run) Settings.
 fn reveal_desktop(app: &AppHandle) {
     DESKTOP_REVEALED.store(true, std::sync::atomic::Ordering::SeqCst);
-    let state = app.state::<AppState>();
+    let Some(state) = app.try_state::<AppState>() else { return };
     let (bar_mode, dock_on) = state.settings.lock().map(|s| (s.data.menu_bar.clone(), s.data.dock)).unwrap_or(("off".into(), false));
     let bar_on = bar_mode != "off";
     if bar_on {
@@ -2275,12 +2275,12 @@ fn dock_unpin(target: String, state: tauri::State<'_, AppState>) {
 const DOCK_RESERVE: f64 = 62.0; // 56 DIP dock + 6 DIP float
 
 fn dock_enabled(app: &AppHandle) -> bool {
-    app.state::<AppState>().settings.lock().map(|s| s.data.dock).unwrap_or(false) && !safe()
+    app.try_state::<AppState>().and_then(|st| st.settings.lock().ok().map(|s| s.data.dock)).unwrap_or(false) && !safe()
 }
 
 /// "smart" | "always" | "never" (settings.dock_hide).
 fn dock_hide_mode(app: &AppHandle) -> String {
-    app.state::<AppState>().settings.lock().map(|s| s.data.dock_hide.clone()).unwrap_or_else(|_| "smart".into())
+    app.try_state::<AppState>().and_then(|st| st.settings.lock().ok().map(|s| s.data.dock_hide.clone())).unwrap_or_else(|| "smart".into())
 }
 
 /// The dock's strip on screen (physical px) while the dock is shown,
@@ -2738,7 +2738,26 @@ fn main() {
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             let journal = journal::Journal::load(dir.join("journal.json"))?;
-            let store = settings::Store::load(dir.join("settings.json"));
+            let mut store = settings::Store::load(dir.join("settings.json"));
+            // Once per new version: make Explorer drop stale cached icons (below).
+            let new_version = store.data.last_version != env!("CARGO_PKG_VERSION");
+            if new_version {
+                store.data.last_version = env!("CARGO_PKG_VERSION").to_string();
+                let _ = store.save();
+            }
+            let dock_on = store.data.dock;
+            let bar_on = store.data.topbar;
+            let updated = std::env::args().any(|a| a == updater::UPDATED_FLAG);
+            // Managed first, before anything below can pump window messages:
+            // a page's command may run while setup waits on Windows (a sent
+            // message, a broadcast), and every command reads this state.
+            // Managing it late crashed a fresh install at launch.
+            app.manage(AppState {
+                journal: Mutex::new(journal),
+                settings: Mutex::new(store),
+                just_updated: std::sync::atomic::AtomicBool::new(updated),
+            });
+            let store_data = app.state::<AppState>().settings.lock().map(|s| s.data.clone()).unwrap_or_default();
             // Bars a crashed run still held (the watchdog normally frees them).
             appbar::release_recorded(&dir.join("settings.json"));
             appbar::set_record(appbar::record_path(&dir.join("settings.json")));
@@ -2783,16 +2802,16 @@ fn main() {
                 let _ = handle.run_on_main_thread(move || toggle_search(&h));
             });
             let on = safe_why.is_none();
-            hotkeys::configure(on && store.data.hotkeys, on && store.data.search);
-            clipboard::set_enabled(on && store.data.clipboard);
-            winindex::set_enabled(store.data.search_winindex);
+            hotkeys::configure(on && store_data.hotkeys, on && store_data.search);
+            clipboard::set_enabled(on && store_data.clipboard);
+            winindex::set_enabled(store_data.search_winindex);
             {
                 let h = app.handle().clone();
                 switcher::set_ui_handler(move |u| switcher_ui(&h, u));
             }
-            switcher::set_enabled(on && store.data.switcher);
-            snap::configure(on && store.data.snap, store.data.snap_animate);
-            theme_apply(app.handle(), &theme::state(&store.data.theme, &store.data.appearance, &store.data.accent));
+            switcher::set_enabled(on && store_data.switcher);
+            snap::configure(on && store_data.snap, store_data.snap_animate);
+            theme_apply(app.handle(), &theme::state(&store_data.theme, &store_data.appearance, &store_data.accent));
             {
                 let h = app.handle().clone();
                 std::thread::spawn(move || loop {
@@ -2803,21 +2822,9 @@ fn main() {
                 });
             }
             search::warm();
-            let dock_on = store.data.dock;
-            let bar_on = store.data.topbar;
-            // Once per new version: make Explorer drop stale cached icons.
-            let mut store = store;
-            if store.data.last_version != env!("CARGO_PKG_VERSION") {
+            if new_version {
                 topbar::refresh_icons();
-                store.data.last_version = env!("CARGO_PKG_VERSION").to_string();
-                let _ = store.save();
             }
-            let updated = std::env::args().any(|a| a == updater::UPDATED_FLAG);
-            app.manage(AppState {
-                journal: Mutex::new(journal),
-                settings: Mutex::new(store),
-                just_updated: std::sync::atomic::AtomicBool::new(updated),
-            });
             // No DWM acrylic on the menu bar: the bar window is never the
             // active window, and Windows draws a system backdrop on an
             // inactive window as its flat fallback colour, which is why the
