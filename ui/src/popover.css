@@ -15,9 +15,9 @@ html, body {
   -webkit-font-smoothing: antialiased;
   --panel: var(--c-panel);
 }
-/* Real acrylic underneath: the app baked ~0.59 of the tint into it. */
-html.acrylic { --panel: rgba(30, 31, 36, 0.28); }
-html.acrylic:not([data-mode="dark"]) { --panel: rgba(247, 243, 239, 0.42); }
+/* Real Liquid Glass underneath (Windows): the app's blur-behind backdrop
+   shaped to the panels, with a low neutral tint baked in (glass.rs). */
+html.acrylic { --panel: var(--c-lg-panel); }
 @media (prefers-reduced-transparency: reduce) { html, html.acrylic, html.acrylic:not([data-mode="dark"]) { --panel: var(--c-solid); } }
 .hidden { display: none !important; }
 button { border: 0; background: none; color: inherit; font: inherit; padding: 0; cursor: default; }
@@ -36,8 +36,15 @@ body.tick { outline: 1px solid transparent; }
 .menu, .cc {
   background: var(--panel);
   box-shadow: var(--c-panel-rim);
+  /* Crisp text over the glass. */
+  -webkit-font-smoothing: antialiased;
   transform-origin: var(--origin, top left);
 }
+
+/* The window leaves 24 DIP round the panels for this shadow. */
+html.acrylic .menu { --lg-edge: 2px; }
+html.acrylic .cc { --lg-edge: 5px; }
+html.acrylic .menu, html.acrylic .cc { box-shadow: var(--c-lg-rim), inset 0 0 0 var(--lg-edge) var(--c-lg-edge), var(--c-lg-shadow); }
 
 /* ---- Menus: 24 DIP rows, 13 DIP text, 10 DIP text inset, highlight
    inset 5 with radius 6 (concentric with the 11 DIP panel). ---- */

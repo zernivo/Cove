@@ -1,27 +1,33 @@
-//! Mac window buttons ("traffic lights") on the focused window, hover-only.
+//! Mac window buttons ("traffic lights") on the focused window.
 //!
-//! Cove draws three small dots (close, minimise, zoom) at the left of the
-//! focused window's title bar when the pointer comes near it, and turns a
-//! click into the window's own `WM_SYSCOMMAND`. The native Windows buttons
-//! are never covered or patched, so Snap Layouts, Narrator and Alt+F4 keep
-//! working exactly as before.
+//! 2026-11-05 (user's test of b44d0c1: "the three traffic signals do not
+//! appear and the windows style app header was there"): the dots are now
+//! always shown on the focused window's title bar, and they REPLACE the
+//! native Windows buttons: one small window of Cove's own covers the
+//! native minimise / maximise / close buttons exactly, painted in the title
+//! bar's own colour (read from the screen beside the buttons), with red /
+//! yellow / green at its right end. A click becomes the window's own
+//! `WM_SYSCOMMAND`; resting on green (or Alt+click) opens Snap Layouts with
+//! Win+Z. Background windows keep their native buttons.
 //!
 //! How (see notes/traffic-lights-research.md):
 //! - Watching uses out-of-context WinEvents only (`SetWinEventHook` with
 //!   `WINEVENT_OUTOFCONTEXT`): nothing is loaded into other processes, no
-//!   `SetWindowsHookEx`, no drivers, nothing written to the system.
-//! - Only the focused window. Standard frames are measured with DWM
-//!   (`DWMWA_CAPTION_BUTTON_BOUNDS` + `DWMWA_EXTENDED_FRAME_BOUNDS`). A small
-//!   allow-list of custom title bars (File Explorer, Chrome, Edge, VS Code)
-//!   is measured with UI Automation once when the window gains focus (and
-//!   after a resize settles), never during a drag.
+//!   `SetWindowsHookEx`, no drivers, nothing written to the system. The
+//!   native buttons are only covered, never changed: Narrator, Alt+F4 and
+//!   the app itself see them as before.
+//! - Standard frames are measured with DWM (`DWMWA_CAPTION_BUTTON_BOUNDS` +
+//!   `DWMWA_EXTENDED_FRAME_BOUNDS`). Custom title bars (File Explorer,
+//!   Chrome, Edge, VS Code first, then any app) are measured with UI
+//!   Automation once when the window gains focus (and after a resize
+//!   settles), never during a drag: the app's own caption buttons at the
+//!   top-right corner, or the window is skipped.
 //! - Anything uncertain is skipped: elevated windows, fullscreen, cloaked,
 //!   tool windows, dialogs without min/max, hung windows, High Contrast,
-//!   Cove's own windows, and title bars with no safe space at the left.
-//! - The overlay is one small transparent, no-activate, topmost window of
-//!   Cove's own (`traffic.html`), shaped to the three dots so clicks
-//!   anywhere else fall through to the app underneath. Turning the setting
-//!   off or quitting Cove destroys it.
+//!   Cove's own windows. The patch hides while the window moves, and
+//!   whenever another window lies over the buttons.
+//! - The overlay (`traffic.html`) is no-activate and topmost; turning the
+//!   setting off or quitting Cove destroys it.
 
 use serde::Serialize;
 
@@ -141,6 +147,44 @@ pub mod geom {
         Some(Rect { l: frame.l, t, r, b: close.b })
     }
 
+    /// The native caption buttons (screen px) from
+    /// `DWMWA_CAPTION_BUTTON_BOUNDS`, validated like `caption_from_dwm`.
+    pub fn buttons_from_dwm(window: Rect, frame: Rect, buttons: Rect, scale: f64) -> Option<Rect> {
+        let band = caption_from_dwm(window, frame, buttons, scale)?;
+        let abs = buttons.offset(window.l, window.t);
+        let r = Rect { l: band.r, t: band.t, r: abs.r.min(frame.r), b: band.b };
+        (r.w() >= dip(28.0, scale)).then_some(r)
+    }
+
+    /// The native caption buttons from the close button UI Automation
+    /// found (and the leftmost caption button beside it).
+    pub fn buttons_from_close(frame: Rect, close: Rect, leftmost_button: i32, scale: f64) -> Option<Rect> {
+        let band = caption_from_close(frame, close, leftmost_button, scale)?;
+        Some(Rect { l: band.r, t: band.t, r: close.r.min(frame.r), b: band.b })
+    }
+
+    /// The overlay that covers the native buttons (screen px): their
+    /// rectangle, 1 px in from the window's top and right border so the
+    /// frame's own edge stays visible.
+    pub fn cover(buttons: Rect) -> Rect {
+        Rect { l: buttons.l, t: buttons.t + 1, r: buttons.r - 1, b: buttons.b }
+    }
+
+    /// Right inset from the overlay's right edge to the zoom dot (DIP):
+    /// a Mac's 13 DIP lead, mirrored into the corner.
+    pub const RIGHT_INSET: f64 = 14.0;
+
+    /// Centre and radius of each dot inside a cover overlay `w` x `h`
+    /// physical px: right-aligned, vertically centred, close / minimise /
+    /// zoom left to right.
+    pub fn cover_dots(w: i32, h: i32, scale: f64) -> [(i32, i32, i32); 3] {
+        let r = dip(DOT / 2.0, scale);
+        let cy = h / 2;
+        let last = w - dip(RIGHT_INSET + DOT / 2.0, scale);
+        let step = dip(DOT + GAP, scale);
+        [(last - 2 * step, cy, r), (last - step, cy, r), (last, cy, r)]
+    }
+
     /// A standard (system-drawn) frame: the client area starts at or below
     /// the caption band, so nothing of the app's own is in the title bar.
     pub fn is_standard(band: Rect, client_top: i32) -> bool {
@@ -247,6 +291,8 @@ pub enum Ui {
     Show(Look),
     /// Fade out over `ms`, then hide the window.
     Hide { ms: u32 },
+    /// The title bar changed colour (focus, theme): repaint the patch.
+    Color(String),
     /// Destroy the overlay (setting off, safe mode, quit).
     Remove,
 }
@@ -264,6 +310,11 @@ pub struct Look {
     pub max: bool,
     /// The window is maximised (zoom restores it).
     pub zoomed: bool,
+    /// The title bar's colour next to the buttons ("#rrggbb"): the patch
+    /// that hides the native buttons.
+    pub color: String,
+    /// The window's own corner radius at the top right (px; 0 when square).
+    pub radius: i32,
 }
 
 /// Why Cove is holding the buttons back for now.
@@ -415,6 +466,9 @@ pub struct PagePayload {
     min: bool,
     max: bool,
     zoomed: bool,
+    color: String,
+    radius: f64,
+    scale: f64,
 }
 
 /// The overlay window: created when the feature turns on, destroyed when
@@ -449,7 +503,7 @@ fn apply_ui(app: &AppHandle, u: Ui) {
             let Some(w) = overlay(app) else { return };
             GEN.fetch_add(1, Ordering::SeqCst);
             imp::show_overlay(&w, &look);
-            to_page(app, PagePayload { show: true, fade: FADE_IN, min: look.min, max: look.max, zoomed: look.zoomed });
+            to_page(app, PagePayload { show: true, fade: FADE_IN, min: look.min, max: look.max, zoomed: look.zoomed, color: look.color.clone(), radius: look.radius as f64 / look.scale, scale: look.scale });
         }
         Ui::Hide { ms } => {
             let Some(_) = app.get_webview_window("traffic") else { return };
@@ -457,8 +511,9 @@ fn apply_ui(app: &AppHandle, u: Ui) {
             // stale "over" can't bring the dots back by itself.
             OVER.store(false, Ordering::SeqCst);
             let g = GEN.fetch_add(1, Ordering::SeqCst) + 1;
-            let (min, max) = LAST.lock().ok().and_then(|l| l.as_ref().map(|p| (p.min, p.max))).unwrap_or((true, true));
-            to_page(app, PagePayload { show: false, fade: ms, min, max, zoomed: false });
+            let last = LAST.lock().ok().and_then(|l| l.clone());
+            let (min, max, color, radius, scale) = last.map(|p| (p.min, p.max, p.color, p.radius, p.scale)).unwrap_or((true, true, String::new(), 0.0, 1.0));
+            to_page(app, PagePayload { show: false, fade: ms, min, max, zoomed: false, color, radius, scale });
             let a = app.clone();
             std::thread::spawn(move || {
                 std::thread::sleep(std::time::Duration::from_millis(ms as u64 + 30));
@@ -471,6 +526,14 @@ fn apply_ui(app: &AppHandle, u: Ui) {
                     }
                 });
             });
+        }
+        Ui::Color(c) => {
+            let next = LAST.lock().ok().and_then(|l| l.clone()).filter(|p| p.show && p.color != c);
+            if let Some(mut p) = next {
+                p.color = c;
+                p.fade = 0;
+                to_page(app, p);
+            }
         }
         Ui::Remove => {
             GEN.fetch_add(1, Ordering::SeqCst);
@@ -573,8 +636,8 @@ mod imp {
         DwmGetWindowAttribute, DWMWA_CAPTION_BUTTON_BOUNDS, DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS,
     };
     use windows_sys::Win32::Graphics::Gdi::{
-        ClientToScreen, CombineRgn, CreateEllipticRgn, DeleteObject, GetMonitorInfoW, MonitorFromWindow, SetWindowRgn,
-        MONITORINFO, MONITOR_DEFAULTTONEAREST, RGN_OR,
+        ClientToScreen, CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, GetDC, GetMonitorInfoW, GetPixel,
+        MonitorFromWindow, ReleaseDC, SetWindowRgn, MONITORINFO, MONITOR_DEFAULTTONEAREST, RGN_OR,
     };
     use windows_sys::Win32::Security::{GetSidSubAuthority, GetSidSubAuthorityCount, GetTokenInformation, TokenIntegrityLevel, TOKEN_MANDATORY_LABEL, TOKEN_QUERY};
     use windows_sys::Win32::System::Threading::{
@@ -588,7 +651,7 @@ mod imp {
     };
     use windows_sys::Win32::UI::Shell::{SHQueryUserNotificationState, QUNS_PRESENTATION_MODE, QUNS_RUNNING_D3D_FULL_SCREEN};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        DispatchMessageW, GetAncestor, GetClassNameW, GetClientRect, GetCursorPos, GetForegroundWindow, GetWindowLongPtrW,
+        DispatchMessageW, GetAncestor, GetClassNameW, GetWindow, GW_HWNDPREV, GetClientRect, GetCursorPos, GetForegroundWindow, GetWindowLongPtrW,
         GetWindowLongW, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, IsHungAppWindow, IsIconic, IsWindow,
         IsWindowVisible, IsZoomed, MsgWaitForMultipleObjectsEx, PeekMessageW, PostMessageW, PostThreadMessageW,
         SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow, SystemParametersInfoW, TranslateMessage,
@@ -597,7 +660,7 @@ mod imp {
         GWL_EXSTYLE, GWL_STYLE, HWND_TOPMOST, MSG, MWMO_INPUTAVAILABLE, OBJID_WINDOW, PM_REMOVE, QS_ALLINPUT, SC_CLOSE,
         SC_MAXIMIZE, SC_MINIMIZE, SC_RESTORE, SPI_GETHIGHCONTRAST, SWP_HIDEWINDOW, SWP_NOACTIVATE, SWP_NOMOVE,
         SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SW_HIDE, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS,
-        WM_APP, WM_QUIT, WM_SYSCOMMAND, WS_CAPTION, WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+        WM_APP, WM_QUIT, WM_SYSCOMMAND, WS_CAPTION, WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT,
         WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
     };
 
@@ -669,17 +732,21 @@ mod imp {
             // Crossing to a display with another DPI can resize the window
             // once (WM_DPICHANGED); set it again so it is exact.
             SetWindowPos(h, HWND_TOPMOST, look.x, look.y, look.w, look.h, flags);
-            // Only the dots take clicks; everything around them falls through.
-            let mut rgn: windows_sys::Win32::Graphics::Gdi::HRGN = std::ptr::null_mut();
-            for (cx, cy, rad) in geom::dot_circles(look.scale) {
-                let c = CreateEllipticRgn(cx - rad - 1, cy - rad - 1, cx + rad + 2, cy + rad + 2);
-                if rgn.is_null() {
-                    rgn = c;
-                } else {
-                    CombineRgn(rgn, rgn, c, RGN_OR);
-                    DeleteObject(c);
-                }
-            }
+            // The whole patch takes clicks (it hides the native buttons);
+            // the window's own rounded top-right corner stays the window's.
+            let (w_, h_, r) = (look.w, look.h, look.radius);
+            let rgn = if r > 0 {
+                let a = CreateRectRgn(0, 0, w_ - r, h_);
+                let b = CreateRectRgn(0, r, w_, h_);
+                let c = CreateRoundRectRgn(w_ - 2 * r, 0, w_ + 1, 2 * r + 1, 2 * r, 2 * r);
+                CombineRgn(a, a, b, RGN_OR);
+                CombineRgn(a, a, c, RGN_OR);
+                DeleteObject(b);
+                DeleteObject(c);
+                a
+            } else {
+                CreateRectRgn(0, 0, w_, h_)
+            };
             if !rgn.is_null() && SetWindowRgn(h, rgn, 1) == 0 {
                 DeleteObject(rgn);
             }
@@ -710,6 +777,12 @@ mod imp {
                 SetForegroundWindow(hwnd);
             }
             let cmd = match action {
+                // A rest on green: Windows' Snap Layouts, as hovering the
+                // native maximise button would show.
+                "snap" if same => {
+                    snap_layouts();
+                    return;
+                }
                 "close" => SC_CLOSE,
                 "min" => SC_MINIMIZE,
                 "zoom" if alt && same => {
@@ -909,15 +982,20 @@ mod imp {
         pid: u32,
         exe: String,
         same_il: bool,
+        /// The overlay rectangle: the native caption buttons it covers.
         spot: Rect,
-        zone: Rect,
         scale: f64,
         min: bool,
         max: bool,
-        /// Custom title bar measured by UI Automation: (frame size, band and
-        /// obstacles relative to the frame's top-left), reused while the
-        /// window only moves.
-        uia: Option<(i32, i32, Rect, Vec<Rect>)>,
+        /// Top-right corner radius of the window (px).
+        radius: i32,
+        /// Title bar colour next to the buttons, and when it was read.
+        color: String,
+        sampled: Option<Instant>,
+        /// Custom title bar measured by UI Automation: (frame size, buttons
+        /// relative to the frame's top-left), reused while the window only
+        /// moves.
+        uia: Option<(i32, i32, Rect)>,
     }
 
     #[derive(Default)]
@@ -986,9 +1064,6 @@ mod imp {
             }
             let cls = class(h);
             let kind = geom::kind(&exe, &cls);
-            if style & WS_CAPTION != WS_CAPTION && !kind.allowed() {
-                return fail("no title bar");
-            }
             if exe.is_empty() {
                 return fail("program unknown");
             }
@@ -1007,40 +1082,50 @@ mod imp {
             }
             let dpi = GetDpiForWindow(h);
             let scale = if dpi == 0 { 1.0 } else { dpi as f64 / 96.0 };
-            // 1. A standard frame, measured by DWM.
-            let dwm = geom::caption_from_dwm(window_rect(h), frame, caption_buttons(h), scale);
-            let (band, obstacles, uia) = match dwm {
-                Some(band) if geom::is_standard(band, client_top(h)) => (band, Vec::new(), None),
-                _ if kind.allowed() => {
-                    // 2. An allow-listed custom title bar, measured once by UI
-                    // Automation (reused while the window keeps its size).
-                    let cached = prev
-                        .filter(|p| p.hwnd == h)
-                        .and_then(|p| p.uia.clone())
-                        .filter(|(w, hh, _, _)| *w == frame.w() && *hh == frame.h());
-                    let (w0, h0, band_rel, obs_rel) = match cached {
-                        Some(c) => c,
-                        None => match super::uia::measure(h as isize, frame, scale, pid, dwm) {
-                            Some((b, o)) => (
-                                frame.w(),
-                                frame.h(),
-                                b.offset(-frame.l, -frame.t),
-                                o.iter().map(|x| x.offset(-frame.l, -frame.t)).collect(),
-                            ),
-                            None => return fail("custom title bar not measurable"),
-                        },
-                    };
-                    let band = band_rel.offset(frame.l, frame.t);
-                    let obs: Vec<Rect> = obs_rel.iter().map(|x| x.offset(frame.l, frame.t)).collect();
-                    (band, obs, Some((w0, h0, band_rel, obs_rel)))
+            // The native caption buttons, which the overlay covers.
+            // 1. A standard frame: DWM says where they are. Allow-listed
+            //    custom title bars (Explorer, Chrome, Edge, VS Code) draw
+            //    their own, so UI Automation is asked first for those.
+            let dwm = geom::buttons_from_dwm(window_rect(h), frame, caption_buttons(h), scale);
+            let standard = dwm.filter(|b| geom::is_standard(Rect { l: frame.l, t: b.t, r: b.l, b: b.b }, client_top(h)));
+            let cached = prev
+                .filter(|p| p.hwnd == h)
+                .and_then(|p| p.uia)
+                .filter(|(w, hh, _)| *w == frame.w() && *hh == frame.h());
+            let by_uia = |cached: Option<(i32, i32, Rect)>| -> Option<(i32, i32, Rect)> {
+                if cached.is_some() {
+                    return cached;
                 }
-                _ => return fail("custom title bar"),
+                // UI Automation looks at what is on screen: our own patch
+                // must not be over the buttons it is looking for.
+                hide_now();
+                cached.or_else(|| super::uia::buttons(h as isize, frame, scale, pid).map(|b| (frame.w(), frame.h(), b.offset(-frame.l, -frame.t))))
             };
-            let Some(spot) = geom::place(frame, band, &obstacles, scale) else {
-                return fail("no safe space at the left of the title bar");
+            let (btns, uia) = if kind.allowed() {
+                match by_uia(cached) {
+                    Some(u) => (u.2.offset(frame.l, frame.t), Some(u)),
+                    None => match standard {
+                        Some(b) => (b, None),
+                        None => return fail("custom title bar not measurable"),
+                    },
+                }
+            } else if let Some(b) = standard {
+                (b, None)
+            } else {
+                // 2. Any other custom title bar: only if UI Automation finds
+                //    the app's own caption buttons at the top-right corner.
+                match by_uia(cached) {
+                    Some(u) => (u.2.offset(frame.l, frame.t), Some(u)),
+                    None => return fail(if style & WS_CAPTION != WS_CAPTION { "no title bar" } else { "custom title bar" }),
+                }
             };
-            let zone = geom::hover_zone(frame, band, spot, &obstacles, scale);
-            Ok(Target { hwnd: h, pid, exe, same_il, spot, zone, scale, min, max, uia })
+            let spot = geom::cover(btns);
+            if spot.is_empty() || spot.h() < geom::dip(16.0, scale) {
+                return fail("caption buttons too small");
+            }
+            let zoomed = IsZoomed(h) != 0;
+            let radius = if win11() && !zoomed { geom::dip(8.0, scale) } else { 0 };
+            Ok(Target { hwnd: h, pid, exe, same_il, spot, scale, min, max, radius, color: String::new(), sampled: None, uia })
         }
     }
 
@@ -1136,6 +1221,10 @@ mod imp {
         match inspect(prev.hwnd, Some(&prev)) {
             Ok(mut t) => {
                 t.pid = prev.pid;
+                if t.spot == prev.spot {
+                    t.color = prev.color.clone();
+                    t.sampled = prev.sampled;
+                }
                 set_current(Some(&t));
                 w.target = Some(t);
             }
@@ -1145,48 +1234,113 @@ mod imp {
                 hide(w, FADE_FAST);
                 let mut t = prev;
                 t.spot = Rect::default();
-                t.zone = Rect::default();
                 w.target = Some(t);
             }
         }
     }
 
-    /// Pointer near the focused window's title bar: show; away: hide.
+    /// The focused window qualifies: the dots stay on its title bar,
+    /// covering the native buttons, unless another window lies over them.
     fn check_pointer(w: &mut Watch) {
-        let Some(t) = w.target.clone() else { return };
+        let Some(t) = w.target.as_mut() else { return };
         if w.dragging || w.settle_at.is_some() || held() || !ENABLED.load(Ordering::SeqCst) || t.spot.is_empty() {
             hide(w, FADE_FAST);
             return;
         }
-        let mut p = POINT { x: 0, y: 0 };
-        if unsafe { GetCursorPos(&mut p) } == 0 {
+        if !still_ok(t) || occluded(t) {
+            hide(w, FADE_FAST);
             return;
         }
-        let over = OVER.load(Ordering::SeqCst);
-        let near_spot = t.spot.inflate(geom::dip(6.0, t.scale), geom::dip(6.0, t.scale)).contains(p.x, p.y);
-        let want = (over && near_spot) || (t.zone.contains(p.x, p.y) && pointer_on(&t, p)) || (w.shown && near_spot);
-        if want && !w.shown {
-            if !still_ok(&t) {
-                return;
+        // Read the title bar colour beside the buttons (focus and theme
+        // change it), at most every 400 ms.
+        let now = Instant::now();
+        if t.sampled.is_none_or(|at| now.duration_since(at) >= Duration::from_millis(400)) {
+            t.sampled = Some(now);
+            if let Some(c) = title_color(t) {
+                if c != t.color {
+                    t.color = c.clone();
+                    if w.shown {
+                        ui(Ui::Color(c));
+                    }
+                }
             }
+        }
+        let t = t.clone();
+        if !w.shown {
             w.shown = true;
             let zoomed = unsafe { IsZoomed(t.hwnd) } != 0;
-            ui(Ui::Show(Look { x: t.spot.l, y: t.spot.t, w: t.spot.w(), h: t.spot.h(), scale: t.scale, min: t.min, max: t.max, zoomed }));
-        } else if !want && w.shown {
-            hide(w, FADE_OUT);
+            let color = if t.color.is_empty() { "#202020".to_string() } else { t.color.clone() };
+            ui(Ui::Show(Look { x: t.spot.l, y: t.spot.t, w: t.spot.w(), h: t.spot.h(), scale: t.scale, min: t.min, max: t.max, zoomed, color, radius: t.radius }));
         }
     }
 
-    /// The pointer is over the target itself (not another window lying on
-    /// top of its title bar) and nothing covers the spot.
-    fn pointer_on(t: &Target, p: POINT) -> bool {
+    /// Another visible window above the target overlaps the buttons.
+    fn occluded(t: &Target) -> bool {
         let overlay = OVERLAY.lock().map(|o| *o).unwrap_or(0);
-        let mine = |pt: POINT| {
-            let h = unsafe { WindowFromPoint(pt) };
-            !h.is_null() && (root(h) == t.hwnd || root(h) as isize == overlay)
-        };
-        let (cx, cy) = t.spot.center();
-        mine(p) && mine(POINT { x: cx, y: cy })
+        let mut h = unsafe { GetWindow(t.hwnd, GW_HWNDPREV) };
+        let mut n = 0;
+        while !h.is_null() && n < 400 {
+            n += 1;
+            if h as isize != overlay && unsafe { IsWindowVisible(h) } != 0 && !cloaked(h) {
+                let ex = unsafe { GetWindowLongW(h, GWL_EXSTYLE) } as u32;
+                // Click-through overlays (other apps' HUDs) don't count.
+                if ex & WS_EX_TRANSPARENT == 0 && window_rect(h).intersects(&t.spot) {
+                    return true;
+                }
+            }
+            h = unsafe { GetWindow(h, GW_HWNDPREV) };
+        }
+        false
+    }
+
+    /// The title bar's colour just left of the buttons: the median of three
+    /// screen pixels down the band.
+    fn title_color(t: &Target) -> Option<String> {
+        let x = t.spot.l - geom::dip(6.0, t.scale);
+        let ys = [t.spot.t + geom::dip(4.0, t.scale), (t.spot.t + t.spot.b) / 2, t.spot.b - geom::dip(4.0, t.scale)];
+        let mut px: Vec<u32> = Vec::new();
+        unsafe {
+            let dc = GetDC(std::ptr::null_mut());
+            if dc.is_null() {
+                return None;
+            }
+            for y in ys {
+                let c = GetPixel(dc, x, y);
+                if c != 0xFFFF_FFFF {
+                    px.push(c);
+                }
+            }
+            ReleaseDC(std::ptr::null_mut(), dc);
+        }
+        if px.is_empty() {
+            return None;
+        }
+        let lum = |c: u32| (c & 0xff) * 3 + ((c >> 8) & 0xff) * 6 + ((c >> 16) & 0xff);
+        px.sort_by_key(|&c| lum(c));
+        let c = px[px.len() / 2];
+        Some(format!("#{:02x}{:02x}{:02x}", c & 0xff, (c >> 8) & 0xff, (c >> 16) & 0xff))
+    }
+
+    /// Hide the overlay window right away (before UI Automation looks).
+    fn hide_now() {
+        let o = OVERLAY.lock().map(|o| *o).unwrap_or(0);
+        if o != 0 && unsafe { IsWindowVisible(o as HWND) } != 0 {
+            unsafe { ShowWindow(o as HWND, SW_HIDE) };
+            std::thread::sleep(Duration::from_millis(30));
+        }
+    }
+
+    /// Windows 11 rounds window corners (8 DIP); Windows 10 doesn't.
+    fn win11() -> bool {
+        static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *V.get_or_init(|| {
+            winreg::RegKey::predef(winreg::enums::HKEY_LOCAL_MACHINE)
+                .open_subkey(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion")
+                .and_then(|k| k.get_value::<String, _>("CurrentBuildNumber"))
+                .ok()
+                .and_then(|b| b.trim().parse::<u32>().ok())
+                .is_some_and(|b| b >= 22000)
+        })
     }
 
     /// Cheap re-checks right before showing.
@@ -1209,11 +1363,8 @@ mod imp {
         }
         if let Some(t) = &w.target {
             if !w.dragging && !t.spot.is_empty() && ENABLED.load(Ordering::SeqCst) && !held() {
-                // Quick while shown or the pointer is close; lazy otherwise.
-                let mut p = POINT { x: 0, y: 0 };
-                unsafe { GetCursorPos(&mut p) };
-                let near = t.zone.inflate(geom::dip(160.0, t.scale), geom::dip(120.0, t.scale)).contains(p.x, p.y);
-                ms = ms.min(if w.shown || near { 40 } else { 160 });
+                // Shown or waiting to show: keep an eye on overlap and colour.
+                ms = ms.min(if w.shown { 120 } else { 160 });
             }
         }
         ms.min(u32::MAX as u64) as u32
@@ -1341,13 +1492,14 @@ mod uia {
         m.lock().ok().map(|s| s.clone())
     }
 
-    /// The caption band and the clickable things in its leading part, or
-    /// `None` if UI Automation can't say confidently (then Cove skips).
-    pub fn measure(hwnd: isize, frame: Rect, scale: f64, pid: u32, band: Option<Rect>) -> Reply {
+    /// The app's own caption buttons (minimise to close, screen px) at
+    /// the frame's top-right corner, or `None` if UI Automation can't say
+    /// confidently (then Cove skips the window).
+    pub fn buttons(hwnd: isize, frame: Rect, scale: f64, pid: u32) -> Option<Rect> {
         let tx = sender()?;
         let (rtx, rrx) = channel();
-        tx.send(Ask { hwnd, band, frame, scale, pid, reply: rtx }).ok()?;
-        rrx.recv_timeout(Duration::from_millis(600)).ok().flatten()
+        tx.send(Ask { hwnd, band: None, frame, scale, pid, reply: rtx }).ok()?;
+        rrx.recv_timeout(Duration::from_millis(600)).ok().flatten().map(|(b, _)| b)
     }
 
     fn rect_of(e: &IUIAutomationElement) -> Option<Rect> {
@@ -1359,29 +1511,9 @@ mod uia {
         unsafe { a.ElementFromPoint(POINT { x, y }) }.ok()
     }
 
-    /// Plain background a click would only drag the window by (the title
-    /// bar, a pane, the app icon, the title text). Anything else in the way
-    /// (a tab, a button, a menu, or a type Cove doesn't know) blocks.
-    fn background(t: UIA_CONTROLTYPE_ID) -> bool {
-        [
-            UIA_PaneControlTypeId,
-            UIA_WindowControlTypeId,
-            UIA_TitleBarControlTypeId,
-            UIA_GroupControlTypeId,
-            UIA_ImageControlTypeId,
-            UIA_TextControlTypeId,
-            UIA_SeparatorControlTypeId,
-        ]
-        .contains(&t)
-    }
-
     fn measure_now(a: &IUIAutomation, ask: &Ask) -> Reply {
-        let band = match ask.band {
-            Some(b) => b,
-            None => caption_by_uia(a, ask)?,
-        };
-        let obs = obstacles(a, ask, band)?;
-        Some((band, obs))
+        let _ = (ask.hwnd, ask.band);
+        Some((caption_by_uia(a, ask)?, Vec::new()))
     }
 
     /// The caption band from the native caption buttons UI Automation finds
@@ -1407,48 +1539,9 @@ mod uia {
             }
             leftmost = rc.l;
         }
-        geom::caption_from_close(f, close_r, leftmost, ask.scale)
+        geom::buttons_from_close(f, close_r, leftmost, ask.scale)
     }
 
-    /// Clickable things in the leading part of the band, where the dots
-    /// would sit (plus clear space). `None` when not confident.
-    fn obstacles(a: &IUIAutomation, ask: &Ask, band: Rect) -> Option<Vec<Rect>> {
-        let f = ask.frame;
-        let d = |v: f64| geom::dip(v, ask.scale);
-        // Sample the leading part of the band (where the dots would sit plus
-        // clear space) and collect anything clickable there.
-        let (cw, ch) = geom::cluster_size(ask.scale);
-        let reach = f.l + d(geom::INSET) + cw + d(geom::CLEAR) + d(4.0);
-        let mid = band.t + band.h() / 2;
-        let rows = [mid - ch / 2, mid, mid + ch / 2];
-        let mut obstacles: Vec<Rect> = Vec::new();
-        let step = d(5.0).max(1);
-        for y in rows {
-            let mut x = f.l + d(2.0);
-            while x < reach {
-                if obstacles.iter().any(|o| o.contains(x, y)) {
-                    x += step;
-                    continue;
-                }
-                let Some(e) = at(a, x, y) else { return None };
-                if unsafe { e.CurrentProcessId() }.ok()? as u32 != ask.pid {
-                    // Another window lies over the title bar: not confident.
-                    return None;
-                }
-                let t = unsafe { e.CurrentControlType() }.ok()?;
-                if let Some(rc) = rect_of(&e) {
-                    // Big containers (the window, the tab strip itself) and
-                    // plain background don't block; everything else does.
-                    if !background(t) && rc.w() < f.w() / 2 {
-                        obstacles.push(rc);
-                    }
-                }
-                x += step;
-            }
-        }
-        let _ = ask.hwnd;
-        Some(obstacles)
-    }
 }
 
 #[cfg(not(windows))]
@@ -1581,6 +1674,31 @@ mod tests {
         // Not at the corner, or too tall: not confident.
         assert!(caption_from_close(frame, Rect::new(800, 0, 869, 51), 800, S).is_none());
         assert!(caption_from_close(frame, Rect::new(1531, 0, 1600, 300), 1393, S).is_none());
+    }
+
+    #[test]
+    fn covers_exactly_the_native_buttons() {
+        let (window, frame) = std_window();
+        let buttons = Rect::new(1207 - 207, 0, 1207, 48);
+        let b = buttons_from_dwm(window, frame, buttons, S).unwrap();
+        assert_eq!(b, Rect::new(1093, 100, 1300, 148));
+        let c = cover(b);
+        assert_eq!(c, Rect::new(1093, 101, 1299, 148));
+        // Custom title bar: from the close button UI Automation found.
+        let frame = Rect::new(0, 0, 1600, 1000);
+        let b = buttons_from_close(frame, Rect::new(1531, 0, 1600, 51), 1393, S).unwrap();
+        assert_eq!(b, Rect::new(1393, 0, 1600, 51));
+    }
+
+    #[test]
+    fn dots_sit_at_the_right_end_of_the_patch() {
+        let d = cover_dots(207, 47, S);
+        // Zoom dot centre: 14 + 6 DIP from the right edge.
+        assert_eq!(d[2].0, 207 - dip(20.0, S));
+        assert_eq!(d[2].0 - d[1].0, dip(20.0, S));
+        assert_eq!(d[1].0 - d[0].0, dip(20.0, S));
+        assert!(d[0].0 - d[0].2 > 0, "all three fit inside the patch");
+        assert_eq!(d[0].1, 23);
     }
 
     #[test]

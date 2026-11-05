@@ -90,8 +90,8 @@ pub struct Settings {
     /// Snapped windows glide (~200 ms) instead of jumping.
     #[serde(default = "yes")]
     pub snap_animate: bool,
-    /// Mac window buttons: close/minimise/zoom dots at the left of the
-    /// focused window's title bar, shown when the pointer comes near.
+    /// Mac window buttons: close/minimise/zoom dots on the focused
+    /// window's title bar, covering its native caption buttons.
     #[serde(default = "yes")]
     pub traffic: bool,
     /// Programs (lower-case file names) that never get the window buttons.

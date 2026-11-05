@@ -5,7 +5,7 @@
 // app exactly as the taskbar would send them, so its own menu or window
 // opens. "Windows tray" opens Windows' own overflow for anything missing.
 import "./tray.css";
-import type { TrayItem, TrayStatus } from "./tray";
+import { crispIcon, type TrayItem, type TrayStatus } from "./tray";
 
 type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -77,6 +77,7 @@ export function mountTrayGrid(root: HTMLElement, invoke: Invoke, opts: { onResiz
           img.alt = "";
           img.draggable = false;
           img.onerror = () => { img.replaceWith(Object.assign(document.createElement("span"), { className: "tray-glyph", innerHTML: APP_GLYPH })); };
+          crispIcon(img, 20);
           b.appendChild(img);
         } else {
           b.appendChild(Object.assign(document.createElement("span"), { className: "tray-letter", textContent: (it.name || "?").slice(0, 1).toUpperCase() }));

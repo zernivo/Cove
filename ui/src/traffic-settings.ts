@@ -48,7 +48,7 @@ function render(t: TrafficInfo): void {
   if (!toggle) return;
   toggle.checked = t.enabled;
   el("tl-note")!.textContent = t.enabled
-    ? "Close, minimise and zoom appear at the top-left of the window you're using when the pointer comes near. Windows' own buttons stay as they are."
+    ? "Close, minimise and zoom replace Windows' buttons on the window you're using. Rest on green for Snap Layouts."
     : "Windows' own buttons only.";
   el("tl-skip-row")!.classList.toggle("dim", !t.enabled);
   el("tl-skip")!.classList.toggle("dim", !t.enabled);

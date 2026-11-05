@@ -343,6 +343,54 @@ pub fn hicon_png(hicon: isize) -> Option<Vec<u8>> {
     encode(w, h, &rgba)
 }
 
+/// Another app's tray icon as sharp as it exists: tray icons are handed
+/// over at the small-icon size (16 px at 100 %), which a 150 % or 200 %
+/// screen can only upscale. When the icon came from a resource (most do),
+/// Windows remembers which module and resource; the same icon is loaded
+/// again from that file at its largest size up to 64 px (read as data,
+/// never run), so the very same picture is drawn at native resolution.
+/// Icons made at run time (badges, live meters) keep their own pixels.
+/// `owner_exe` (the icon owner's program) resolves a bare module name.
+#[cfg(windows)]
+pub fn tray_icon_png(hicon: isize, owner_exe: &str) -> Option<Vec<u8>> {
+    let (w, h, rgba) = imp::hicon_rgba(hicon)?;
+    if w < 32 {
+        if let Some((bw, bh, big)) = imp::from_resource(hicon, owner_exe, w) {
+            return encode(bw, bh, &big);
+        }
+    }
+    encode(w, h, &rgba)
+}
+
+/// Pick the icon entry to load from a RT_GROUP_ICON directory: the largest
+/// square size up to 64 px, if it is bigger than what we have; else (only
+/// huge entries) 64 px, which Windows scales down. `None` = nothing better.
+pub fn pick_group_size(dir: &[u8], have: u32) -> Option<u32> {
+    if dir.len() < 6 {
+        return None;
+    }
+    let count = u16::from_le_bytes([dir[4], dir[5]]) as usize;
+    let mut best: Option<u32> = None;
+    let mut huge = false;
+    for i in 0..count {
+        let o = 6 + i * 14;
+        if o + 14 > dir.len() {
+            break;
+        }
+        let w = if dir[o] == 0 { 256 } else { dir[o] as u32 };
+        if w <= 64 {
+            best = Some(best.map_or(w, |b: u32| b.max(w)));
+        } else {
+            huge = true;
+        }
+    }
+    match best {
+        Some(b) if b > have => Some(b),
+        _ if huge => Some(64),
+        _ => None,
+    }
+}
+
 fn encode(w: u32, h: u32, rgba: &[u8]) -> Option<Vec<u8>> {
     let mut buf = Vec::new();
     {
@@ -554,6 +602,94 @@ mod imp {
         }
     }
 
+    /// The same icon again from the module and resource it was loaded
+    /// from (see `tray_icon_png`), at the best size above `have` px.
+    pub(super) fn from_resource(hicon: isize, owner_exe: &str, have: u32) -> Option<(u32, u32, Vec<u8>)> {
+        use windows_sys::Win32::Foundation::FreeLibrary;
+        use windows_sys::Win32::Graphics::Gdi::DeleteObject;
+        use windows_sys::Win32::System::LibraryLoader::{
+            FindResourceW, LoadLibraryExW, LoadResource, LockResource, SizeofResource, LOAD_LIBRARY_AS_DATAFILE, LOAD_LIBRARY_AS_IMAGE_RESOURCE,
+        };
+        use windows_sys::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfoExW, LoadImageW, ICONINFOEXW, IMAGE_ICON, LR_DEFAULTCOLOR};
+        unsafe {
+            let mut ii: ICONINFOEXW = std::mem::zeroed();
+            ii.cbSize = std::mem::size_of::<ICONINFOEXW>() as u32;
+            if GetIconInfoExW(hicon as _, &mut ii) == 0 {
+                return None;
+            }
+            if !ii.hbmColor.is_null() {
+                DeleteObject(ii.hbmColor);
+            }
+            if !ii.hbmMask.is_null() {
+                DeleteObject(ii.hbmMask);
+            }
+            let z = |b: &[u16]| String::from_utf16_lossy(&b[..b.iter().position(|&c| c == 0).unwrap_or(b.len())]);
+            let module = z(&ii.szModName);
+            let res_name = z(&ii.szResName);
+            if module.is_empty() || (ii.wResID == 0 && res_name.is_empty()) {
+                return None;
+            }
+            // A bare name: the owner's program itself, or a file beside it.
+            let path = if module.contains('\\') {
+                module.clone()
+            } else {
+                let file = module.rsplit(['\\', '/']).next().unwrap_or(&module).to_ascii_lowercase();
+                let own = owner_exe.rsplit(['\\', '/']).next().unwrap_or("").to_ascii_lowercase();
+                if file == own {
+                    owner_exe.to_string()
+                } else {
+                    match owner_exe.rfind('\\') {
+                        Some(i) => format!("{}\\{}", &owner_exe[..i], module),
+                        None => return None,
+                    }
+                }
+            };
+            // Animated or often-updated icons come back again and again:
+            // remember each resource's answer.
+            type Px = Option<(u32, u32, Vec<u8>)>;
+            static CACHE: std::sync::Mutex<Vec<(String, Px)>> = std::sync::Mutex::new(Vec::new());
+            let key = format!("{}|{}|{}|{}", path.to_ascii_lowercase(), ii.wResID, res_name, have);
+            if let Some(hit) = CACHE.lock().ok().and_then(|c| c.iter().find(|(k, _)| *k == key).map(|(_, v)| v.clone())) {
+                return hit;
+            }
+            let remember = |v: Px| -> Px {
+                if let Ok(mut c) = CACHE.lock() {
+                    if c.len() > 128 {
+                        c.remove(0);
+                    }
+                    c.push((key.clone(), v.clone()));
+                }
+                v
+            };
+            let wpath: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
+            let m = LoadLibraryExW(wpath.as_ptr(), std::ptr::null_mut(), LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE);
+            if m.is_null() {
+                return remember(None);
+            }
+            let wname: Vec<u16> = res_name.encode_utf16().chain(std::iter::once(0)).collect();
+            let name: *const u16 = if ii.wResID != 0 { ii.wResID as usize as *const u16 } else { wname.as_ptr() };
+            let mut out = None;
+            let group = FindResourceW(m, name, 14usize as *const u16); // RT_GROUP_ICON
+            if !group.is_null() {
+                let len = SizeofResource(m, group) as usize;
+                let data = LoadResource(m, group);
+                let ptr = if data.is_null() { std::ptr::null_mut() } else { LockResource(data) };
+                if !ptr.is_null() && len >= 6 {
+                    let dir = std::slice::from_raw_parts(ptr as *const u8, len);
+                    if let Some(sz) = super::pick_group_size(dir, have) {
+                        let hi = LoadImageW(m, name, IMAGE_ICON, sz as i32, sz as i32, LR_DEFAULTCOLOR);
+                        if !hi.is_null() {
+                            out = hicon_rgba(hi as isize).filter(|(w, _, _)| *w > have);
+                            DestroyIcon(hi as _);
+                        }
+                    }
+                }
+            }
+            FreeLibrary(m);
+            remember(out)
+        }
+    }
+
     /// Does a 32-bit bitmap carry any alpha (checked without freeing it)?
     unsafe fn has_alpha(hbmp: HBITMAP) -> bool {
         unsafe {
@@ -718,5 +854,22 @@ mod tests {
         super::store("t".into(), Some(png.clone()));
         let u = super::get("t").unwrap();
         assert_eq!(super::serve(&u[u.rfind('/').unwrap()..]).unwrap(), png);
+    }
+
+    #[test]
+    fn tray_icon_group_size() {
+        // GRPICONDIR: reserved, type 1, count, then 14-byte entries.
+        let dir = |sizes: &[u8]| {
+            let mut v = vec![0, 0, 1, 0, sizes.len() as u8, 0];
+            for &w in sizes {
+                v.extend_from_slice(&[w, w, 0, 0, 1, 0, 32, 0, 0, 0, 0, 0, 1, 0]);
+            }
+            v
+        };
+        assert_eq!(super::pick_group_size(&dir(&[16, 24, 32, 48]), 16), Some(48));
+        assert_eq!(super::pick_group_size(&dir(&[16, 32, 0]), 16), Some(32));
+        assert_eq!(super::pick_group_size(&dir(&[16]), 16), None);
+        assert_eq!(super::pick_group_size(&dir(&[16, 0]), 16), Some(64));
+        assert_eq!(super::pick_group_size(&[], 16), None);
     }
 }

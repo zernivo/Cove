@@ -3,7 +3,7 @@ import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { makePlate, refractionFilter, wallpaperUrl, reducedMotion } from "./glass";
-import { MOCK_STATUS, type TrayStatus, type TrayItem } from "./tray";
+import { MOCK_STATUS, crispIcon, type TrayStatus, type TrayItem } from "./tray";
 
 interface DockItem { kind: "pin" | "running" | "cove" | "stack" | "trash"; name: string; target: string; windows: number[]; active: boolean; attention?: boolean; icon?: string; no_icon?: boolean; full?: boolean }
 interface MItem { id?: string; label?: string; kbd?: string; check?: boolean; disabled?: boolean; sub?: MItem[]; sep?: boolean; header?: string; count?: string }
@@ -109,8 +109,35 @@ function layoutGlass(): void {
   glass.style.setProperty("--px", `${-left}px`);
   glass.style.setProperty("--py", `${-top}px`);
   if (plateUrl) plateEl.style.filter = `url(#${refractionFilter(r.width, DOCK_H, RADIUS, { bezel: 13, thickness: 28, strength: 0.7 })})`;
+  sendGlass(lastExtra);
 }
+// ---- Liquid Glass (Windows): the app puts a real blur-behind backdrop,
+// shaped to the slab, directly under this transparent window (glass.rs).
+// The page paints the tint, the specular rim and the shadow over it. The
+// wallpaper plate is only the fallback for the browser preview. ----
+const realGlass = inTauri && navigator.userAgent.includes("Windows");
+if (realGlass) document.documentElement.classList.add("real-glass");
+let glassSig = "";
+let glassTimer = 0;
+function sendGlass(extra = 0): void {
+  if (!realGlass) return;
+  const tucked = document.body.classList.contains("tucked");
+  let shapes: number[][] = [];
+  if (!tucked && restW > 0) {
+    const w = restW + extra;
+    const x = dock.offsetLeft - extra / 2;
+    const y = innerHeight - FLOAT - DOCK_H;
+    shapes = [[x, y, w, DOCK_H, RADIUS].map((v) => Math.round(v * 2) / 2)];
+  }
+  const next = JSON.stringify(shapes);
+  if (next === glassSig) return;
+  glassSig = next;
+  invoke("glass_shape", { label: "dock", shapes }).catch(() => {});
+}
+let lastExtra = 0;
+
 async function loadPlate(): Promise<void> {
+  if (realGlass) { glass.classList.remove("has-plate"); sendGlass(lastExtra); return; }
   try {
     const p = await makePlate(wallpaperUrl(), geom.mw, geom.mh, 24, 1.7);
     plateUrl = p.url;
@@ -252,6 +279,8 @@ function apply(): void {
     }
   }
   glass.style.transform = total < 0.05 ? "" : `scaleX(${((restW + total) / Math.max(1, restW)).toFixed(5)})`;
+  lastExtra = total < 0.05 ? 0 : total;
+  sendGlass(lastExtra);
 }
 
 function step(now: number): void {
@@ -406,6 +435,22 @@ if (inTauri) {
   });
 }
 
+// Hidden test hook (the visual CI run, `Cove.exe --cove-open=<kind>`):
+// open one of the dock's popovers as a click would.
+if (inTauri) {
+  listen<string>("dock-debug-open", (e) => {
+    const k = e.payload;
+    const cove = dock.querySelector<HTMLElement>('.item[data-k^="cove:"]');
+    const first = items.findIndex((i) => i.kind === "pin" || i.kind === "running");
+    const firstEl = first >= 0 ? Array.from(dock.querySelectorAll<HTMLElement>(".item")).find((e) => e.dataset.k === keyOf(items[first])) ?? null : null;
+    if (k === "cc") popDock("cc", st("cc"));
+    else if (k === "wifi") popDock("cc", st("wifi"));
+    else if (k === "cal") popDock("cal", st("clock"));
+    else if (k === "cove" && cove) popDock("cove", cove);
+    else if (k === "menu" && firstEl) showMenu(items[first], firstEl);
+  });
+}
+
 // ---- Status island ----
 interface Island { battery: { percent: number; charging: boolean } | null; volume: number | null; muted: boolean; wifi: string | null }
 const st = (k: string) => island.querySelector<HTMLElement>(`.st[data-k="${k}"]`)!;
@@ -474,6 +519,7 @@ async function refreshTray(): Promise<void> {
     if (it.icon) {
       const img = Object.assign(document.createElement("img"), { src: it.icon, alt: "", draggable: false });
       img.onerror = () => img.replaceWith(Object.assign(document.createElement("span"), { className: "tp-letter", textContent: (it.name || "?").slice(0, 1).toUpperCase() }));
+      crispIcon(img, 17);
       b.appendChild(img);
     } else {
       b.appendChild(Object.assign(document.createElement("span"), { className: "tp-letter", textContent: (it.name || "?").slice(0, 1).toUpperCase() }));
@@ -605,6 +651,10 @@ if (inTauri) {
   listen("wallpaper-changed", loadPlate);
   listen<boolean>("dock-slide", (e) => {
     document.body.classList.toggle("tucked", e.payload);
+    // Away: the glass goes at once. Back: it joins once the slab has slid in.
+    clearTimeout(glassTimer);
+    if (e.payload) sendGlass();
+    else glassTimer = window.setTimeout(() => sendGlass(lastExtra), 190);
     if (e.payload) { closeStack(); pointerX = null; kick(); }
   });
 } else {

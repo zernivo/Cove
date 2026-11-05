@@ -148,7 +148,15 @@ fn show_main(app: &AppHandle) {
 
 /// Cove was opened again while running: bring Settings forward at once and
 /// give a short bounce of Cove's dock icon, so the click visibly did something.
-fn second_launch(app: &AppHandle) {
+fn second_launch(app: &AppHandle, args: &[String]) {
+    // Hidden test hook (the visual CI run): `Cove.exe --cove-open=cc`
+    // opens one of the dock's popovers (cc, wifi, cove, menu, cal) in the
+    // running Cove instead of showing its window.
+    if let Some(kind) = args.iter().find_map(|a| a.strip_prefix("--cove-open=")) {
+        cove_log(app, &format!("debug: open {kind}"));
+        let _ = app.emit_to("dock", "dock-debug-open", kind.to_string());
+        return;
+    }
     show_main(app);
     if let Some(d) = app.get_webview_window("dock") {
         let _ = d.emit("dock-bounce", "cove");
@@ -638,8 +646,12 @@ fn popover_dock(kind: String, x: f64, y: f64, data: Option<serde_json::Value>, a
 /// main panel (`anchor_w` wide) on the item, 8 DIP above the dock, kept
 /// on screen.
 #[tauri::command]
-fn popover_place(kind: String, width: f64, height: f64, shapes: Option<Vec<[f64; 5]>>, anchor_w: Option<f64>, app: AppHandle) {
+fn popover_place(kind: String, width: f64, height: f64, shapes: Option<Vec<[f64; 5]>>, anchor_w: Option<f64>, pad: Option<f64>, app: AppHandle) {
     let Some(w) = app.get_webview_window("popover") else { return };
+    // The page leaves `pad` DIP of transparent room around its panels for
+    // their drop shadow; placement works on the panels themselves.
+    let pad = pad.unwrap_or(0.0).clamp(0.0, 64.0);
+    let (width, height) = ((width - 2.0 * pad).max(1.0), (height - 2.0 * pad).max(1.0));
     let (x, right, at) = POP.lock().map(|p| (p.x, p.right, p.at)).unwrap_or((0.0, false, None));
     let (pw, ph, left, top, mon) = if let Some((ax, ay)) = at {
         let m = dock::monitor_at(ax, ay).or_else(dock::dock_monitor).or_else(dock::primary);
@@ -668,17 +680,14 @@ fn popover_place(kind: String, width: f64, height: f64, shapes: Option<Vec<[f64;
     let sf = w.scale_factor().unwrap_or(1.0);
     let edge = (4.0 * sf).round() as i32;
     let left = left.clamp(mon.monitor.0 + edge, (mon.monitor.2 - pw - edge).max(mon.monitor.0));
+    let pp = (pad * sf).round() as i32;
     let _ = w.show();
     let hwnd = w.hwnd().map(|h| h.0 as isize).unwrap_or(0);
-    appbar::place(hwnd, (left, top, left + pw, top + ph));
-    // Clip the acrylic to the rounded panels (DWM only rounds to 8 px).
-    if let Some(shapes) = shapes {
-        let px: Vec<(i32, i32, i32, i32, i32)> = shapes
-            .iter()
-            .map(|s| ((s[0] * sf).round() as i32, (s[1] * sf).round() as i32, (s[2] * sf).round() as i32, (s[3] * sf).round() as i32, (s[4] * sf).round() as i32))
-            .collect();
-        glass::round_region(hwnd, &px);
-    }
+    appbar::place(hwnd, (left - pp, top - pp, left + pw + pp, top + ph + pp));
+    // Liquid Glass under exactly the panels shown (glass.rs backdrop).
+    let px: Vec<glass::Shape> = shapes.unwrap_or_default().iter().map(|s| shape_px(s, sf)).collect();
+    cove_log(&app, &format!("popover: {kind} placed {}x{} at {},{} (pad {pp}, {} panels)", pw + 2 * pp, ph + 2 * pp, left - pp, top - pp, px.len()));
+    let _ = app.run_on_main_thread(move || glass::backdrop::set(hwnd, &px));
     let _ = w.set_focus();
     // Ask the page for a fresh paint once Windows has really shown the
     // window: a WebView can put the last frame it drew while hidden on
@@ -710,11 +719,23 @@ fn dock_menu_pick(id: String, app: AppHandle) {
 /// backdrop follows the window's dark/light theme).
 #[tauri::command]
 fn glass_tint(dark: bool, app: AppHandle) {
-    for label in ["popover", "search"] {
-        if let Some(w) = app.get_webview_window(label) {
-            glass::acrylic(&w, dark);
-        }
-    }
+    let _ = app.run_on_main_thread(move || glass::backdrop::tint(dark));
+}
+
+/// A rounded rect in DIP (x, y, w, h, radius) to physical px.
+fn shape_px(s: &[f64; 5], sf: f64) -> glass::Shape {
+    ((s[0] * sf).round() as i32, (s[1] * sf).round() as i32, (s[2] * sf).round() as i32, (s[3] * sf).round() as i32, (s[4] * sf).round() as i32)
+}
+
+/// The page's glass panels (DIP, window coordinates; empty = none) for
+/// the dock, the popovers or Search: the Liquid Glass backdrop follows.
+#[tauri::command]
+fn glass_shape(label: String, shapes: Vec<[f64; 5]>, app: AppHandle) {
+    let Some(w) = app.get_webview_window(&label) else { return };
+    let sf = w.scale_factor().unwrap_or(1.0);
+    let hwnd = w.hwnd().map(|h| h.0 as isize).unwrap_or(0);
+    let px: Vec<glass::Shape> = shapes.iter().map(|s| shape_px(s, sf)).collect();
+    let _ = app.run_on_main_thread(move || glass::backdrop::set(hwnd, &px));
 }
 
 /// Size Search to its panel (`height` DIP; 640 DIP wide), keeping its top
@@ -728,7 +749,8 @@ fn search_fit(height: f64, app: AppHandle) {
         let hwnd = w.hwnd().map(|h| h.0 as isize).unwrap_or(0);
         let _ = w.set_size(tauri::PhysicalSize::new(pw as u32, ph as u32));
         let _ = w.set_position(pos);
-        glass::round_region(hwnd, &[(0, 0, pw, ph, (14.0 * sf).round() as i32)]);
+        let r = (14.0 * sf).round() as i32;
+        let _ = app.run_on_main_thread(move || glass::backdrop::set(hwnd, &[(0, 0, pw, ph, r)]));
     }
 }
 const SEARCH_W: f64 = 640.0;
@@ -2709,7 +2731,7 @@ fn main() {
     }
     let app = tauri::Builder::default()
         // Opening Cove again just brings the running copy forward.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| second_launch(app)))
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| second_launch(app, &args)))
         .plugin(tauri_plugin_notification::init())
         // Full-resolution app icons, served from memory (see icons.rs).
         .register_uri_scheme_protocol("coveicon", |_ctx, req| {
@@ -2792,6 +2814,8 @@ fn main() {
             {
                 let h = app.handle().clone();
                 icons::set_logger(move |m| cove_log(&h, m));
+                let h = app.handle().clone();
+                glass::set_logger(move |m| cove_log(&h, m));
             }
             let handle = app.handle().clone();
             hotkeys::set_search_handler(move || {
@@ -2956,14 +2980,13 @@ fn main() {
                 // system shadow and rounded corners.
                 let _ = window.set_shadow(true);
             }
-            // Menu bar popovers and Search: acrylic, shaped by a rounded
-            // window region to the panels (11 DIP menus, 20 DIP Control
-            // Centre, 14 DIP Search), so DWM's own 8 px rounding is off.
+            // Popovers and Search: transparent, unshaped windows over a
+            // Liquid Glass backdrop shaped to their panels (glass.rs); no
+            // DWM shadow, border or rounding of their own.
             #[cfg(target_os = "windows")]
             for label in ["popover", "search"] {
                 if let Some(window) = app.get_webview_window(label) {
                     let _ = window.set_shadow(false);
-                    glass::acrylic(&window, true);
                     glass::no_dwm_rounding(&window);
                 }
             }
@@ -2987,7 +3010,8 @@ fn main() {
                     }
                     k
                 });
-                if was.is_some() {
+                if let Some(k) = was {
+                    cove_log(window.app_handle(), &format!("popover: {k} lost focus, closing"));
                     let _ = window.hide();
                     popover_state_changed(window.app_handle());
                 }
@@ -3109,7 +3133,8 @@ fn main() {
             traffic::traffic_skip_set,
             traffic::traffic_click,
             traffic::traffic_hover,
-            traffic::traffic_hello
+            traffic::traffic_hello,
+            glass_shape
         ])
         .build(tauri::generate_context!())
         .expect("error while building Cove");
