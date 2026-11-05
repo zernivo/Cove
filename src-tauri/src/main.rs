@@ -2738,7 +2738,26 @@ fn main() {
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             let journal = journal::Journal::load(dir.join("journal.json"))?;
-            let store = settings::Store::load(dir.join("settings.json"));
+            let mut store = settings::Store::load(dir.join("settings.json"));
+            // Once per new version: make Explorer drop stale cached icons (below).
+            let new_version = store.data.last_version != env!("CARGO_PKG_VERSION");
+            if new_version {
+                store.data.last_version = env!("CARGO_PKG_VERSION").to_string();
+                let _ = store.save();
+            }
+            let dock_on = store.data.dock;
+            let bar_on = store.data.topbar;
+            let updated = std::env::args().any(|a| a == updater::UPDATED_FLAG);
+            // Managed first, before anything below can pump window messages:
+            // a page's command may run while setup waits on Windows (a sent
+            // message, a broadcast), and every command reads this state.
+            // Managing it late crashed a fresh install at launch.
+            app.manage(AppState {
+                journal: Mutex::new(journal),
+                settings: Mutex::new(store),
+                just_updated: std::sync::atomic::AtomicBool::new(updated),
+            });
+            let store_data = app.state::<AppState>().settings.lock().map(|s| s.data.clone()).unwrap_or_default();
             // Bars a crashed run still held (the watchdog normally frees them).
             appbar::release_recorded(&dir.join("settings.json"));
             appbar::set_record(appbar::record_path(&dir.join("settings.json")));
@@ -2783,16 +2802,16 @@ fn main() {
                 let _ = handle.run_on_main_thread(move || toggle_search(&h));
             });
             let on = safe_why.is_none();
-            hotkeys::configure(on && store.data.hotkeys, on && store.data.search);
-            clipboard::set_enabled(on && store.data.clipboard);
-            winindex::set_enabled(store.data.search_winindex);
+            hotkeys::configure(on && store_data.hotkeys, on && store_data.search);
+            clipboard::set_enabled(on && store_data.clipboard);
+            winindex::set_enabled(store_data.search_winindex);
             {
                 let h = app.handle().clone();
                 switcher::set_ui_handler(move |u| switcher_ui(&h, u));
             }
-            switcher::set_enabled(on && store.data.switcher);
-            snap::configure(on && store.data.snap, store.data.snap_animate);
-            theme_apply(app.handle(), &theme::state(&store.data.theme, &store.data.appearance, &store.data.accent));
+            switcher::set_enabled(on && store_data.switcher);
+            snap::configure(on && store_data.snap, store_data.snap_animate);
+            theme_apply(app.handle(), &theme::state(&store_data.theme, &store_data.appearance, &store_data.accent));
             {
                 let h = app.handle().clone();
                 std::thread::spawn(move || loop {
@@ -2803,21 +2822,9 @@ fn main() {
                 });
             }
             search::warm();
-            let dock_on = store.data.dock;
-            let bar_on = store.data.topbar;
-            // Once per new version: make Explorer drop stale cached icons.
-            let mut store = store;
-            if store.data.last_version != env!("CARGO_PKG_VERSION") {
+            if new_version {
                 topbar::refresh_icons();
-                store.data.last_version = env!("CARGO_PKG_VERSION").to_string();
-                let _ = store.save();
             }
-            let updated = std::env::args().any(|a| a == updater::UPDATED_FLAG);
-            app.manage(AppState {
-                journal: Mutex::new(journal),
-                settings: Mutex::new(store),
-                just_updated: std::sync::atomic::AtomicBool::new(updated),
-            });
             // No DWM acrylic on the menu bar: the bar window is never the
             // active window, and Windows draws a system backdrop on an
             // inactive window as its flat fallback colour, which is why the

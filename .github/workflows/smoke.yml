@@ -1,23 +1,34 @@
 name: Smoke launch
 on:
   push:
-    branches: [smoke-launch]
+    branches: [smoke-launch, fix-launch]
   workflow_dispatch:
 jobs:
   smoke:
     runs-on: windows-latest
     steps:
-      - name: Install preview and launch
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm install
+      - run: npx tauri build --bundles nsis
+        env:
+          GIT_SHA: ${{ github.sha }}
+      - name: Install build and launch
         shell: pwsh
         run: |
-          $url = "https://github.com/zernivo/Cove/releases/download/preview/Cove-preview-70141e6-setup.exe"
-          Invoke-WebRequest $url -OutFile setup.exe
+          Copy-Item (Get-ChildItem src-tauri\target\release\bundle\nsis\*-setup.exe | Select-Object -First 1).FullName setup.exe
           Start-Process .\setup.exe -ArgumentList "/S" -Wait
           $exe = Get-ChildItem "$env:LOCALAPPDATA\Cove","$env:ProgramFiles\Cove" -Filter *.exe -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch "uninstall" } | Select-Object -First 1
           "exe: $($exe.FullName)"
           $env:RUST_BACKTRACE = "full"
           $p = Start-Process $exe.FullName -PassThru -RedirectStandardError err.txt -RedirectStandardOutput out.txt
-          Start-Sleep 25
+          Start-Sleep 30
           "alive after 25s: $(-not $p.HasExited)  exit: $($p.ExitCode)"
           Get-Process | Where-Object { $_.Name -match "cove|msedgewebview2" } | Format-Table Name,Id,MainWindowTitle -AutoSize | Out-String
           "---- stderr"; Get-Content err.txt -ErrorAction SilentlyContinue
