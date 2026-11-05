@@ -323,7 +323,7 @@ async function open(it: DockItem, el: HTMLElement, fresh: boolean): Promise<void
 // ---- Context menu: the shared glass menu in the popover window, centred
 // on the icon, 10 DIP above the dock. Picks come back as dock-menu-pick. ----
 const actions = new Map<string, () => Promise<unknown>>();
-let menuOpen = ""; // the popover this dock opened: "dock", "cove", "cc", "cal"
+let menuOpen = ""; // the popover open now ("dock", "cove", "cc", "cal"), for the island's open pill
 function showMenu(it: DockItem, el: HTMLElement): void {
   actions.clear();
   const list: MItem[] = [{ header: it.name }];
@@ -371,7 +371,6 @@ function showMenu(it: DockItem, el: HTMLElement): void {
   const r = el.getBoundingClientRect();
   const top = innerHeight - FLOAT - DOCK_H;
   menuOpen = "dock";
-  busy();
   invoke("popover_at", { kind: "dock", x: r.left + r.width / 2, y: top, data: { items: list } }).catch(() => {});
 }
 
@@ -385,7 +384,6 @@ function popDock(kind: "cove" | "cc" | "cal", el: HTMLElement): void {
   const top = innerHeight - FLOAT - DOCK_H;
   popFrom = el;
   menuOpen = kind;
-  busy();
   invoke("popover_dock", { kind, x: r.left + r.width / 2, y: top, data: null }).catch(() => {});
   if (!inTauri) showOpen(kind);
 }
@@ -398,9 +396,11 @@ if (inTauri) {
     if (run) await run().catch(() => {});
     refresh();
   });
+  // The app keeps the dock up while one of its popovers is open (it knows
+  // which popover hangs from the dock); here it only drives the open pill.
   listen<string | null>("popover-state", (e) => {
-    if (menuOpen && e.payload !== menuOpen) { menuOpen = ""; popFrom = null; busy(); }
-    showOpen(menuOpen ? e.payload : null);
+    menuOpen = e.payload ?? "";
+    showOpen(menuOpen && popFrom && (popFrom.dataset.k === "clock" ? menuOpen === "cal" : menuOpen === "cc") ? menuOpen : null);
   });
 }
 
@@ -458,10 +458,10 @@ function clock(): void {
 }
 
 // A folder stack reaches above the dock's strip: keep the whole window
-// clickable while one (or a dock menu) is open.
+// clickable while one is open (the app does the same for dock popovers).
 let wasBusy = false;
 function busy(): void {
-  const now = !!menuOpen || !!openStack;
+  const now = !!openStack;
   if (now !== wasBusy) { wasBusy = now; invoke("dock_busy", { busy: now }); }
 }
 document.addEventListener("click", (e) => {

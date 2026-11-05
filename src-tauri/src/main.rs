@@ -507,8 +507,13 @@ struct PopState {
 
 static POP: Mutex<PopState> = Mutex::new(PopState { open: None, x: 0.0, right: false, at: None, blurred: None });
 
+/// A popover hangs from the dock (its menu, the Cove menu, Control Centre
+/// from the status island, the calendar): the dock stays up and clickable.
+static DOCK_POP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 fn popover_state_changed(app: &AppHandle) {
-    let open = POP.lock().ok().and_then(|p| p.open.clone());
+    let (open, at) = POP.lock().map(|p| (p.open.clone(), p.at.is_some())).unwrap_or((None, false));
+    DOCK_POP.store(open.is_some() && at, std::sync::atomic::Ordering::SeqCst);
     // The bar shows which title is open; the dock keeps itself up while
     // its own menu is open.
     let _ = app.emit("popover-state", open);
@@ -2405,7 +2410,7 @@ fn dock_hit_watch(app: AppHandle) {
         };
         let (Ok(pos), Ok(size), Some((x, y))) = (w.outer_position(), w.outer_size(), dock::cursor()) else { continue };
         let inside = x >= pos.x && x < pos.x + size.width as i32 && y >= pos.y && y < pos.y + size.height as i32;
-        let busy = DOCK_BUSY.load(std::sync::atomic::Ordering::SeqCst);
+        let busy = DOCK_BUSY.load(std::sync::atomic::Ordering::SeqCst) || DOCK_POP.load(std::sync::atomic::Ordering::SeqCst);
         let mode = dock_hide_mode(&app);
 
         // A window over the strip (checked every ~240 ms; EnumWindows is cheap
