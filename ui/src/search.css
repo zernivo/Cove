@@ -5,8 +5,8 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; background: transparent; overflow: hidden; }
 body { font-family: var(--font-ui); color: var(--c-text); -webkit-font-smoothing: antialiased; user-select: none; --panel: var(--c-panel); }
-html.acrylic body { --panel: rgba(30, 31, 36, 0.28); }
-html.acrylic:not([data-mode="dark"]) body { --panel: rgba(247, 243, 239, 0.42); }
+html.acrylic body { --panel: var(--c-lg-panel); }
+html.acrylic .panel { box-shadow: var(--c-lg-rim) !important; }
 @media (prefers-reduced-transparency: reduce) { body, html.acrylic body { --panel: var(--c-solid) !important; } }
 
 .panel {

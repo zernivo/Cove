@@ -81,3 +81,20 @@ export async function initTraySetting(invoke: Invoke): Promise<void> {
   }
   await refresh();
 }
+
+/** Draw another app's tray icon at its own pixel size: the largest it has
+ *  fills `slot` CSS px (scaled down, sharp); a small one is shown at its
+ *  native size (1 image px = 1 screen px), never blown up blurry. */
+export function crispIcon(img: HTMLImageElement, slot: number): void {
+  const fit = () => {
+    const dpr = window.devicePixelRatio || 1;
+    const px = img.naturalWidth || 0;
+    if (!px) return;
+    const css = px >= slot * dpr ? slot : px / dpr;
+    img.style.width = `${css}px`;
+    img.style.height = `${css}px`;
+  };
+  if (img.complete) fit();
+  img.addEventListener("load", fit);
+  matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`).addEventListener?.("change", fit);
+}

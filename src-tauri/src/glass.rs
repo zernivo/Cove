@@ -1,20 +1,281 @@
-//! Window-level glass helpers for the popovers and Search: Windows acrylic
-//! tinted for the current look, rounded window regions (DWM itself only
-//! rounds to 8 px; Cove's menus are 11, Control Centre 20, Search 14 DIP),
+//! Window-level glass helpers: Liquid Glass backdrops under the dock, the
+//! popovers and Search (see `backdrop`), rounded window regions (DWM itself
+//! only rounds to 8 px; Cove's menus are 11, Control Centre 20, Search 14 DIP),
 //! plus two small desktop actions the bar's menus use. Documented Win32
 //! only: no injection, nothing patched.
 
-/// Acrylic behind a popover window, Ink- or paper-tinted. On Windows 11
-/// 22H2+ window-vibrancy uses the system transient backdrop, which follows
-/// the window's theme, so the theme is set too.
+/// Liquid Glass backdrops (2026-11-05, after the user's test of b44d0c1).
+///
+/// The old route, `window_vibrancy::apply_acrylic` on the popover window,
+/// uses DWM's system backdrop on Windows 11, and Windows draws a system
+/// backdrop on an INACTIVE window as a flat fallback colour: the grey slab
+/// with grey square corners the user saw. The dock's wallpaper plate could
+/// read the wrong picture (the saturated blue).
+///
+/// Now every glass surface gets a backdrop: a small native window of
+/// Cove's own (no WebView), shaped by a rounded window region to exactly
+/// the panels shown, kept directly under its Cove window, with
+/// `SetWindowCompositionAttribute(ACCENT_ENABLE_ACRYLICBLURBEHIND)` and a
+/// neutral, low-alpha tint. That accent blurs what is behind whether or not
+/// the window is active (the TranslucentTB / ExplorerBlurMica route). The
+/// Cove window above stays fully transparent and unshaped, so its CSS
+/// paints the anti-aliased corners, the tint, the specular rim and a soft
+/// drop shadow outside the panel; the region sits 1 px inside the CSS
+/// edge so its stair-stepped edge is always under the painted rim.
+/// Documented Win32 plus the long-standing (undocumented but stable since
+/// Windows 10 1803) composition attribute; nothing injected, nothing hooked
+/// in other processes: the WinEvent hook is for Cove's own process only.
+pub type Shape = (i32, i32, i32, i32, i32);
+
 #[cfg(windows)]
-pub fn acrylic(w: &tauri::WebviewWindow, dark: bool) {
-    let _ = w.set_theme(Some(if dark { tauri::Theme::Dark } else { tauri::Theme::Light }));
-    let tint = if dark { (30, 31, 36, 150) } else { (247, 243, 239, 150) };
-    let _ = window_vibrancy::apply_acrylic(w, Some(tint));
+pub mod backdrop {
+    use super::Shape;
+    use std::sync::Mutex;
+    use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
+    use windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute;
+    use windows_sys::Win32::Graphics::Gdi::{FillRect, GetStockObject, BLACK_BRUSH, HBRUSH, HDC};
+    use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
+    use windows_sys::Win32::UI::Accessibility::{SetWinEventHook, HWINEVENTHOOK};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        CreateWindowExW, DefWindowProcW, GetClientRect, GetWindowRect, IsWindow, IsWindowVisible, RegisterClassW, SetWindowPos,
+        ShowWindow, EVENT_OBJECT_HIDE, EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_SHOW, HTTRANSPARENT, MA_NOACTIVATE, OBJID_WINDOW,
+        SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_SHOWWINDOW, SW_HIDE, WINEVENT_OUTOFCONTEXT, WM_ERASEBKGND, WM_MOUSEACTIVATE,
+        WM_NCHITTEST, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    };
+
+    struct Bd {
+        owner: isize,
+        hwnd: isize,
+        shapes: Vec<Shape>,
+        /// Region last applied (shapes + window size), to skip repeats.
+        applied: Option<(Vec<Shape>, i32, i32)>,
+    }
+
+    static LIST: Mutex<Vec<Bd>> = Mutex::new(Vec::new());
+    static DARK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+    static HOOKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+    fn wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    unsafe extern "system" fn proc_(h: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+        match msg {
+            // Never takes the pointer or the focus: the Cove window above does.
+            WM_NCHITTEST => HTTRANSPARENT as LRESULT,
+            WM_MOUSEACTIVATE => MA_NOACTIVATE as LRESULT,
+            // GDI black has zero alpha: the accent's blur shows through.
+            WM_ERASEBKGND => {
+                let mut rc: RECT = unsafe { std::mem::zeroed() };
+                unsafe {
+                    GetClientRect(h, &mut rc);
+                    FillRect(wp as HDC, &rc, GetStockObject(BLACK_BRUSH) as HBRUSH);
+                }
+                1
+            }
+            _ => unsafe { DefWindowProcW(h, msg, wp, lp) },
+        }
+    }
+
+    #[repr(C)]
+    struct AccentPolicy {
+        state: u32,
+        flags: u32,
+        gradient: u32,
+        animation: u32,
+    }
+    #[repr(C)]
+    struct CompositionData {
+        attrib: u32,
+        data: *mut core::ffi::c_void,
+        size: usize,
+    }
+    #[repr(C)]
+    struct Margins {
+        l: i32,
+        r: i32,
+        t: i32,
+        b: i32,
+    }
+    #[link(name = "dwmapi")]
+    extern "system" {
+        fn DwmExtendFrameIntoClientArea(hwnd: HWND, m: *const Margins) -> i32;
+    }
+
+    /// The neutral tint baked into the blur (AABBGGRR). Low alpha so the
+    /// glass stays clear; the page adds the rest of the tint.
+    fn gradient(dark: bool) -> u32 {
+        if dark {
+            0x30_1A_19_18
+        } else {
+            0x38_F4_F4_F6
+        }
+    }
+
+    /// ACCENT_ENABLE_ACRYLICBLURBEHIND (4); falls back to plain blur (3)
+    /// where acrylic isn't offered (Windows 10 before 1803).
+    fn accent(h: HWND, dark: bool) -> bool {
+        type Swca = unsafe extern "system" fn(HWND, *mut CompositionData) -> i32;
+        static F: std::sync::OnceLock<Option<Swca>> = std::sync::OnceLock::new();
+        let f = F.get_or_init(|| unsafe {
+            let m = LoadLibraryW(wide("user32.dll").as_ptr());
+            if m.is_null() {
+                return None;
+            }
+            GetProcAddress(m, b"SetWindowCompositionAttribute\0".as_ptr()).map(|p| std::mem::transmute::<_, Swca>(p))
+        });
+        let Some(f) = f else { return false };
+        for state in [4u32, 3] {
+            let mut ap = AccentPolicy { state, flags: 0, gradient: gradient(dark), animation: 0 };
+            let mut d = CompositionData { attrib: 19, data: &mut ap as *mut _ as *mut _, size: std::mem::size_of::<AccentPolicy>() };
+            if unsafe { f(h, &mut d) } != 0 {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn dwm_u32(h: HWND, attr: u32, v: u32) {
+        unsafe { DwmSetWindowAttribute(h, attr as _, &v as *const u32 as *const _, 4) };
+    }
+
+    fn create() -> isize {
+        unsafe {
+            let inst = GetModuleHandleW(std::ptr::null());
+            let class = wide("CoveGlassBackdrop");
+            static REG: std::sync::Once = std::sync::Once::new();
+            REG.call_once(|| {
+                let mut wc: WNDCLASSW = std::mem::zeroed();
+                wc.lpfnWndProc = Some(proc_);
+                wc.hInstance = inst;
+                wc.hbrBackground = GetStockObject(BLACK_BRUSH) as HBRUSH;
+                wc.lpszClassName = class.as_ptr();
+                RegisterClassW(&wc);
+            });
+            let h = CreateWindowExW(
+                WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST,
+                class.as_ptr(),
+                wide("Cove glass").as_ptr(),
+                WS_POPUP,
+                0,
+                0,
+                1,
+                1,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                inst,
+                std::ptr::null(),
+            );
+            if h.is_null() {
+                return 0;
+            }
+            // No DWM rounding (the region shapes it), no 1 px border, no
+            // fade on show/hide (it must appear and vanish with its window).
+            dwm_u32(h, 33, 1); // DWMWA_WINDOW_CORNER_PREFERENCE = DONOTROUND
+            dwm_u32(h, 34, 0xFFFF_FFFE); // DWMWA_BORDER_COLOR = NONE
+            dwm_u32(h, 3, 1); // DWMWA_TRANSITIONS_FORCEDISABLED
+            let m = Margins { l: -1, r: -1, t: -1, b: -1 };
+            DwmExtendFrameIntoClientArea(h, &m);
+            accent(h, DARK.load(std::sync::atomic::Ordering::SeqCst));
+            h as isize
+        }
+    }
+
+    unsafe extern "system" fn on_event(_: HWINEVENTHOOK, _ev: u32, hwnd: HWND, id_object: i32, id_child: i32, _: u32, _: u32) {
+        if id_object != OBJID_WINDOW || id_child != 0 {
+            return;
+        }
+        sync_owner(hwnd as isize);
+    }
+
+    /// Follow Cove's own windows (shown, hidden, moved). Out-of-context and
+    /// for this process only: nothing is loaded anywhere else.
+    fn hook() {
+        if HOOKED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
+        unsafe {
+            let pid = windows_sys::Win32::System::Threading::GetCurrentProcessId();
+            SetWinEventHook(EVENT_OBJECT_SHOW, EVENT_OBJECT_HIDE, std::ptr::null_mut(), Some(on_event), pid, 0, WINEVENT_OUTOFCONTEXT);
+            SetWinEventHook(EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_LOCATIONCHANGE, std::ptr::null_mut(), Some(on_event), pid, 0, WINEVENT_OUTOFCONTEXT);
+        }
+    }
+
+    fn sync(b: &mut Bd) {
+        let (owner, h) = (b.owner as HWND, b.hwnd as HWND);
+        unsafe {
+            if IsWindow(owner) == 0 || IsWindowVisible(owner) == 0 || b.shapes.is_empty() {
+                if IsWindowVisible(h) != 0 {
+                    ShowWindow(h, SW_HIDE);
+                }
+                return;
+            }
+            let mut rc: RECT = std::mem::zeroed();
+            if GetWindowRect(owner, &mut rc) == 0 {
+                return;
+            }
+            let (w, hh) = (rc.right - rc.left, rc.bottom - rc.top);
+            let key = (b.shapes.clone(), w, hh);
+            if b.applied.as_ref() != Some(&key) {
+                // 1 px inside the painted edge (see the module note).
+                let inset: Vec<Shape> = b.shapes.iter().map(|&(x, y, sw, sh, r)| (x + 1, y + 1, sw - 2, sh - 2, (r - 1).max(0))).collect();
+                super::round_region(b.hwnd, &inset);
+                b.applied = Some(key);
+            }
+            // Directly under its window, same rectangle.
+            SetWindowPos(h, owner, rc.left, rc.top, w, hh, SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
+        }
+    }
+
+    fn sync_owner(owner: isize) {
+        // try_lock: an event delivered while `set` holds the list is
+        // covered by `set`'s own sync.
+        let Ok(mut l) = LIST.try_lock() else { return };
+        if let Some(b) = l.iter_mut().find(|b| b.owner == owner) {
+            sync(b);
+        }
+    }
+
+    /// Glass under `owner` shaped to `shapes` (physical px, owner window
+    /// coordinates); empty hides it. Main thread only.
+    pub fn set(owner: isize, shapes: &[Shape]) {
+        if owner == 0 {
+            return;
+        }
+        hook();
+        let Ok(mut l) = LIST.lock() else { return };
+        if !l.iter().any(|b| b.owner == owner) {
+            if shapes.is_empty() {
+                return;
+            }
+            let h = create();
+            if h == 0 {
+                return;
+            }
+            l.push(Bd { owner, hwnd: h, shapes: Vec::new(), applied: None });
+        }
+        if let Some(b) = l.iter_mut().find(|b| b.owner == owner) {
+            b.shapes = shapes.iter().copied().filter(|s| s.2 > 2 && s.3 > 2).collect();
+            sync(b);
+        }
+    }
+
+    /// Light or dark tint for every backdrop.
+    pub fn tint(dark: bool) {
+        DARK.store(dark, std::sync::atomic::Ordering::SeqCst);
+        let Ok(l) = LIST.lock() else { return };
+        for b in l.iter() {
+            accent(b.hwnd as HWND, dark);
+        }
+    }
 }
+
 #[cfg(not(windows))]
-pub fn acrylic(_w: &tauri::WebviewWindow, _dark: bool) {}
+pub mod backdrop {
+    use super::Shape;
+    pub fn set(_owner: isize, _shapes: &[Shape]) {}
+    pub fn tint(_dark: bool) {}
+}
 
 /// Turn DWM's own corner rounding off (the window region does it instead).
 #[cfg(windows)]

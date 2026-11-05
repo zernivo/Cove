@@ -975,7 +975,8 @@ mod imp {
                             if pid_of(n.hwnd as usize as HWND) != me {
                                 let ch = {
                                     let mut icons = lock(&super::ICONS);
-                                    super::apply(&mut icons, &n, &mut |hi| crate::icons::hicon_png(hi as isize))
+                                    let owner = window_exe(n.hwnd);
+                                    super::apply(&mut icons, &n, &mut |hi| crate::icons::tray_icon_png(hi as isize, &owner))
                                 };
                                 if ch {
                                     super::changed();

@@ -65,6 +65,11 @@ let subFor: HTMLElement | null = null;
 const bottomAnchored = () => up;
 const viewOf = (k: Kind | null): "menu" | "confirm" | "cc" | "cal" => (k === "confirm" || k === "cc" || k === "cal" ? k : "menu");
 
+/** Transparent room around the panels for their drop shadow (DIP). The
+ *  Liquid Glass backdrop the app puts under the window is shaped to the
+ *  panels only, so this margin stays clear. */
+const PAD = onWindows ? 24 : 0;
+
 function layout(): { w: number; h: number; shapes: number[][]; anchorW: number } {
   const main = views[viewOf(current)];
   const mr = main.getBoundingClientRect();
@@ -72,15 +77,13 @@ function layout(): { w: number; h: number; shapes: number[][]; anchorW: number }
   const radius = (el: HTMLElement) => parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0;
   const shapes = [[0, 0, mw, mh, radius(main)]];
   let w = mw, h = mh;
-  main.style.position = "absolute";
-  main.style.left = "0px";
-  main.style.top = "0px";
+  let mainTop = 0;
   if (subFor && !subEl.classList.contains("hidden")) {
     const sr = subEl.getBoundingClientRect();
     const sw = Math.ceil(sr.width), sh = Math.ceil(sr.height);
     const gap = 3;
     const rowTop = subFor.offsetTop - 5;
-    let mainTop = 0, subTop: number;
+    let subTop: number;
     if (bottomAnchored()) {
       h = Math.max(mh, sh);
       mainTop = h - mh;
@@ -90,20 +93,23 @@ function layout(): { w: number; h: number; shapes: number[][]; anchorW: number }
       h = Math.max(mh, subTop + sh);
     }
     w = mw + gap + sw;
-    main.style.top = `${mainTop}px`;
-    subEl.style.left = `${mw + gap}px`;
-    subEl.style.top = `${subTop}px`;
+    subEl.style.left = `${mw + gap + PAD}px`;
+    subEl.style.top = `${subTop + PAD}px`;
     shapes[0][1] = mainTop;
     shapes.push([mw + gap, subTop, sw, sh, radius(subEl)]);
   }
-  return { w, h, shapes, anchorW: mw };
+  main.style.position = "absolute";
+  main.style.left = `${PAD}px`;
+  main.style.top = `${mainTop + PAD}px`;
+  for (const sh of shapes) { sh[0] += PAD; sh[1] += PAD; }
+  return { w: w + 2 * PAD, h: h + 2 * PAD, shapes, anchorW: mw };
 }
 
 async function place(): Promise<void> {
   document.body.classList.remove("fit");
   const { w, h, shapes, anchorW } = layout();
   if (!inTauri) parent?.postMessage({ coveShapes: shapes, w, h, kind: current }, "*");
-  await invoke("popover_place", { kind: current, width: w, height: h, shapes, anchorW }).catch(() => {});
+  await invoke("popover_place", { kind: current, width: w, height: h, shapes, anchorW, pad: PAD }).catch(() => {});
   document.body.classList.add("fit");
   repaint();
 }
@@ -141,11 +147,17 @@ async function show(kind: Kind): Promise<void> {
   enter();
 }
 
+// A press in the transparent shadow margin is a press outside the panel.
+stage.addEventListener("pointerdown", (e) => { if (e.target === stage && current) hide(); });
+document.body.addEventListener("pointerdown", (e) => { if (e.target === document.body && current) hide(); });
+
 let closing = false;
 function hide(): void {
   if (closing) return;
   closing = true;
   current = null;
+  // The glass goes at once; the content fades over it.
+  invoke("glass_shape", { label: "popover", shapes: [] }).catch(() => {});
   const done = () => { closing = false; stage.style.opacity = "0"; invoke("popover_hide").catch(() => {}); };
   if (reduced.matches || !inTauri) { done(); return; }
   anim?.cancel();

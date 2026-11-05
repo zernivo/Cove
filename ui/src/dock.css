@@ -60,7 +60,14 @@ body.tucked .stage { transform: translateY(calc(100% + 4px)); opacity: 0; pointe
 .glass .tint { position: absolute; inset: 0; z-index: 1; border-radius: inherit; background: var(--c-dock-tint); box-shadow: var(--c-dock-rim); }
 .glass:not(.has-plate) { background: rgba(17, 18, 21, 0.86); }
 :root:not([data-mode="dark"]) .glass:not(.has-plate) { background: rgba(247, 243, 239, 0.9); }
+/* Real Liquid Glass on Windows: the app's blur-behind backdrop sits under
+   the slab (glass.rs); the page adds a clear neutral tint, a bright
+   specular rim at the top edge, a soft inner highlight and the shadow. */
+html.real-glass .glass, html.real-glass .glass:not(.has-plate) { background: transparent; box-shadow: var(--c-lg-shadow); }
+html.real-glass .glass .plate { display: none; }
+html.real-glass .glass .tint { background: var(--c-lg-dock); box-shadow: var(--c-lg-rim); }
 @media (prefers-reduced-transparency: reduce) {
+  html.real-glass .glass .tint { background: var(--c-solid); }
   .glass .plate { display: none; }
   .glass, .glass:not(.has-plate) { background: var(--c-solid); }
 }

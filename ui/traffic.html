@@ -5,29 +5,44 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Cove window buttons</title>
     <style>
-      /* Mac window buttons, drawn over the left of the focused window's
-         title bar. The window is exactly the three dots plus 2 DIP padding,
-         shaped (by Cove) so only the dots take clicks. */
+      /* Mac window buttons on the focused window's title bar. The window
+         covers the native minimise / maximise / close buttons exactly: a
+         patch in the title bar's own colour (Cove reads it beside the
+         buttons) hides them, and the three dots sit at its right end,
+         close / minimise / zoom left to right, 14 DIP in from the corner. */
       html,
       body {
         margin: 0;
         padding: 0;
+        width: 100%;
+        height: 100%;
         background: transparent;
         overflow: hidden;
         user-select: none;
         -webkit-user-select: none;
         cursor: default;
       }
+      .patch {
+        position: absolute;
+        inset: 0;
+        background: var(--bar, #202020);
+        border-top-right-radius: var(--r, 0px);
+        visibility: hidden;
+      }
+      .patch.on {
+        visibility: visible;
+      }
       .lights {
         position: absolute;
-        left: 2px;
-        top: 2px;
+        right: 14px;
+        top: 50%;
+        translate: 0 -50%;
         display: flex;
         gap: 8px;
         opacity: 0;
-        transition: opacity var(--fade, 150ms) ease-out;
+        transition: opacity var(--fade, 120ms) ease-out;
       }
-      .lights.on {
+      .patch.on .lights {
         opacity: 1;
       }
       .dot {
@@ -42,6 +57,13 @@
         box-shadow: inset 0 0 0 0.5px var(--ring);
         outline: none;
         cursor: default;
+      }
+      /* A slightly larger, invisible hit area around each dot. */
+      .dot::before {
+        content: "";
+        position: absolute;
+        inset: -4px;
+        border-radius: 50%;
       }
       .close { --c: #ff5f57; --ring: #e0443e; --glyph: #4d0000; }
       .min { --c: #febc2e; --ring: #dea123; --glyph: #985700; }
@@ -80,6 +102,10 @@
       .dot.off svg {
         display: none;
       }
+      /* On a light title bar the dots keep a hint of definition. */
+      .patch.light .dot {
+        box-shadow: inset 0 0 0 0.5px var(--ring), 0 0 0 0.5px rgba(0, 0, 0, 0.12);
+      }
       @media (prefers-reduced-motion: reduce) {
         .lights {
           transition: none;
@@ -88,17 +114,19 @@
     </style>
   </head>
   <body>
-    <div class="lights" id="lights">
-      <button class="dot close" data-act="close" aria-label="Close" tabindex="-1">
-        <svg viewBox="0 0 12 12"><path d="M3.8 3.8l4.4 4.4M8.2 3.8L3.8 8.2" /></svg>
-      </button>
-      <button class="dot min" data-act="min" aria-label="Minimise" tabindex="-1">
-        <svg viewBox="0 0 12 12"><path d="M3.2 6h5.6" /></svg>
-      </button>
-      <button class="dot zoom" data-act="zoom" aria-label="Zoom" tabindex="-1">
-        <!-- ↔ on the diagonal: two arrowheads, like the Mac zoom glyph. -->
-        <svg viewBox="0 0 12 12"><path class="fill" d="M3.4 8.6V4.9l3.7 3.7z" /><path class="fill" d="M8.6 3.4v3.7L4.9 3.4z" /></svg>
-      </button>
+    <div class="patch" id="patch">
+      <div class="lights" id="lights">
+        <button class="dot close" data-act="close" aria-label="Close" tabindex="-1">
+          <svg viewBox="0 0 12 12"><path d="M3.8 3.8l4.4 4.4M8.2 3.8L3.8 8.2" /></svg>
+        </button>
+        <button class="dot min" data-act="min" aria-label="Minimise" tabindex="-1">
+          <svg viewBox="0 0 12 12"><path d="M3.2 6h5.6" /></svg>
+        </button>
+        <button class="dot zoom" data-act="zoom" aria-label="Zoom" tabindex="-1">
+          <!-- ↔ on the diagonal: two arrowheads, like the Mac zoom glyph. -->
+          <svg viewBox="0 0 12 12"><path class="fill" d="M3.4 8.6V4.9l3.7 3.7z" /><path class="fill" d="M8.6 3.4v3.7L4.9 3.4z" /></svg>
+        </button>
+      </div>
     </div>
     <script type="module" src="/src/traffic.ts"></script>
   </body>

@@ -646,8 +646,12 @@ fn popover_dock(kind: String, x: f64, y: f64, data: Option<serde_json::Value>, a
 /// main panel (`anchor_w` wide) on the item, 8 DIP above the dock, kept
 /// on screen.
 #[tauri::command]
-fn popover_place(kind: String, width: f64, height: f64, shapes: Option<Vec<[f64; 5]>>, anchor_w: Option<f64>, app: AppHandle) {
+fn popover_place(kind: String, width: f64, height: f64, shapes: Option<Vec<[f64; 5]>>, anchor_w: Option<f64>, pad: Option<f64>, app: AppHandle) {
     let Some(w) = app.get_webview_window("popover") else { return };
+    // The page leaves `pad` DIP of transparent room around its panels for
+    // their drop shadow; placement works on the panels themselves.
+    let pad = pad.unwrap_or(0.0).clamp(0.0, 64.0);
+    let (width, height) = ((width - 2.0 * pad).max(1.0), (height - 2.0 * pad).max(1.0));
     let (x, right, at) = POP.lock().map(|p| (p.x, p.right, p.at)).unwrap_or((0.0, false, None));
     let (pw, ph, left, top, mon) = if let Some((ax, ay)) = at {
         let m = dock::monitor_at(ax, ay).or_else(dock::dock_monitor).or_else(dock::primary);
@@ -676,17 +680,13 @@ fn popover_place(kind: String, width: f64, height: f64, shapes: Option<Vec<[f64;
     let sf = w.scale_factor().unwrap_or(1.0);
     let edge = (4.0 * sf).round() as i32;
     let left = left.clamp(mon.monitor.0 + edge, (mon.monitor.2 - pw - edge).max(mon.monitor.0));
+    let pp = (pad * sf).round() as i32;
     let _ = w.show();
     let hwnd = w.hwnd().map(|h| h.0 as isize).unwrap_or(0);
-    appbar::place(hwnd, (left, top, left + pw, top + ph));
-    // Clip the acrylic to the rounded panels (DWM only rounds to 8 px).
-    if let Some(shapes) = shapes {
-        let px: Vec<(i32, i32, i32, i32, i32)> = shapes
-            .iter()
-            .map(|s| ((s[0] * sf).round() as i32, (s[1] * sf).round() as i32, (s[2] * sf).round() as i32, (s[3] * sf).round() as i32, (s[4] * sf).round() as i32))
-            .collect();
-        glass::round_region(hwnd, &px);
-    }
+    appbar::place(hwnd, (left - pp, top - pp, left + pw + pp, top + ph + pp));
+    // Liquid Glass under exactly the panels shown (glass.rs backdrop).
+    let px: Vec<glass::Shape> = shapes.unwrap_or_default().iter().map(|s| shape_px(s, sf)).collect();
+    glass::backdrop::set(hwnd, &px);
     let _ = w.set_focus();
     // Ask the page for a fresh paint once Windows has really shown the
     // window: a WebView can put the last frame it drew while hidden on
@@ -718,11 +718,23 @@ fn dock_menu_pick(id: String, app: AppHandle) {
 /// backdrop follows the window's dark/light theme).
 #[tauri::command]
 fn glass_tint(dark: bool, app: AppHandle) {
-    for label in ["popover", "search"] {
-        if let Some(w) = app.get_webview_window(label) {
-            glass::acrylic(&w, dark);
-        }
-    }
+    let _ = app.run_on_main_thread(move || glass::backdrop::tint(dark));
+}
+
+/// A rounded rect in DIP (x, y, w, h, radius) to physical px.
+fn shape_px(s: &[f64; 5], sf: f64) -> glass::Shape {
+    ((s[0] * sf).round() as i32, (s[1] * sf).round() as i32, (s[2] * sf).round() as i32, (s[3] * sf).round() as i32, (s[4] * sf).round() as i32)
+}
+
+/// The page's glass panels (DIP, window coordinates; empty = none) for
+/// the dock, the popovers or Search: the Liquid Glass backdrop follows.
+#[tauri::command]
+fn glass_shape(label: String, shapes: Vec<[f64; 5]>, app: AppHandle) {
+    let Some(w) = app.get_webview_window(&label) else { return };
+    let sf = w.scale_factor().unwrap_or(1.0);
+    let hwnd = w.hwnd().map(|h| h.0 as isize).unwrap_or(0);
+    let px: Vec<glass::Shape> = shapes.iter().map(|s| shape_px(s, sf)).collect();
+    let _ = app.run_on_main_thread(move || glass::backdrop::set(hwnd, &px));
 }
 
 /// Size Search to its panel (`height` DIP; 640 DIP wide), keeping its top
@@ -736,7 +748,7 @@ fn search_fit(height: f64, app: AppHandle) {
         let hwnd = w.hwnd().map(|h| h.0 as isize).unwrap_or(0);
         let _ = w.set_size(tauri::PhysicalSize::new(pw as u32, ph as u32));
         let _ = w.set_position(pos);
-        glass::round_region(hwnd, &[(0, 0, pw, ph, (14.0 * sf).round() as i32)]);
+        glass::backdrop::set(hwnd, &[(0, 0, pw, ph, (14.0 * sf).round() as i32)]);
     }
 }
 const SEARCH_W: f64 = 640.0;
@@ -2964,14 +2976,13 @@ fn main() {
                 // system shadow and rounded corners.
                 let _ = window.set_shadow(true);
             }
-            // Menu bar popovers and Search: acrylic, shaped by a rounded
-            // window region to the panels (11 DIP menus, 20 DIP Control
-            // Centre, 14 DIP Search), so DWM's own 8 px rounding is off.
+            // Popovers and Search: transparent, unshaped windows over a
+            // Liquid Glass backdrop shaped to their panels (glass.rs); no
+            // DWM shadow, border or rounding of their own.
             #[cfg(target_os = "windows")]
             for label in ["popover", "search"] {
                 if let Some(window) = app.get_webview_window(label) {
                     let _ = window.set_shadow(false);
-                    glass::acrylic(&window, true);
                     glass::no_dwm_rounding(&window);
                 }
             }
@@ -3117,7 +3128,8 @@ fn main() {
             traffic::traffic_skip_set,
             traffic::traffic_click,
             traffic::traffic_hover,
-            traffic::traffic_hello
+            traffic::traffic_hello,
+            glass_shape
         ])
         .build(tauri::generate_context!())
         .expect("error while building Cove");
