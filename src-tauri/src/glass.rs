@@ -109,14 +109,15 @@ pub mod backdrop {
     /// glass stays clear; the page adds the rest of the tint.
     fn gradient(dark: bool) -> u32 {
         if dark {
-            0x30_1A_19_18
+            0x14_1A_19_18
         } else {
-            0x38_F4_F4_F6
+            0x1C_F4_F4_F6
         }
     }
 
-    /// ACCENT_ENABLE_ACRYLICBLURBEHIND (4); falls back to plain blur (3)
-    /// where acrylic isn't offered (Windows 10 before 1803).
+    /// ACCENT_ENABLE_BLURBEHIND (3): a clear Gaussian blur with only our
+    /// faint tint, like Apple's glass (acrylic, 4, adds its own milky
+    /// luminosity layer and noise, which read as grey). Acrylic is the fallback.
     fn accent(h: HWND, dark: bool) -> bool {
         type Swca = unsafe extern "system" fn(HWND, *mut CompositionData) -> i32;
         static F: std::sync::OnceLock<Option<Swca>> = std::sync::OnceLock::new();
@@ -128,7 +129,7 @@ pub mod backdrop {
             GetProcAddress(m, b"SetWindowCompositionAttribute\0".as_ptr()).map(|p| std::mem::transmute::<_, Swca>(p))
         });
         let Some(f) = f else { return false };
-        for state in [4u32, 3] {
+        for state in [3u32, 4] {
             let mut ap = AccentPolicy { state, flags: 0, gradient: gradient(dark), animation: 0 };
             let mut d = CompositionData { attrib: 19, data: &mut ap as *mut _ as *mut _, size: std::mem::size_of::<AccentPolicy>() };
             if unsafe { f(h, &mut d) } != 0 {
