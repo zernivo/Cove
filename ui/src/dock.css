@@ -65,7 +65,7 @@ body.tucked .stage { transform: translateY(calc(100% + 4px)); opacity: 0; pointe
    specular rim at the top edge, a soft inner highlight and the shadow. */
 html.real-glass .glass, html.real-glass .glass:not(.has-plate) { background: transparent; box-shadow: var(--c-lg-shadow); }
 html.real-glass .glass .plate { display: none; }
-html.real-glass .glass .tint { background: var(--c-lg-dock); box-shadow: var(--c-lg-rim); }
+html.real-glass .glass .tint { background: var(--c-lg-dock); box-shadow: var(--c-lg-rim), inset 0 0 0 3.5px var(--c-lg-edge); }
 @media (prefers-reduced-transparency: reduce) {
   html.real-glass .glass .tint { background: var(--c-solid); }
   .glass .plate { display: none; }

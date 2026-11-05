@@ -112,6 +112,22 @@ if ($ex) { Focus $ex; Start-Sleep 2; Shot "03-explorer-focused" }
 Focus $np
 Start-Sleep 2
 Shot "04-notepad-again"
+# Pointer over the red dot (glyphs show on hover).
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class R {
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, Rt, B; }
+  [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h, int a, out RECT r, int s);
+}
+"@ -ErrorAction SilentlyContinue
+$rc = New-Object R+RECT
+[R]::DwmGetWindowAttribute($np.MainWindowHandle, 9, [ref]$rc, 16) | Out-Null
+"notepad frame: $($rc.L),$($rc.T) - $($rc.Rt),$($rc.B)"
+[W]::SetCursorPos($rc.Rt - 61, $rc.T + 16) | Out-Null
+Start-Sleep 2
+Shot "05-hover-red"
+[W]::SetCursorPos(500, 700) | Out-Null
 
 $alive = -not $cove.HasExited
 "cove alive: $alive"

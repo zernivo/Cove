@@ -47,6 +47,7 @@ pub mod backdrop {
     use windows_sys::Win32::Graphics::Gdi::{DeleteObject, FillRect, GetStockObject, BLACK_BRUSH, HBRUSH, HDC};
     use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
     use windows_sys::Win32::UI::Accessibility::{SetWinEventHook, HWINEVENTHOOK};
+    use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, GetClientRect, GetWindowRect, IsWindow, IsWindowVisible, RegisterClassW, SetWindowPos,
         ShowWindow, EVENT_OBJECT_HIDE, EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_SHOW, HTTRANSPARENT, MA_NOACTIVATE, OBJID_WINDOW,
@@ -54,12 +55,14 @@ pub mod backdrop {
         WM_NCHITTEST, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
     };
 
+    /// One backdrop window per panel (a menu and its submenu are two), so
+    /// DWM's own anti-aliased corner rounding can shape each one.
     struct Bd {
         owner: isize,
-        hwnd: isize,
+        wins: Vec<isize>,
         shapes: Vec<Shape>,
-        /// Region last applied (shapes + window size), to skip repeats.
-        applied: Option<(Vec<Shape>, i32, i32)>,
+        /// Shape last applied to each window, to skip repeats.
+        applied: Vec<Option<Shape>>,
     }
 
     static LIST: Mutex<Vec<Bd>> = Mutex::new(Vec::new());
@@ -169,9 +172,9 @@ pub mod backdrop {
             if h.is_null() {
                 return 0;
             }
-            // No DWM rounding (the region shapes it), no 1 px border, no
+            // DWM's anti-aliased rounding (Windows 11), no 1 px border, no
             // fade on show/hide (it must appear and vanish with its window).
-            dwm_u32(h, 33, 1); // DWMWA_WINDOW_CORNER_PREFERENCE = DONOTROUND
+            dwm_u32(h, 33, 2); // DWMWA_WINDOW_CORNER_PREFERENCE = ROUND
             dwm_u32(h, 34, 0xFFFF_FFFE); // DWMWA_BORDER_COLOR = NONE
             dwm_u32(h, 3, 1); // DWMWA_TRANSITIONS_FORCEDISABLED
             let ok = accent(h, DARK.load(std::sync::atomic::Ordering::SeqCst));
@@ -200,46 +203,82 @@ pub mod backdrop {
         }
     }
 
+    /// How far a backdrop sits inside its panel's painted edge (px): far
+    /// enough that DWM's 8 DIP rounded corner lies wholly inside the
+    /// panel's larger CSS corner of radius `r` (so nothing ever shows
+    /// outside the panel even where Windows ignores the regions), plus the
+    /// 1 px the CSS rim covers. The page paints this band as the glass rim.
+    pub fn inset(r: i32, scale: f64) -> i32 {
+        let dwm = (8.0 * scale).round();
+        let corner = ((r as f64 - dwm).max(0.0) * (1.0 - std::f64::consts::FRAC_1_SQRT_2)).ceil() as i32;
+        corner + 1
+    }
+
+    fn win11() -> bool {
+        static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *V.get_or_init(|| {
+            winreg::RegKey::predef(winreg::enums::HKEY_LOCAL_MACHINE)
+                .open_subkey(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion")
+                .and_then(|k| k.get_value::<String, _>("CurrentBuildNumber"))
+                .ok()
+                .and_then(|b| b.trim().parse::<u32>().ok())
+                .is_some_and(|b| b >= 22000)
+        })
+    }
+
     fn sync(b: &mut Bd) {
-        let (owner, h) = (b.owner as HWND, b.hwnd as HWND);
+        let owner = b.owner as HWND;
         unsafe {
-            if IsWindow(owner) == 0 || IsWindowVisible(owner) == 0 || b.shapes.is_empty() {
-                if IsWindowVisible(h) != 0 {
-                    ShowWindow(h, SW_HIDE);
+            let live = IsWindow(owner) != 0 && IsWindowVisible(owner) != 0;
+            // One window per panel: make or hide windows to match.
+            while live && b.wins.len() < b.shapes.len() {
+                let h = create();
+                if h == 0 {
+                    break;
                 }
-                return;
+                b.wins.push(h);
+                b.applied.push(None);
             }
             let mut rc: RECT = std::mem::zeroed();
-            if GetWindowRect(owner, &mut rc) == 0 {
-                return;
-            }
-            // 1 px inside the painted edge (see the module note).
-            let inset: Vec<Shape> = b.shapes.iter().map(|&(x, y, sw, sh, r)| (x + 1, y + 1, sw - 2, sh - 2, (r - 1).max(0))).collect();
-            // The backdrop window is only as big as the panels' bounding
-            // box: nothing of it can ever reach outside them.
-            let (l, t) = inset.iter().fold((i32::MAX, i32::MAX), |(l, t), s| (l.min(s.0), t.min(s.1)));
-            let (r, bm) = inset.iter().fold((i32::MIN, i32::MIN), |(r, bm), s| (r.max(s.0 + s.2), bm.max(s.1 + s.3)));
-            let (w, hh) = (r - l, bm - t);
-            if w <= 0 || hh <= 0 {
-                return;
-            }
-            let local: Vec<Shape> = inset.iter().map(|&(x, y, sw, sh, rr)| (x - l, y - t, sw, sh, rr)).collect();
-            let key = (local.clone(), w, hh);
-            if b.applied.as_ref() != Some(&key) {
-                // The window region shapes the window; DWM's blur-behind
-                // region shapes the accent's blur and tint (an accent
-                // ignores the window region on its own).
-                super::round_region(b.hwnd, &local);
-                let rgn = super::make_region(&local);
-                if !rgn.is_null() {
-                    let bb = DWM_BLURBEHIND { dwFlags: DWM_BB_ENABLE | DWM_BB_BLURREGION, fEnable: 1, hRgnBlur: rgn, fTransitionOnMaximized: 0 };
-                    DwmEnableBlurBehindWindow(h, &bb);
-                    DeleteObject(rgn);
+            let have_rect = live && GetWindowRect(owner, &mut rc) != 0;
+            let dpi = GetDpiForWindow(owner);
+            let scale = if dpi == 0 { 1.0 } else { dpi as f64 / 96.0 };
+            for i in 0..b.wins.len() {
+                let h = b.wins[i] as HWND;
+                let shape = if have_rect { b.shapes.get(i).copied() } else { None };
+                let Some((x, y, sw, sh, r)) = shape else {
+                    if IsWindowVisible(h) != 0 {
+                        ShowWindow(h, SW_HIDE);
+                    }
+                    continue;
+                };
+                let d = inset(r, scale);
+                let (w, hh, rr) = (sw - 2 * d, sh - 2 * d, (r - d).max(0));
+                if w <= 0 || hh <= 0 {
+                    ShowWindow(h, SW_HIDE);
+                    continue;
                 }
-                b.applied = Some(key);
+                let local: Shape = (0, 0, w, hh, rr);
+                if b.applied[i] != Some(local) {
+                    // The window region and DWM's blur-behind region shape
+                    // the accent where Windows honours them; DWM's corner
+                    // rounding does everywhere else (Windows 11).
+                    // Windows 11 doesn't round a window that has a region,
+                    // so the window region is for Windows 10 only.
+                    if !win11() {
+                        super::round_region(b.wins[i], &[local]);
+                    }
+                    let rgn = super::make_region(&[local]);
+                    if !rgn.is_null() {
+                        let bb = DWM_BLURBEHIND { dwFlags: DWM_BB_ENABLE | DWM_BB_BLURREGION, fEnable: 1, hRgnBlur: rgn, fTransitionOnMaximized: 0 };
+                        DwmEnableBlurBehindWindow(h, &bb);
+                        DeleteObject(rgn);
+                    }
+                    b.applied[i] = Some(local);
+                }
+                // Directly under its window.
+                SetWindowPos(h, owner, rc.left + x + d, rc.top + y + d, w, hh, SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
             }
-            // Directly under its window.
-            SetWindowPos(h, owner, rc.left + l, rc.top + t, w, hh, SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
         }
     }
 
@@ -264,11 +303,7 @@ pub mod backdrop {
             if shapes.is_empty() {
                 return;
             }
-            let h = create();
-            if h == 0 {
-                return;
-            }
-            l.push(Bd { owner, hwnd: h, shapes: Vec::new(), applied: None });
+            l.push(Bd { owner, wins: Vec::new(), shapes: Vec::new(), applied: Vec::new() });
         }
         if let Some(b) = l.iter_mut().find(|b| b.owner == owner) {
             b.shapes = shapes.iter().copied().filter(|s| s.2 > 2 && s.3 > 2).collect();
@@ -281,7 +316,9 @@ pub mod backdrop {
         DARK.store(dark, std::sync::atomic::Ordering::SeqCst);
         let Ok(l) = LIST.lock() else { return };
         for b in l.iter() {
-            accent(b.hwnd as HWND, dark);
+            for &h in &b.wins {
+                accent(h as HWND, dark);
+            }
         }
     }
 }
@@ -289,6 +326,10 @@ pub mod backdrop {
 #[cfg(not(windows))]
 pub mod backdrop {
     use super::Shape;
+    pub fn inset(r: i32, _scale: f64) -> i32 {
+        let _ = r;
+        1
+    }
     pub fn set(_owner: isize, _shapes: &[Shape]) {}
     pub fn tint(_dark: bool) {}
 }
@@ -397,4 +438,16 @@ pub fn toggle_desktop_icons() -> Result<(), String> {
 #[cfg(not(windows))]
 pub fn toggle_desktop_icons() -> Result<(), String> {
     Err("Not on Windows.".into())
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    #[test]
+    fn backdrop_stays_inside_the_css_corner() {
+        use super::backdrop::inset;
+        // Menus (11 DIP) at 100 %: 1 px past the rim. CC (20 DIP) at 150 %.
+        assert_eq!(inset(11, 1.0), 2);
+        assert_eq!(inset(30, 1.5), 1 + ((30.0f64 - 12.0) * (1.0 - std::f64::consts::FRAC_1_SQRT_2)).ceil() as i32);
+        assert_eq!(inset(4, 1.0), 1);
+    }
 }
