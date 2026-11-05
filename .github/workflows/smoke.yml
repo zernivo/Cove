@@ -38,3 +38,4 @@ jobs:
           Get-Content "$env:APPDATA\app.cove.desktop\cove.log" -ErrorAction SilentlyContinue
           "---- app event log"
           Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-5)} -ErrorAction SilentlyContinue | Where-Object { $_.LevelDisplayName -eq 'Error' } | Format-List TimeCreated,ProviderName,Message | Out-String -Width 300
+          if (-not $alive) { exit 1 }

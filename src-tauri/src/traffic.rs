@@ -344,7 +344,7 @@ pub fn init(app: &AppHandle) {
 /// Re-read the setting (and safe mode) and start or stop the overlay.
 pub fn refresh() {
     let Some(app) = APP.get() else { return };
-    let state = app.state::<crate::AppState>();
+    let Some(state) = app.try_state::<crate::AppState>() else { return };
     let (on, skip) = state.settings.lock().map(|s| (s.data.traffic, s.data.traffic_skip.clone())).unwrap_or((false, vec![]));
     if let Ok(mut s) = SKIP.lock() {
         *s = skip;
@@ -485,8 +485,10 @@ fn apply_ui(app: &AppHandle, u: Ui) {
 // ---- Commands ----
 
 fn info(app: &AppHandle) -> TrafficInfo {
-    let state = app.state::<crate::AppState>();
-    let (enabled, skip) = state.settings.lock().map(|s| (s.data.traffic, s.data.traffic_skip.clone())).unwrap_or((true, vec![]));
+    let (enabled, skip) = app
+        .try_state::<crate::AppState>()
+        .and_then(|state| state.settings.lock().ok().map(|s| (s.data.traffic, s.data.traffic_skip.clone())))
+        .unwrap_or((true, vec![]));
     let seen = SEEN.lock().map(|s| s.clone()).unwrap_or_default();
     let name_of = |k: &str| seen.iter().find(|(e, _)| e == k).map(|(_, n)| n.clone()).unwrap_or_else(|| k.trim_end_matches(".exe").to_string());
     let skip_e: Vec<AppEntry> = skip.iter().map(|k| AppEntry { exe: k.clone(), name: name_of(k) }).collect();
