@@ -453,6 +453,9 @@ fn apply_ui(app: &AppHandle, u: Ui) {
         }
         Ui::Hide { ms } => {
             let Some(_) = app.get_webview_window("traffic") else { return };
+            // A hidden page never sees pointerleave: forget the hover so a
+            // stale "over" can't bring the dots back by itself.
+            OVER.store(false, Ordering::SeqCst);
             let g = GEN.fetch_add(1, Ordering::SeqCst) + 1;
             let (min, max) = LAST.lock().ok().and_then(|l| l.as_ref().map(|p| (p.min, p.max))).unwrap_or((true, true));
             to_page(app, PagePayload { show: false, fade: ms, min, max, zoomed: false });
