@@ -2,6 +2,12 @@
 
 *Written 2026-11-03 for Cove (Tauri 2, WebView2 + Rust, Windows). It distils Apple's current HIG, the best open-source Liquid Glass work and real WebView2 behaviour into rules with numbers. It sits on top of the longer research note `docs/research/05-liquid-glass-design.md` (the "Cove Glass" spec) and the Cove rules in `docs/design/REDESIGN.md`. Where they disagree, REDESIGN.md wins (no gradients, glow blobs or purple; Ink #111215; teal #2cc9b9).*
 
+> **Read this first (v0.9.0).** This guide was written before the build and
+> keeps its research. What Cove actually ships is in **§0b** and the
+> **shipped values** table below it; where any older section disagrees
+> (acrylic panels, a wallpaper plate under the dock, teal "on" states, a
+> 48 DIP dock), §0b and that table win.
+
 Labels: **[Apple]** = Apple HIG / WWDC. **[MS]** = Microsoft. **[3p]** = third-party source, cited. **[tested]** = rendered in headless Chromium for this guide. **[Cove]** = our own call, a starting value to tune by eye.
 
 ---
@@ -15,9 +21,9 @@ Labels: **[Apple]** = Apple HIG / WWDC. **[MS]** = Microsoft. **[3p]** = third-p
 - Another app removed its Windows "blurry" mode for this reason. https://github.com/KurtGokhan/KeyParty/commit/939b3a4fca2510748f4df98086be204dc2c6f5aa
 - The Na2H2P2O7 liquid-glass skill is built on the same insight: the host feeds the wallpaper (or a capture) to the renderer as a texture. https://github.com/Na2H2P2O7/liquid-glass-skill
 
-**What this means for Cove today:** `ui/src/dock.css` puts `backdrop-filter: blur(24px) saturate(1.4)` on the dock pill in a transparent window, so the dock shows only `--pill` tint. That blur costs GPU time and draws nothing. (Observation only; I did not change the file.)
+*(Historical, 2026-11-03: the dock then used CSS `backdrop-filter` in a transparent window, which drew only its tint. Fixed.)*
 
-**So Cove has three ways to get real glass, chosen per surface:**
+**The three ways to get real glass considered on 2026-11-03** (superseded on Windows by §0b; the plate is now only the menu bar's backing and the browser-preview fallback):
 
 | Surface | What is behind it | Technique |
 |---|---|---|
@@ -29,7 +35,7 @@ Labels: **[Apple]** = Apple HIG / WWDC. **[MS]** = Microsoft. **[3p]** = third-p
 
 ---
 
-## 0b. What ships since 2026-11-05: native blur-behind backdrops
+## 0b. What ships in v0.9.0: native blur-behind backdrops
 
 The user's test of b44d0c1 showed the two failure modes of the earlier
 recipe on a real Windows 11 PC: DWM's system backdrop (Mica/acrylic via
@@ -37,28 +43,54 @@ recipe on a real Windows 11 PC: DWM's system backdrop (Mica/acrylic via
 22H2+) is drawn as a **flat grey fallback whenever the window is inactive**,
 and it **ignores `SetWindowRgn`**, so square grey corners stuck out of the
 rounded panels. The wallpaper plate for the dock could read the wrong
-picture (a saturated blue).
+picture (a saturated blue). **Don't use either for the dock or panels.**
 
-Now (`src-tauri/src/glass.rs`, `backdrop`):
-- Every glass panel (dock slab, each menu/submenu, Control Centre, Search)
-  gets its own small native window of Cove's, directly under the Cove
-  window, with `SetWindowCompositionAttribute(ACCENT_ENABLE_ACRYLICBLURBEHIND)`
-  and a neutral low-alpha tint. That accent blurs whether or not the
-  window is active.
+Now (`src-tauri/src/glass.rs`, `backdrop`; PR #15, made clearer in PR #16):
+- Every glass panel (dock slab, each menu and submenu, Control Centre,
+  Search) gets its own small native window of Cove's, directly under the
+  Cove window, with `SetWindowCompositionAttribute` set to
+  **`ACCENT_ENABLE_BLURBEHIND`** (a clear Gaussian blur) and a very faint
+  neutral tint (`0x14` alpha in dark, `0x1C` in light). Acrylic
+  (`ACCENT_ENABLE_ACRYLICBLURBEHIND`) is only the fallback: its own milky
+  luminosity layer and noise read as grey. The accent blurs whether or not
+  the window is active.
 - The accent also ignores window regions (seen on the CI runner), so the
   backdrop is shaped by **DWM's own anti-aliased corner rounding**
   (`DWMWCP_ROUND`, 8 DIP) and sits `backdrop::inset(r)` px inside the CSS
   corner: far enough that the 8 DIP corner lies wholly inside the panel's
   larger corner. The blur-behind region and (Windows 10) the window region
   are still set where Windows honours them.
-- The Cove windows stay transparent and unshaped; CSS paints the
-  anti-aliased corner, the neutral tint (`--c-lg-*` in chrome.css), the
-  bright top rim, a soft inner highlight, the glass rim band over the
-  inset (`--c-lg-edge`) and a soft drop shadow (popovers leave 24 DIP of
-  room; a press there closes the popover).
+- The Cove windows stay transparent and unshaped; pages report their panel
+  shapes with `glass_shape(label, shapes)`. CSS paints the anti-aliased
+  corner, the neutral tint, the bright top rim, a soft inner highlight, the
+  glass rim band over the inset (`--c-lg-edge`) and a soft drop shadow
+  (popovers leave 24 DIP of room; a press there closes the popover).
 - Limits: no saturation lift (the accent has none), and on machines with
   transparency effects off (or VMs without blur, like the CI runner) the
-  accent draws its tint solid.
+  accent draws its tint solid. `prefers-reduced-transparency` makes the
+  page solid Ink (or paper) with the same shape.
+- The optional **menu bar** still paints Ink over the wallpaper plate
+  (§4); moving it to the backdrop is on the roadmap.
+
+### Shipped values (v0.9.0, `ui/src/chrome.css`, `ui/src/dock.ts`)
+
+| Token / value | Light | Dark |
+|---|---|---|
+| `--c-lg-panel` (menus, Control Centre, Search) | `rgba(252,252,253,0.30)` | `rgba(22,22,26,0.26)` |
+| `--c-lg-dock` | `rgba(252,252,253,0.14)` | `rgba(22,22,26,0.12)` |
+| `--c-lg-edge` (rim band) | `rgba(250,250,252,0.42)` | `rgba(24,24,28,0.40)` |
+| Backdrop tint (glass.rs) | `0x1C` on `#F4F4F6` | `0x14` on `#181A19`-ish neutral |
+
+- **Dock:** 40 DIP icons, 56 DIP tall, floats 6 DIP, radius 15, 8 DIP gaps;
+  magnification at most 1.25x with a 6 DIP lift, critically damped springs.
+  Status island at the right end (no magnification, graphite hover pill).
+  Dock popovers stand 8 DIP above the dock, centred on their item.
+- **Menu bar (optional):** 24 DIP; modes Off (default) / Show at the top edge / Always.
+- **State colour:** graphite (a soft white glass pill with an edge sheen,
+  white text; dark glass in light mode). Never teal `#2cc9b9` or the logo's
+  faces, for any selection, highlight, "on" state, slider fill or focus ring.
+- **Traffic lights:** on the focused window only, 14 DIP from the right edge
+  of a patch in the title bar's colour that covers the native caption buttons.
 
 ## 1. Apple's rules that matter for Cove (from the HIG pages, read 2026-11-03)
 
@@ -119,8 +151,8 @@ Worst-case maths from Armitanemati: a dark fill (~#16161a) with white text needs
 | **Thick** | **0.60–0.72** | **0.62–0.78** | body text, menus |
 | Solid (reduced transparency, high contrast) | 0.96–1.0 | 0.96–1.0 | anything |
 
-- **The glass is colourless, and the colour comes from behind.** Never tint glass teal or with logo colours. Accent goes on *one* element (the active dot, an "on" toggle) [Apple; stormaref rule 2].
-- The "on" state in Control Centre is a **solid light circle with a teal glyph**, and "off" is plain glass. One strong cue, no glow (05-research §2).
+- **The glass is colourless, and the colour comes from behind.** Never tint glass teal or with logo colours. State is graphite, never the accent (see the shipped values) [Apple; stormaref rule 2].
+- The "on" state in Control Centre is a **solid graphite circle** (light with a dark glyph in dark mode, dark with a light glyph in light mode), and "off" is plain glass. One strong cue, no glow, no teal (user decision 2026-11-04).
 - **A child of glass paints no surface of its own**: no background, border or radius of its own except a subtle state fill (`rgba(255,255,255,.08)` hover / `.14` pressed in dark; `rgba(0,0,0,.05)` / `.09` in light) [stormaref rule 3; Armitanemati].
 
 ### 2.3 Edge highlights (rim) and stroke: no gradients needed
@@ -164,8 +196,8 @@ Shadows lift glass off the wallpaper. Big glass = deeper shadow [Apple 219].
 - **Concentric rule:** inner radius = outer radius − padding [Apple 356]. Dock pill r 26 with 7 px padding → tile hover r 19. Control Centre panel r 22, padding 12 → modules r 10 (or capsules).
 - macOS 26 measured sizes [3p, 05-research §1.8]: menu w 200, item h 24, menu r 12, item r 5; popover r 12; window r 16; switch 54×24; slider track 4 / thumb 20×16; hit target ≥ 28 (min 20). Layout margin 10, bezel padding ~12.
 - **Cove spacing scale** stays 4/8/12/16/24/32 (`tokens.css`). Gutters in Control Centre are **12 px**. Menu insets are 6 px around items and 5 px item radius.
-- **Dock [Cove]:** icon 48 px (`--size`), gap 6 px, pill padding 7/10/9 (current), r 26. Magnification at most ×1.5 over a cosine falloff of about 3 icons. Indicator dot 4 px; active = 14×4, r 3, teal.
-- **Menu bar [Cove]:** 24–28 px tall (HIG 24 pt; ≥ 26 px if the click target feels small on Windows at 100%). Glyphs 16 px, 13 px text, 10–12 px between extras.
+- **Dock [Cove, shipped]:** icon 40 DIP, 8 DIP gaps, 56 DIP tall, r 15, floats 6 DIP. Magnification at most 1.25x with a 6 DIP lift. Indicator dot 4 px, neutral (never teal).
+- **Menu bar [Cove, shipped]:** 24 DIP tall (HIG 24 pt), off by default. Glyphs 16 px, 13 px text, 10–12 px between extras.
 
 ### 2.6 Typography (Windows-native, Apple-grade)
 
@@ -205,12 +237,12 @@ CSS `linear()` versions (computed for this guide; set `transition-duration` to t
 
 | Cove surface | Tier | Backdrop technique | Refraction |
 |---|---|---|---|
-| Dock pill | Regular (Clear as an opt-in look) | wallpaper plate, pre-frosted | yes, `strength 0.6–0.8`, bezel 16 px |
+| Dock pill and status island | Clear-to-regular (`--c-lg-dock`) | native blur-behind backdrop (§0b) | no (the plate's edge refraction is only in the browser preview) |
 | Dock tooltip / label | Thick, or solid label (`--label-bg`) | none needed | no |
-| Dock menu, stack popover | Thick | DWM acrylic window, or plate if over desktop only | no |
-| Menu bar | transparent by default; Regular backing only when a window is maximised under it or the wallpaper is busy | plate | rim-only (bezel 6–8 px) or none |
-| Control Centre | Thick, modules as fills inside (no nested glass) | DWM acrylic (covers apps) | no; sliders and toggles may flash glass while dragged |
-| Search / launcher | Thick | DWM acrylic (current) | no |
+| Dock menus, Cove menu, stack popover, calendar | Thick (`--c-lg-panel`) | native blur-behind backdrop, one per menu/submenu | no |
+| Menu bar (optional, off by default) | Ink bar | wallpaper plate | rim-only (bezel 6 px) |
+| Control Centre | Thick, modules as fills inside (no nested glass) | native blur-behind backdrop | no |
+| Search / launcher | Thick | native blur-behind backdrop | no |
 | Settings window | **No glass**: Ink #111215 surface. Glass only on the live desktop miniature's dock and bar, and on sheets over content | in-page `backdrop-filter` | optional on the miniature |
 
 ---
@@ -409,7 +441,7 @@ The page under them is opaque, so plain backdrop-filter works, SVG included (Chr
 - [ ] `prefers-contrast: more` / `forced-colors` → system colours, a visible 1px border, no plate.
 - [ ] Reduced motion → crossfades, no springs or magnification bounce. The dock still shows hover state.
 - [ ] **Controls must read as controls with glass off** (Armitanemati anti-pattern #21).
-- [ ] Hit targets ≥ 28 px (min 20) [3p macOS], with keyboard focus rings visible on glass (2px teal ring + 2px offset, never removed).
+- [ ] Hit targets ≥ 32 DIP in Cove (macOS uses ≥ 28, min 20 [3p]), with keyboard focus rings visible on glass (2px graphite ring + 2px offset, never removed).
 - [ ] If legibility fails, fix in this order: raise opacity → move it → add contrast (scrim, stronger edge, heavier weight) → remove glass (Armitanemati §13).
 
 ---
@@ -418,9 +450,9 @@ The page under them is opaque, so plain backdrop-filter works, SVG included (Chr
 
 **Do**
 - Glass only on the dock, menu bar, Control Centre and transient menus. Settings and content stay Ink.
-- Feed real wallpaper pixels into a plate. That is the only path to real lensing in WebView2.
+- Put real blur under glass with a native backdrop window (§0b). A wallpaper plate is the only path to real lensing in WebView2, so keep it for the menu bar and previews.
 - Concentrate refraction in a thin bezel. Keep the centre identity and text sharp.
-- Let the wallpaper give the colour. Teal on one thing per surface.
+- Let the wallpaper give the colour. State is graphite; teal is the brand accent only, never a state.
 - Use rim + shadow + tint as one system, tuned per tier and per mode.
 - Use springs at damping 1.0, respond on press, keep motion interruptible, and close on the path it opened.
 - Flip the menu bar's ink by wallpaper luminance. Keep big panels fixed.
