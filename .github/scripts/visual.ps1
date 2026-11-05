@@ -49,6 +49,8 @@ $wall = (Resolve-Path "ui\public\wallpapers\dune-light.jpg").Path
 "screen: $([W]::GetSystemMetrics(0)) x $([W]::GetSystemMetrics(1))"
 Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version | Format-List | Out-String
 
+# Close File Explorer windows left from a previous pass (not the shell).
+try { (New-Object -ComObject Shell.Application).Windows() | ForEach-Object { $_.Quit() } } catch { }
 # Install (once).
 Get-Process cove, notepad -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep 2
@@ -91,7 +93,7 @@ Focus $np
 Start-Sleep 2
 Shot "01-notepad-focused"
 
-foreach ($k in @("cc", "menu", "cove", "wifi")) {
+foreach ($k in @("cc", "menu", "wifi")) {
   Start-Process $exe.FullName -ArgumentList "--cove-open=$k"
   Start-Sleep 3
   Shot "02-$k"

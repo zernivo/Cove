@@ -27,6 +27,17 @@
 /// in other processes: the WinEvent hook is for Cove's own process only.
 pub type Shape = (i32, i32, i32, i32, i32);
 
+static LOGGER: std::sync::OnceLock<Box<dyn Fn(&str) + Send + Sync>> = std::sync::OnceLock::new();
+pub fn set_logger(f: impl Fn(&str) + Send + Sync + 'static) {
+    let _ = LOGGER.set(Box::new(f));
+}
+#[allow(dead_code)]
+fn log(m: &str) {
+    if let Some(f) = LOGGER.get() {
+        f(m);
+    }
+}
+
 #[cfg(windows)]
 pub mod backdrop {
     use super::Shape;
@@ -176,7 +187,8 @@ pub mod backdrop {
             dwm_u32(h, 3, 1); // DWMWA_TRANSITIONS_FORCEDISABLED
             let m = Margins { l: -1, r: -1, t: -1, b: -1 };
             DwmExtendFrameIntoClientArea(h, &m);
-            accent(h, DARK.load(std::sync::atomic::Ordering::SeqCst));
+            let ok = accent(h, DARK.load(std::sync::atomic::Ordering::SeqCst));
+            super::log(&format!("glass: backdrop window created (blur-behind {})", if ok { "on" } else { "unavailable" }));
             h as isize
         }
     }
