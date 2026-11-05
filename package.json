@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "check:size": "node scripts/check-bundle-size.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

@@ -14,7 +14,10 @@ jobs:
         with:
           node-version: 20
       - run: npm install
+      - run: npx tsc --noEmit
       - run: npm run build
+      - name: UI bundle size budget
+        run: npm run check:size
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
