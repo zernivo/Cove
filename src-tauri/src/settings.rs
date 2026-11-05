@@ -84,6 +84,13 @@ pub struct Settings {
     pub snap_animate: bool,
     /// Last version that ran (to refresh icons once after an update).
     pub last_version: String,
+    /// Show other apps' tray icons (Control Centre's "Other apps") while
+    /// the takeover hides the taskbar. Off = no stand-in tray at all.
+    #[serde(default = "yes")]
+    pub tray_icons: bool,
+    /// Tray icons pinned to the dock's status island (stable keys, tray.rs).
+    #[serde(default)]
+    pub tray_pins: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -176,6 +183,8 @@ impl Default for Settings {
             dark_at: dark_at(),
             snap_animate: true,
             last_version: String::new(),
+            tray_icons: true,
+            tray_pins: Vec::new(),
         }
     }
 }

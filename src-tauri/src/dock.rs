@@ -482,7 +482,7 @@ mod imp {
     };
     use windows_sys::Win32::UI::Shell::{SHAppBarMessage, APPBARDATA};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, FindWindowW, GetClassNameW, GetCursorPos, GetForegroundWindow, GetWindow, GetWindowLongW,
+        EnumWindows, GetClassNameW, GetCursorPos, GetForegroundWindow, GetWindow, GetWindowLongW,
         GetWindowRect, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic,
         IsWindowVisible, PostMessageW, SetForegroundWindow, ShowWindow, SystemParametersInfoW,
         GWL_EXSTYLE, GW_OWNER, SPI_GETWORKAREA, SW_HIDE, SW_MINIMIZE, SW_RESTORE, SW_SHOWNOACTIVATE, WM_CLOSE, WS_EX_TOOLWINDOW,
@@ -783,7 +783,10 @@ mod imp {
     fn trays() -> Vec<HWND> {
         unsafe extern "system" fn each(hwnd: HWND, lparam: LPARAM) -> BOOL {
             let out = &mut *(lparam as *mut Vec<HWND>);
-            if matches!(class(hwnd).as_str(), "Shell_TrayWnd" | "Shell_SecondaryTrayWnd") {
+            // Cove's own stand-in tray (tray.rs) shares the class: skip it.
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(hwnd, &mut pid);
+            if matches!(class(hwnd).as_str(), "Shell_TrayWnd" | "Shell_SecondaryTrayWnd") && pid != std::process::id() {
                 out.push(hwnd);
             }
             1
@@ -820,8 +823,8 @@ mod imp {
     /// Returns the state before the call.
     pub fn taskbar_autohide(set: Option<bool>) -> bool {
         unsafe {
-            let cls: Vec<u16> = "Shell_TrayWnd".encode_utf16().chain(std::iter::once(0)).collect();
-            let tray = FindWindowW(cls.as_ptr(), std::ptr::null());
+            // Explorer's taskbar, not Cove's stand-in tray (tray.rs).
+            let tray = trays().into_iter().find(|&h| class(h) == "Shell_TrayWnd").unwrap_or(std::ptr::null_mut());
             let mut d: APPBARDATA = std::mem::zeroed();
             d.cbSize = std::mem::size_of::<APPBARDATA>() as u32;
             d.hWnd = tray;

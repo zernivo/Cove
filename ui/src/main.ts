@@ -3,6 +3,7 @@ import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
+import { initTraySetting, MOCK_STATUS } from "./tray";
 
 interface Status { version: string; journal_entries: number; windows: boolean }
 interface Tweak { id: string; title: string; description: string; settings_uri: string; applied: boolean | null }
@@ -38,6 +39,8 @@ const mock: Record<string, (a?: any) => unknown> = {
   dock_stacks_set: (a) => ({ enabled: true, hide_taskbar: false, stacks: a.keys, display: "main" }),
   dock_display_set: (a) => ({ enabled: true, hide_taskbar: false, stacks: ["downloads"], display: a.display }),
   dock_hide_set: (a) => ({ enabled: true, hide_taskbar: false, stacks: ["downloads"], display: "main", hide: a.mode }),
+  tray_status: () => MOCK_STATUS,
+  tray_set: (a) => ({ ...MOCK_STATUS, enabled: a.enabled }),
   clipboard_status: () => true,
   switcher_status: () => false,
   switcher_set: (a) => a.enabled,
@@ -683,7 +686,7 @@ $("dock-toggle").addEventListener("change", async (e) => {
 $("dock-taskbar").addEventListener("change", async (e) => {
   renderDock(await invoke<DockStatus>("dock_hide_taskbar_set", { enabled: (e.target as HTMLInputElement).checked }));
 });
-invoke<DockStatus>("dock_status").then(renderDock);
+invoke<DockStatus>("dock_status").then(renderDock).then(() => initTraySetting(invoke));
 
 function renderSwitcher(on: boolean): void {
   ($("sw-toggle") as HTMLInputElement).checked = on;

@@ -377,3 +377,46 @@ from your installed apps at runtime and are never shipped. Gallery photos are
 downloaded on request from free-licence libraries (Wikimedia Commons, NASA)
 and each one is credited in the app with its author and licence. Cove ships no
 Apple fonts, symbols, wallpapers or artwork.
+
+## Code adapted from other projects
+
+Not dependencies: techniques Cove reimplemented in its own source, credited here.
+
+### systray-util (glzr-io/zebar)
+
+`src-tauri/src/tray.rs` (other apps' tray icons) uses the stand-in
+`Shell_TrayWnd` technique from the `systray-util` crate: a hidden window of the
+taskbar's class that reads `Shell_NotifyIcon`'s `WM_COPYDATA` messages and
+forwards them to the real taskbar, the 32-bit-handle `NOTIFYICONDATA` layout,
+the `TaskbarCreated` broadcast and the version-dependent click messages. Cove
+rewrote it and left out the crate's start-up step that allocates and reads
+memory inside Explorer (`VirtualAllocEx` / `ReadProcessMemory`); Cove never
+writes to or reads from another process's memory.
+
+- Source: https://github.com/glzr-io/zebar/tree/main/crates/systray-util
+- Crate: https://crates.io/crates/systray-util
+- Licence: MIT (as declared by the crate)
+
+```
+MIT License
+
+Copyright (c) Glzr Software Pte. Ltd.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

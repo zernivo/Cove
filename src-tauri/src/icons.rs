@@ -336,6 +336,13 @@ pub fn system_keys() -> Vec<(&'static str, Vec<String>)> {
     ]
 }
 
+/// Another app's tray icon (an HICON) as PNG, for tray.rs.
+#[cfg(windows)]
+pub fn hicon_png(hicon: isize) -> Option<Vec<u8>> {
+    let (w, h, rgba) = imp::hicon_rgba(hicon)?;
+    encode(w, h, &rgba)
+}
+
 fn encode(w: u32, h: u32, rgba: &[u8]) -> Option<Vec<u8>> {
     let mut buf = Vec::new();
     {
@@ -508,7 +515,7 @@ mod imp {
 
     /// An HICON as straight-alpha RGBA. Old icons without an alpha channel
     /// take their transparency from the icon's mask.
-    fn hicon_rgba(hicon: isize) -> Option<(u32, u32, Vec<u8>)> {
+    pub(super) fn hicon_rgba(hicon: isize) -> Option<(u32, u32, Vec<u8>)> {
         use windows_sys::Win32::Graphics::Gdi::DeleteObject;
         use windows_sys::Win32::UI::WindowsAndMessaging::{GetIconInfo, ICONINFO};
         unsafe {

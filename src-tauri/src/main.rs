@@ -25,6 +25,7 @@ mod winindex;
 mod theme;
 mod wallpaper;
 mod topbar;
+mod tray;
 mod tweaks;
 mod updater;
 
@@ -812,6 +813,8 @@ fn sync_taskbar(s: &mut settings::Store) {
     let want = s.data.dock && (s.data.takeover || s.data.dock_hide_taskbar) && !safe();
     dock::TASKBAR_GONE.store(want, std::sync::atomic::Ordering::SeqCst);
     dock::taskbar_visible(!want);
+    // Other apps' tray icons: the stand-in tray lives only while the taskbar is gone.
+    tray::sync(want && s.data.tray_icons);
     match (want, s.data.taskbar_prev_autohide) {
         (true, None) => {
             s.data.taskbar_prev_autohide = Some(dock::taskbar_autohide(Some(true)));
@@ -1629,7 +1632,7 @@ fn display_watch(app: AppHandle) {
             continue;
         }
         // Keep the taskbar gone if Explorer restarted or something showed it.
-        if dock::TASKBAR_GONE.load(std::sync::atomic::Ordering::SeqCst) && dock::taskbar_is_visible() {
+        if dock::TASKBAR_GONE.load(std::sync::atomic::Ordering::SeqCst) && dock::taskbar_is_visible() && !tray::NATIVE_OPEN.load(std::sync::atomic::Ordering::SeqCst) {
             dock::taskbar_visible(false);
         }
         let (dock_on, follow, bar_on) = match st.settings.lock() {
@@ -2449,6 +2452,8 @@ fn main() {
     if args.len() >= 4 && args[1] == "--watchdog" {
         if let Ok(pid) = args[2].parse::<u32>() {
             dock::watchdog(pid, std::path::Path::new(&args[3]));
+            // Apps that registered with Cove's stand-in tray re-add their icons to Windows'.
+            tray::after_exit(std::path::Path::new(&args[3]));
         }
         return;
     }
@@ -2473,6 +2478,14 @@ fn main() {
                     return res.header("Content-Type", "image/jpeg").header("Cache-Control", "no-cache").body(bytes).unwrap_or_default();
                 }
             }
+            // "/tray/<id>.png": other apps' tray icons (tray.rs).
+            if let Some(id) = path.strip_prefix("/tray/") {
+                return match tray::serve(id) {
+                    Some(png) => res.header("Content-Type", "image/png").header("Cache-Control", "max-age=31536000, immutable").body(png),
+                    None => res.status(404).body(Vec::new()),
+                }
+                .unwrap_or_default();
+            }
             match icons::serve(path) {
                 Some(png) => res.header("Content-Type", "image/png").header("Cache-Control", "max-age=31536000, immutable").body(png),
                 None => res.status(404).body(Vec::new()),
@@ -2486,6 +2499,7 @@ fn main() {
             // Bars a crashed run still held (the watchdog normally frees them).
             appbar::release_recorded(&dir.join("settings.json"));
             appbar::set_record(appbar::record_path(&dir.join("settings.json")));
+            tray::init(app.handle(), &dir.join("settings.json"));
             // If Cove ever ends without tidying up, this brings the taskbar back.
             #[cfg(windows)]
             if let Ok(me) = std::env::current_exe() {
@@ -2824,7 +2838,12 @@ fn main() {
             just_updated,
             intro_begin,
             intro_done,
-            intro_play
+            intro_play,
+            tray::tray_status,
+            tray::tray_set,
+            tray::tray_pin,
+            tray::tray_click,
+            tray::tray_open_windows
         ])
         .build(tauri::generate_context!())
         .expect("error while building Cove");
@@ -2844,6 +2863,7 @@ fn main() {
                 }
             }
             dock_release(handle);
+            tray::shutdown();
             dock::TASKBAR_GONE.store(false, std::sync::atomic::Ordering::SeqCst);
             dock::taskbar_visible(true);
             if let Some(state) = handle.try_state::<AppState>() {

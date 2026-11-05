@@ -12,6 +12,8 @@
 import "./theme";
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { mountTrayGrid } from "./tray-grid";
+import { MOCK_STATUS } from "./tray";
 
 interface TopState { app: string; kind: "app" | "cove" | "desktop" | "shell"; hwnd: number; count?: number; icon?: string | null; user?: string }
 interface Media { title: string; artist: string; app: string; playing: boolean; icon: string | null }
@@ -25,6 +27,8 @@ const q = new URLSearchParams(location.search);
 const MOCK: Record<string, unknown> = {
   controls_get: { volume: 46, muted: false, brightness: 72, wifi: "Nazeer-5G", dark: matchMedia("(prefers-color-scheme: dark)").matches, bluetooth: true, bt_devices: 1, focus: false, device: "Speakers (Realtek)", media: { title: "Golden Hour", artist: "JVKE", app: "Spotify", playing: true, icon: "/mock/spotify.png" } },
   icons_system: { settings: "/mock/settings.png", taskmgr: "/mock/taskmgr.png", explorer: "/mock/explorer.png", cove: "/cove-mark.png", downloads: "/mock/downloads.png", documents: "/mock/folder.png", desktop: "/mock/folder.png", pictures: "/mock/folder.png", home: "/mock/folder.png", thispc: "/mock/thispc.png", recycler: "/mock/bin.png", controlpanel: "/mock/settings.png" },
+  // Preview: ?tray=empty | note shows those states.
+  tray_status: q.get("tray") === "empty" ? { ...MOCK_STATUS, items: [] } : q.get("tray") === "note" ? { ...MOCK_STATUS, mode: "windows", note: "TranslucentTB also manages the tray, so Cove lists the icons Windows shows instead. Quit TranslucentTB to see every icon here.", items: MOCK_STATUS.items.slice(0, 3) } : MOCK_STATUS,
   recent_items: [{ name: "CA_Assignment_2.pdf", target: "x", icon: null }, { name: "visualiser.py", target: "y", icon: null }, { name: "Vision statement.docx", target: "z", icon: null }],
 };
 function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -458,6 +462,16 @@ go($("t-sound"), "sound");
 $("edit-controls").addEventListener("click", () => { hide(); invoke("topbar_menu", { what: "settings" }).catch(() => {}); });
 views.cc.querySelectorAll<HTMLButtonElement>(".foot button[data-go]").forEach((b) => go(b, b.dataset.go!));
 
+// Other apps' tray icons. Drawn from the last known state at once, then
+// refreshed; the window is re-fitted if the grid changed size.
+const tray = mountTrayGrid($("tray"), invoke, { onResize: () => { if (current === "cc") place(); } });
+async function trayRefresh(): Promise<void> {
+  const before = views.cc.offsetHeight;
+  await tray.refresh();
+  if (current === "cc" && views.cc.offsetHeight !== before) place();
+}
+if (inTauri) listen("tray-changed", () => { if (current === "cc") trayRefresh(); });
+
 // ---- Open / close ----
 async function open(kind: Kind, data: unknown): Promise<void> {
   if (!Object.keys(icons).length) await loadIcons();
@@ -470,7 +484,15 @@ async function open(kind: Kind, data: unknown): Promise<void> {
     case "go": showMenu(kind, goMenu()); break;
     case "window": showMenu(kind, windowMenu(s)); break;
     case "dock": showMenu(kind, ((data as { items?: MItem[] })?.items) ?? [], "dockmenu"); break;
-    case "cc": renderControls(await invoke<Controls>("controls_get")); show("cc"); break;
+    case "cc": {
+      tray.paintCached();
+      const t = trayRefresh();
+      renderControls(await invoke<Controls>("controls_get"));
+      // Wait briefly for the icons so the panel opens at its final size.
+      await Promise.race([t, new Promise((r) => setTimeout(r, 120))]);
+      show("cc");
+      break;
+    }
     default: break;
   }
 }
