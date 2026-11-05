@@ -1,0 +1,29 @@
+name: Smoke launch
+on:
+  push:
+    branches: [smoke-launch]
+  workflow_dispatch:
+jobs:
+  smoke:
+    runs-on: windows-latest
+    steps:
+      - name: Install preview and launch
+        shell: pwsh
+        run: |
+          $url = "https://github.com/zernivo/Cove/releases/download/preview/Cove-preview-70141e6-setup.exe"
+          Invoke-WebRequest $url -OutFile setup.exe
+          Start-Process .\setup.exe -ArgumentList "/S" -Wait
+          $exe = Get-ChildItem "$env:LOCALAPPDATA\Cove","$env:ProgramFiles\Cove" -Filter *.exe -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch "uninstall" } | Select-Object -First 1
+          "exe: $($exe.FullName)"
+          $env:RUST_BACKTRACE = "full"
+          $p = Start-Process $exe.FullName -PassThru -RedirectStandardError err.txt -RedirectStandardOutput out.txt
+          Start-Sleep 25
+          "alive after 25s: $(-not $p.HasExited)  exit: $($p.ExitCode)"
+          Get-Process | Where-Object { $_.Name -match "cove|msedgewebview2" } | Format-Table Name,Id,MainWindowTitle -AutoSize | Out-String
+          "---- stderr"; Get-Content err.txt -ErrorAction SilentlyContinue
+          "---- stdout"; Get-Content out.txt -ErrorAction SilentlyContinue
+          "---- cove.log"
+          Get-ChildItem "$env:APPDATA\app.cove.desktop","$env:LOCALAPPDATA\app.cove.desktop" -ErrorAction SilentlyContinue | Format-Table FullName,Length | Out-String
+          Get-Content "$env:APPDATA\app.cove.desktop\cove.log" -ErrorAction SilentlyContinue
+          "---- app event log"
+          Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-5)} -ErrorAction SilentlyContinue | Where-Object { $_.LevelDisplayName -eq 'Error' } | Format-List TimeCreated,ProviderName,Message | Out-String -Width 300
